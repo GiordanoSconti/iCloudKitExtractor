@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\native\CoreAdiBridge\out\CoreAdiBridge.exe" Link="CoreAdiBridge.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\native\CoreAdiBridge\out\CoreAdiBridge.exe')" />
+    <Resource Include="Assets\app-icon.ico" />
+    <Resource Include="Assets\app-icon.png" />
+    <EmbeddedResource Include="Assets\certs\AppleServerAuthenticationCA.der" />
+    <EmbeddedResource Include="Assets\certs\AppleRootCA.cer" />
+    <EmbeddedResource Include="Assets\ike\wsc_preauth_session_prefix.bin" />
+    <EmbeddedResource Include="Assets\ike\wsc_prefix_frame1.bin" />
+    <EmbeddedResource Include="Assets\ike\wsc_prefix_frame2_template.bin" />
+    <EmbeddedResource Include="Assets\ike\wsc_session_blob_header.bin" />
+    <EmbeddedResource Include="Assets\ike\wsc_session_unit_template.bin" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+    <PackageReference Include="LzfseSharp" Version="2.0.0" />
+    <PackageReference Include="MailKit" Version="4.18.1" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.6" />
+    <PackageReference Include="MimeKit" Version="4.18.1" />
+    <!-- Override transitive 2.1.x (NU1903 GHSA-2m69-gcr7-jv3q); 3.x usa SourceGear.sqlite3 -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+
+
+</Project>

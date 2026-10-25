@@ -1,0 +1,8 @@
+# Esempio configurazione anisette Mac remoto.
+# Copia in: %AppData%\iCloudKitExtractor\anisette.json
+# (oppure usa scripts\configure-mac-anisette.ps1)
+
+{
+  "serverUrl": "http://192.168.1.50:6969",
+  "authMode": "iphone"
+}

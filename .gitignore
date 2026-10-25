@@ -1,0 +1,46 @@
+## Build
+**/bin/
+**/obj/
+**/out/
+artifacts/
+_build*/
+_verify*/
+*.user
+*.suo
+*.DotSettings.user
+
+## IDE / OS
+.vs/
+.idea/
+.cursor/
+*.swp
+Thumbs.db
+Desktop.ini
+
+## Logs / temp / lab
+*.log
+*_tmp*/
+_tmp*/
+tmp_*/
+ike_out*/
+*viewer-payload/
+**/__pycache__/
+
+## Native build trees
+native/**/build/
+native/**/CMakeFiles/
+native/**/out/
+
+## Secrets / local
+**/appsettings.*.local.json
+**/.env
+**/Secrets/
+**/Downloads/
+**/.chunks/
+startup_config.txt
+anisette.json
+
+## Apple / proprietary dumps (never publish)
+ios-adi-split/
+**/*.dylib
+**/IMDAppleServices

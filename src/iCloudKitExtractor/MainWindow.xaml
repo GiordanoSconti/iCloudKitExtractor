@@ -1,0 +1,1255 @@
+<Window x:Class="iCloudKitExtractor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="iCloudKit Extractor" Height="760" Width="1320"
+        MinHeight="640" MinWidth="1100"
+        WindowStartupLocation="CenterScreen"
+        Icon="pack://application:,,,/Assets/app-icon.ico"
+        Background="{StaticResource MeshBackgroundBrush}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Soft Gemini-like color blobs -->
+        <Canvas Grid.RowSpan="2" IsHitTestVisible="False" ClipToBounds="True">
+            <Ellipse Width="420" Height="420" Canvas.Left="-80" Canvas.Top="-120" Opacity="0.55">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#994285F4" Offset="0"/>
+                        <GradientStop Color="#004285F4" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+            <Ellipse Width="380" Height="380" Canvas.Left="780" Canvas.Top="20" Opacity="0.45">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#99A855F7" Offset="0"/>
+                        <GradientStop Color="#00A855F7" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+            <Ellipse Width="460" Height="320" Canvas.Left="240" Canvas.Top="480" Opacity="0.40">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#88FB7185" Offset="0"/>
+                        <GradientStop Color="#00FB7185" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+            <Ellipse Width="300" Height="300" Canvas.Left="620" Canvas.Top="380" Opacity="0.35">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#7734D399" Offset="0"/>
+                        <GradientStop Color="#0034D399" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+        </Canvas>
+
+        <Grid Margin="22,22,22,12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <Border Style="{StaticResource CardBorderStyle}" Padding="22,18" Margin="0,0,0,16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Width="48" Height="48" CornerRadius="10" Margin="0,0,16,0"
+                            ClipToBounds="True"
+                            Effect="{StaticResource SoftShadow}">
+                        <Border.Background>
+                            <ImageBrush ImageSource="pack://application:,,,/Assets/app-icon.png"
+                                        Stretch="UniformToFill"/>
+                        </Border.Background>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="iCloud Backup Extractor" Style="{StaticResource TitleTextStyle}"/>
+                        <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,4,0,0"
+                                   Text="Login Apple ID · Escrow PCS · Backup download · WhatsApp CloudKit · iCloud Files · Sync Data"/>
+                    </StackPanel>
+
+                    <Border Grid.Column="2" Style="{StaticResource SessionChipStyle}" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="SessionIndicator" Width="10" Height="10" Fill="{StaticResource IdleBrush}"
+                                     Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="SessionStatusText" VerticalAlignment="Center"
+                                       FontSize="12.5" FontWeight="SemiBold"
+                                       Foreground="{StaticResource AccentABrush}"
+                                       Text="Non autenticato"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="360" MinWidth="300" MaxWidth="480"/>
+                </Grid.ColumnDefinitions>
+
+            <TabControl x:Name="MainTabControl" Grid.Column="0">
+                <!-- Accesso -->
+                <TabItem x:Name="AccessTab" Header="Accesso">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Credenziali Apple ID" Style="{StaticResource SectionLabelStyle}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Apple ID" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="AppleIdTextBox" Grid.Column="1" Margin="0,0,0,10"/>
+                                    <TextBlock Grid.Row="1" Text="Password" Style="{StaticResource FieldLabelStyle}"/>
+                                    <PasswordBox x:Name="PasswordBox" Grid.Row="1" Grid.Column="1"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+                            <Button x:Name="LoginButton" Content="Accedi"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    MinWidth="132" Click="LoginButton_Click"/>
+                        </StackPanel>
+
+                        <Border x:Name="TwoFactorPanel" Grid.Row="2" Style="{StaticResource SectionCardStyle}"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="Verifica a due fattori" Style="{StaticResource SectionLabelStyle}"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <RadioButton x:Name="TwoFactorDeviceRadio" Content="Dispositivo attendibile"
+                                                 IsChecked="True" GroupName="TwoFactorMethod"
+                                                 Checked="TwoFactorMethodRadio_Changed"/>
+                                    <RadioButton x:Name="TwoFactorSmsRadio" Content="SMS"
+                                                 GroupName="TwoFactorMethod"
+                                                 Checked="TwoFactorMethodRadio_Changed"/>
+                                </StackPanel>
+                                <StackPanel x:Name="SmsPhonePanel" Orientation="Horizontal" Margin="0,0,0,10"
+                                            Visibility="Collapsed">
+                                    <ComboBox x:Name="SmsPhoneComboBox" Width="240" Margin="0,0,10,0"
+                                              DisplayMemberPath="DisplayLabel"/>
+                                    <Button x:Name="RequestSmsButton" Content="Invia SMS"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="RequestSmsButton_Click"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBox x:Name="TwoFactorCodeTextBox" Width="140" Margin="0,0,10,0"/>
+                                    <Button x:Name="Verify2FaButton" Content="Invia codice"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Click="Verify2FaButton_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="3" Style="{StaticResource LogSectionCardStyle}">
+                            <DockPanel LastChildFill="True">
+                                <TextBlock DockPanel.Dock="Top" Text="Log autenticazione"
+                                           Style="{StaticResource SectionLabelStyle}"
+                                           Margin="0,0,0,4"/>
+                                <TextBox x:Name="AuthLogTextBox" Style="{StaticResource LogTextBoxStyle}"/>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- Escrow -->
+                <TabItem x:Name="EscrowTab" Header="Escrow KeyBagKey" IsEnabled="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14"
+                                           Text="PCS: Unlock EscrowedKeys (iCSC vuoto = DSID). Octagon: passcode bottle (HSM) oppure Recovery Key → TLK/Manatee/PCS (senza tentativo HSM)."/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <TextBlock Text="Cartella output" Style="{StaticResource FieldLabelStyle}" Width="120"/>
+                                    <TextBox x:Name="DecryptOutputTextBox" Width="420" Margin="0,0,10,0"/>
+                                    <Button Content="Sfoglia" Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="BrowseDecryptOutput_Click"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <TextBlock x:Name="EscrowSecretLabel" Text="iCSC / passcode"
+                                               Style="{StaticResource FieldLabelStyle}" Width="120"/>
+                                    <PasswordBox x:Name="EscrowPasswordBox" Width="280" Margin="0,0,12,0"/>
+                                    <TextBlock x:Name="EscrowSecretHint" Text="(PCS SRP=DSID · Octagon bottle: passcode device)"
+                                               Style="{StaticResource HintTextStyle}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <TextBlock Text="Recovery Key"
+                                               Style="{StaticResource FieldLabelStyle}" Width="120"/>
+                                    <PasswordBox x:Name="EscrowRecoveryKeyBox" Width="280" Margin="0,0,12,0"
+                                                 ToolTip="iCloud Recovery Key (XXXX-XXXX-…). Alternativa Octagon al PIN bottle."/>
+                                    <TextBlock Text="altDSID"
+                                               Style="{StaticResource FieldLabelStyle}"
+                                               Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="EscrowRecoverySaltBox" Width="200"
+                                             ToolTip="Salt HKDF = altDSID/adsid (sempre da sessione dopo login)"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                    <CheckBox x:Name="EscrowSmsVariantCheckBox" Content="Variante SMS (securebackup)"
+                                              VerticalAlignment="Center"
+                                              Checked="EscrowSmsVariantCheckBox_Changed"
+                                              Unchecked="EscrowSmsVariantCheckBox_Changed"/>
+                                    <TextBlock x:Name="EscrowSmsCodeLabel" Text="Codice SMS"
+                                               Style="{StaticResource FieldLabelStyle}"
+                                               Margin="16,0,8,0" Visibility="Collapsed"/>
+                                    <TextBox x:Name="EscrowSmsCodeBox" Width="120" Visibility="Collapsed"/>
+                                    <CheckBox x:Name="EscrowRequestSmsCheckBox" Content="Invia SMS se manca codice"
+                                              Margin="12,0,0,0" VerticalAlignment="Center"
+                                              Visibility="Collapsed" IsChecked="True"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Button x:Name="EscrowPcsUnlockButton" Content="Unlock EscrowedKeys"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="180"
+                                            Click="EscrowPcsUnlockButton_Click"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Button x:Name="EscrowOctagonListButton" Content="Lista bottle iCDP"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="140" Margin="0,0,12,0"
+                                            Click="EscrowOctagonListButton_Click"/>
+                                    <TextBlock Text="Bottle iCDP" Style="{StaticResource FieldLabelStyle}"
+                                               Width="120" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="EscrowOctagonBottleCombo" Width="400"
+                                              DisplayMemberPath="Display"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Button x:Name="EscrowOctagonUnlockButton" Content="Unlock Octagon bottle"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="200"
+                                            Click="EscrowOctagonUnlockButton_Click"/>
+                                    <Button x:Name="EscrowOctagonPeerButton" Content="OTBottle / Peer keys"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="160" Margin="12,0,0,0"
+                                            Click="EscrowOctagonPeerButton_Click"
+                                            ToolTip="fetchViableBottles + decrypt OTBottle (serve entropy già sbloccata)"/>
+                                    <Button x:Name="EscrowCkksVaultButton" Content="CKKS OpenVault"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="140" Margin="12,0,0,0"
+                                            Click="EscrowCkksVaultButton_Click"
+                                            ToolTip="Manatee + ProtectedCloudStorage (+ LimitedPeersAllowed): TLKShare→PCS service keys (82=Find My)"/>
+                                    <TextBlock Text="(bottle unlock = 1 tentativo HSM)"
+                                               Style="{StaticResource HintTextStyle}"
+                                               Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                    <Button x:Name="EscrowOctagonRkButton" Content="Unlock Octagon via RK"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="200"
+                                            Click="EscrowOctagonRkButton_Click"
+                                            ToolTip="Recovery Key → peer RK → fetchRecoverableTLKShares → Manatee/PCS/Passwords. Nessun tentativo HSM."/>
+                                    <TextBlock Text="(alternativa al PIN: niente EscrowProxy RECOVER)"
+                                               Style="{StaticResource HintTextStyle}"
+                                               Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource LogSectionCardStyle}">
+                            <TextBox x:Name="DecryptLogTextBox" Style="{StaticResource LogTextBoxStyle}"/>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- Backup -->
+                <TabItem x:Name="BackupTab" Header="Backup dispositivi" IsEnabled="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="1*"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="1.6*"/>
+                        </Grid.RowDefinitions>
+
+                        <Button x:Name="RefreshBackupsButton" Content="Aggiorna elenco"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                HorizontalAlignment="Left" Margin="0,0,0,12"
+                                Click="RefreshBackupsButton_Click"/>
+
+                        <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Padding="8" Margin="0,0,0,8">
+                            <DataGrid x:Name="DevicesGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                      SelectionMode="Single" CanUserAddRows="False"
+                                      SelectionChanged="DevicesGrid_SelectionChanged">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Dispositivo" Binding="{Binding ModelLabel}" Width="180"/>
+                                    <DataGridTextColumn Header="Codice" Binding="{Binding ProductType}" Width="110"/>
+                                    <DataGridTextColumn Header="Hardware" Binding="{Binding HardwareModel, TargetNullValue=—}" Width="90"/>
+                                    <DataGridTextColumn Header="Seriale" Binding="{Binding SerialNumber, TargetNullValue=—}" Width="120"/>
+                                    <DataGridTextColumn Header="UDID" Binding="{Binding HardwareUdid, TargetNullValue=—}" Width="200"/>
+                                    <DataGridTextColumn Header="CloudKit ID" Binding="{Binding DeviceUuid}" Width="220"/>
+                                    <DataGridTextColumn Header="Snapshot" Binding="{Binding SnapshotCount}" Width="72"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+
+                        <TextBlock Grid.Row="2" Text="Snapshot backup" Style="{StaticResource SectionLabelStyle}"
+                                   Margin="4,4,0,6"/>
+
+                        <Border Grid.Row="3" Style="{StaticResource SectionCardStyle}" Padding="8" Margin="0,0,0,8">
+                            <DataGrid x:Name="SnapshotsGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                      SelectionMode="Single" CanUserAddRows="False"
+                                      SelectionChanged="SnapshotsGrid_SelectionChanged">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="UDID" Binding="{Binding ShortUuid}" Width="90"/>
+                                    <DataGridTextColumn Header="UDID completo" Binding="{Binding BackupUuid, TargetNullValue=—}" Width="240"/>
+                                    <DataGridTextColumn Header="Data" Binding="{Binding DateLabel}" Width="140"/>
+                                    <DataGridTextColumn Header="iOS" Binding="{Binding IosLabel}" Width="120"/>
+                                    <DataGridTextColumn Header="Dimensione" Binding="{Binding SizeLabel}" Width="90"/>
+                                    <DataGridTextColumn Header="Fmt" Binding="{Binding BackupPropsVersionLabel}" Width="50"/>
+                                    <DataGridTextColumn Header="SysDom" Binding="{Binding SystemDomainsLabel}" Width="60"/>
+                                    <DataGridTextColumn Header="Passcode" Binding="{Binding PasscodeLabel}" Width="70"/>
+                                    <DataGridTextColumn Header="Apple ID" Binding="{Binding AppleIdLabel}" Width="180"/>
+                                    <DataGridTextColumn Header="Props" Binding="{Binding BackupPropsStatusLabel}" Width="110"/>
+                                    <DataGridTextColumn Header="Record" Binding="{Binding RecordName}" Width="*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+
+                        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,4,0,10">
+                            <TextBlock Text="Cartella output" Style="{StaticResource FieldLabelStyle}"/>
+                            <TextBox x:Name="OutputFolderTextBox" Width="500" Margin="10,0,10,0"/>
+                            <Button Content="Sfoglia" Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="BrowseOutput_Click"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="5" Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <Button x:Name="DownloadButton" Content="Scarica backup (catena)"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        MinWidth="210" IsEnabled="False" Click="DownloadButton_Click"/>
+                                <CheckBox x:Name="ChainSnapshotsCheckBox" Content="Catena da più vecchio"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"
+                                          IsChecked="True"
+                                          Checked="ChainSnapshotsCheckBox_Changed"
+                                          Unchecked="ChainSnapshotsCheckBox_Changed"
+                                          ToolTip="ON (default): scarica tutti gli snapshot del device dal più vecchio al più recente, così i delta riusano i file già decifrati (CopySnapshot). OFF: solo lo snapshot selezionato."/>
+                                <TextBlock Text="Max asset (0=tutti)" Style="{StaticResource FieldLabelStyle}"
+                                           Margin="16,0,8,0"/>
+                                <TextBox x:Name="MaxAssetsTextBox" Width="56" Text="0"/>
+                                <CheckBox x:Name="ManifestOnlyCheckBox" Content="Solo Manifest"
+                                          VerticalAlignment="Center" Margin="16,0,0,0"
+                                          IsChecked="False"
+                                          ToolTip="Solo catalogo S:→M:→files + Manifest.db locale (niente download file)"/>
+                                <CheckBox x:Name="QuietLogCheckBox" Content="Solo errori"
+                                          VerticalAlignment="Center" Margin="16,0,0,0"
+                                          IsChecked="True"
+                                          Checked="QuietLogCheckBox_Changed"
+                                          Unchecked="QuietLogCheckBox_Changed"
+                                          ToolTip="Disattiva log info/warning in UI e su disco (pending_chunks journal, NDJSON). Molto più veloce. Env: IKE_QUIET=1"/>
+                                <CheckBox x:Name="PersistRunLogsCheckBox" Content="Salva log run"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"
+                                          IsChecked="False"
+                                          Checked="PersistRunLogsCheckBox_Changed"
+                                          Unchecked="PersistRunLogsCheckBox_Changed"
+                                          ToolTip="Attivando i log verranno registrate le richieste e risposte HTTP comprensive di body e headers, le quali avranno bisogno almeno di due volte lo spazio libero sul disco rispetto alle dimensioni del singolo snapshot incrementale/completo)."/>
+                                <CheckBox x:Name="FullHarCaptureCheckBox" Content="HAR completo (PoC)"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"
+                                          IsChecked="False"
+                                          Checked="FullHarCaptureCheckBox_Changed"
+                                          Unchecked="FullHarCaptureCheckBox_Changed"
+                                          ToolTip="Scrive session.har + session_redacted.har con TUTTE le req/resp (anche HTTP OK). Attiva anche «Salva log run». Env: IKE_FULL_HAR=1. Body &gt;8MB truncati con riferimento a http_bodies/."/>
+                                <CheckBox x:Name="DumpAuthCheckBox" Content="Dump AUTH"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"
+                                          IsChecked="False"
+                                          ToolTip="Scrive AUTH_BATCH_*.bin nello snapshot (solo debug; non serve al decrypt). Env: IKE_DUMP_AUTH=1"/>
+                                <CheckBox x:Name="DumpEdgeCheckBox" Content="Dump edge"
+                                          VerticalAlignment="Center" Margin="8,0,0,0"
+                                          IsChecked="False"
+                                          ToolTip="Scrive .edge_compact.bin / .ciphertext accanto a OBJ (solo offline). Lo staging OBJ resta. Env: IKE_DUMP_EDGE=1"/>
+                                <CheckBox x:Name="DumpKalamaCheckBox" Content="Dump Records KA, LA, MA"
+                                          VerticalAlignment="Center" Margin="8,0,0,0"
+                                          IsChecked="False"
+                                          ToolTip="Scrive kalama_records/query_*.bin (record KA/LA/MA; wrap già in RAM). Env: IKE_DUMP_KALAMA=1"/>
+                                <ProgressBar x:Name="DownloadProgressBar" Width="180" Height="10" Margin="16,0,0,0"
+                                             VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0"
+                                             ToolTip="Avanzamento complessivo (file completati)"/>
+                                <TextBlock x:Name="DownloadStatusText" Margin="12,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Scaricati" Style="{StaticResource FieldLabelStyle}"
+                                           Width="72" VerticalAlignment="Center"/>
+                                <ProgressBar x:Name="DownloadFilesProgressBar" Width="140" Height="10"
+                                             VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0"
+                                             ToolTip="File scaricati sul totale"/>
+                                <TextBlock x:Name="DownloadFilesCountText" Margin="8,0,20,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="0 / 0"/>
+                                <TextBlock Text="Decifrati" Style="{StaticResource FieldLabelStyle}"
+                                           Width="72" VerticalAlignment="Center"/>
+                                <ProgressBar x:Name="DecryptFilesProgressBar" Width="140" Height="10"
+                                             VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0"
+                                             ToolTip="File decifrati sul totale"/>
+                                <TextBlock x:Name="DecryptFilesCountText" Margin="8,0,20,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="0 / 0"/>
+                                <TextBlock x:Name="DecryptQueueText"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="Coda decrypt: 0"
+                                           ToolTip="File in coda o in corso di decifrazione"/>
+                                <TextBlock x:Name="PendingChunksText" Margin="16,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="Pending: 0"
+                                           ToolTip="File in attesa chunk MMCS o defer Ford (H-ORDER) — non sono errori"/>
+                                <TextBlock x:Name="DuplicatedFilesText" Margin="16,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="Duplicati: 0"
+                                           ToolTip="Path copiati da shard già scaricato (stessa signature)"/>
+                                <TextBlock x:Name="CiphertextFilesText" Margin="16,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="Cifrati: 0"
+                                           ToolTip="File salvati in Backup/ ancora ciphertext (no file-AES; parity incompleta o incompleti)"/>
+                                <TextBlock x:Name="DecryptFailedText" Margin="16,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="Falliti decrypt: 0"
+                                           ToolTip="File con errore finale di decifratura (non PENDING)"/>
+                                <TextBlock x:Name="DownloadElapsedText" Margin="20,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="Tempo: 0:00"
+                                           ToolTip="Tempo trascorso dall’inizio del download backup"/>
+                                <TextBlock x:Name="DownloadBytesText" Margin="16,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="Dati: — / —"
+                                           ToolTip="Byte effettivamente scaricati / stima byte da scaricare"/>
+                                <ComboBox x:Name="DownloadBytesScaleCombo"
+                                          Width="72" MinHeight="28" Margin="6,0,0,0"
+                                          Padding="6,2"
+                                          VerticalAlignment="Center"
+                                          VerticalContentAlignment="Center"
+                                          FontSize="12"
+                                          SelectedIndex="0"
+                                          ToolTip="Scala unità (Auto adatta a runtime; oppure B/KB/MB/GB/TB)"
+                                          SelectionChanged="DownloadBytesScaleCombo_SelectionChanged">
+                                    <ComboBoxItem Content="Auto" VerticalContentAlignment="Center"/>
+                                    <ComboBoxItem Content="B" VerticalContentAlignment="Center"/>
+                                    <ComboBoxItem Content="KB" VerticalContentAlignment="Center"/>
+                                    <ComboBoxItem Content="MB" VerticalContentAlignment="Center"/>
+                                    <ComboBoxItem Content="GB" VerticalContentAlignment="Center"/>
+                                    <ComboBoxItem Content="TB" VerticalContentAlignment="Center"/>
+                                </ComboBox>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border Grid.Row="6" Style="{StaticResource LogSectionCardStyle}">
+                            <DockPanel LastChildFill="True">
+                                <Button DockPanel.Dock="Top" Content="Copia log"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        HorizontalAlignment="Right" Margin="0,0,0,2"
+                                        Click="CopyDownloadLog_Click"
+                                        ToolTip="Copia il testo del log della scheda attiva negli appunti"/>
+                                <TabControl x:Name="DownloadLogTabs"
+                                            Style="{StaticResource LogTabControlStyle}"
+                                            ItemContainerStyle="{StaticResource LogTabItemStyle}">
+                                    <TabItem Header="Informazioni">
+                                        <RichTextBox x:Name="DownloadInfoLogBox"
+                                                     Style="{StaticResource LogRichTextBoxStyle}">
+                                            <FlowDocument PagePadding="12,10,12,10" LineHeight="18"/>
+                                        </RichTextBox>
+                                    </TabItem>
+                                    <TabItem Header="Avvisi">
+                                        <RichTextBox x:Name="DownloadWarningLogBox"
+                                                     Style="{StaticResource LogRichTextBoxStyle}">
+                                            <FlowDocument PagePadding="12,10,12,10" LineHeight="18"/>
+                                        </RichTextBox>
+                                    </TabItem>
+                                    <TabItem Header="Errori">
+                                        <RichTextBox x:Name="DownloadErrorLogBox"
+                                                     Style="{StaticResource LogRichTextBoxStyle}">
+                                            <FlowDocument PagePadding="12,10,12,10" LineHeight="18"/>
+                                        </RichTextBox>
+                                    </TabItem>
+                                </TabControl>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- WhatsApp -->
+                <TabItem x:Name="WhatsAppTab" Header="WhatsApp CloudKit" IsEnabled="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14"
+                                           Text="Recupero live CloudDocs (zona WhatsApp)."/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                    <TextBlock Text="Cartella output" Style="{StaticResource FieldLabelStyle}" Width="120"/>
+                                    <TextBox x:Name="WhatsAppOutputTextBox" Width="420" Margin="0,0,10,0"/>
+                                    <Button Content="Sfoglia" Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="BrowseWhatsAppOutput_Click"/>
+                                </StackPanel>
+                                <Button x:Name="WhatsAppProbeButton" Content="WhatsApp (CK + Documents)"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        HorizontalAlignment="Left" MinWidth="240"
+                                        Click="WhatsAppProbeButton_Click"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource LogSectionCardStyle}">
+                            <TextBox x:Name="WhatsAppLogTextBox" Style="{StaticResource LogTextBoxStyle}"/>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- iCloud Drive -->
+                <TabItem x:Name="ICloudDriveTab" Header="iCloud Drive" IsEnabled="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14"
+                                           Text="Scarica file da iCloud Drive / iCloud Files (CloudDocs com.apple.clouddocs)."/>
+                                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,14"
+                                           TextWrapping="Wrap"
+                                           Text="Flusso: ckAppInit → zone/retrieve → record/sync → FetchRecords → authorizeGet → edge MMCS. Richiede Escrow PCS (scheda Escrow KeyBagKey)."/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                    <TextBlock Text="Cartella output" Style="{StaticResource FieldLabelStyle}" Width="120"/>
+                                    <TextBox x:Name="ICloudDriveOutputTextBox" Width="420" Margin="0,0,10,0"/>
+                                    <Button Content="Sfoglia" Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="BrowseICloudDriveOutput_Click"/>
+                                </StackPanel>
+                                <CheckBox x:Name="ICloudDriveIncludeAppZonesCheckBox"
+                                          Content="Includi zone app (Pages, Mail, iBooks, …)"
+                                          IsChecked="False"
+                                          Margin="0,0,0,14"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="ICloudDriveProbeButton" Content="Scarica iCloud Drive"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            HorizontalAlignment="Left" MinWidth="240"
+                                            Click="ICloudDriveProbeButton_Click"/>
+                                    <ProgressBar x:Name="ICloudDriveProgressBar" Width="220" Height="10"
+                                                 Margin="16,0,0,0" VerticalAlignment="Center"
+                                                 Maximum="100" Value="0"/>
+                                    <TextBlock x:Name="ICloudDriveStatusText" Margin="12,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Style="{StaticResource HintTextStyle}"
+                                               Text="In attesa"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource LogSectionCardStyle}">
+                            <TextBox x:Name="ICloudDriveLogTextBox" Style="{StaticResource LogTextBoxStyle}"/>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- iCloud Files -->
+                <TabItem x:Name="ICloudFilesTab" Header="iCloud Files (Work in progress)" IsEnabled="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14"
+                                           Text="Scarica tutti i file iCloud (layout iCloud Files)."/>
+                                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,14"
+                                           TextWrapping="Wrap"
+                                           Text="Cattura capture_icloud_drive_20260905: ckAppInit → zone/retrieve → record/sync (CloudDocs + WhatsApp + zone app) → FetchRecords → ricostruzione path Directory → MMCS. Richiede Escrow PCS. Output: icloud_files_*/ con manifest JSON."/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                    <TextBlock Text="Cartella output" Style="{StaticResource FieldLabelStyle}" Width="120"/>
+                                    <TextBox x:Name="ICloudFilesOutputTextBox" Width="420" Margin="0,0,10,0"/>
+                                    <Button Content="Sfoglia" Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="BrowseICloudFilesOutput_Click"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="ICloudFilesProbeButton" Content="Scarica iCloud Files"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            HorizontalAlignment="Left" MinWidth="240"
+                                            Click="ICloudFilesProbeButton_Click"/>
+                                    <ProgressBar x:Name="ICloudFilesProgressBar" Width="220" Height="10"
+                                                 Margin="16,0,0,0" VerticalAlignment="Center"
+                                                 Maximum="100" Value="0"/>
+                                    <TextBlock x:Name="ICloudFilesStatusText" Margin="12,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Style="{StaticResource HintTextStyle}"
+                                               Text="In attesa"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource LogSectionCardStyle}">
+                            <TextBox x:Name="ICloudFilesLogTextBox" Style="{StaticResource LogTextBoxStyle}"/>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- Servizi forensi (probe dataclass) -->
+                <TabItem x:Name="ExploratoryServicesTab" Header="Servizi iCloud (Work in progress)" IsEnabled="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,8"
+                                           Text="Query read-only sui servizi dataclass (sessione corrente)."/>
+                                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,14"
+                                           TextWrapping="Wrap"
+                                           Text="Ogni pulsante esegue una richiesta di sola lettura e mostra la risposta nel riquadro sotto. Nessuna operazione di wipe/delete."/>
+                                <WrapPanel>
+                                    <Button x:Name="SharedStreamsQueryButton"
+                                            Content="SharedStreams — elenco album"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="220" Margin="0,0,10,8"
+                                            Click="SharedStreamsQueryButton_Click"
+                                            ToolTip="POST /{dsid}/sharedstreams/webgetalbumslist"/>
+                                    <Button x:Name="KeyValueQueryButton"
+                                            Content="KeyValue — sync"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="180" Margin="0,0,10,8"
+                                            Click="KeyValueQueryButton_Click"
+                                            ToolTip="POST keyvalueservice /sync (sbd3, Safari, Maps)"/>
+                                    <Button x:Name="ContactsQueryButton"
+                                            Content="Contacts — CardDAV"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="180" Margin="0,0,10,8"
+                                            Click="ContactsQueryButton_Click"
+                                            ToolTip="PROPFIND/REPORT CardDAV su p*-contacts.icloud.com (sola lettura)"/>
+                                    <Button x:Name="FindMyPeopleQueryButton"
+                                            Content="Find My People — FMF friends"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="220" Margin="0,0,10,8"
+                                            Click="FindMyPeopleQueryButton_Click"
+                                            ToolTip="POST fmipservice/friends/{dsid}/refreshClient con mmeFMFAppToken (sola lettura)"/>
+                                    <Button x:Name="FindMyItemsQueryButton"
+                                            Content="Find My Items — AirTag / BeaconStore"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="260" Margin="0,0,10,8"
+                                            Click="FindMyItemsQueryButton_Click"
+                                            ToolTip="ckAppInit searchparty → BeaconStore + PCS KeySet Escrow (sola lettura). Richiede Unlock EscrowedKeys."/>
+                                    <Button Content="Copia risposta"
+                                            Style="{StaticResource GhostButtonStyle}"
+                                            MinWidth="120" Margin="0,0,10,8"
+                                            Click="CopyExploratoryServicesResult_Click"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="ExploratoryServicesStatusText"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="In attesa — effettua il login."/>
+                            </StackPanel>
+                        </Border>
+                        <Grid Grid.Row="1">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition x:Name="ContactsExplorerColumn" Width="0"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource LogSectionCardStyle}">
+                                    <DockPanel LastChildFill="True">
+                                        <TextBlock DockPanel.Dock="Top" Text="Risposta servizio"
+                                                   Style="{StaticResource SectionLabelStyle}"
+                                                   Margin="0,0,0,4"/>
+                                        <TextBox x:Name="ExploratoryServicesResultTextBox"
+                                                 Style="{StaticResource LogTextBoxStyle}"
+                                                 IsReadOnly="True"
+                                                 Text="Le risposte delle query appariranno qui."/>
+                                    </DockPanel>
+                                </Border>
+                                <Border x:Name="ContactsExplorerPanel"
+                                        Grid.Column="1"
+                                        Style="{StaticResource LogSectionCardStyle}"
+                                        Margin="10,0,0,0"
+                                        Visibility="Collapsed"
+                                        MinWidth="280">
+                                    <DockPanel LastChildFill="True">
+                                        <TextBlock DockPanel.Dock="Top" Text="Contacts — dettaglio"
+                                                   Style="{StaticResource SectionLabelStyle}"
+                                                   Margin="0,0,0,4"/>
+                                        <TextBlock DockPanel.Dock="Top"
+                                                   Style="{StaticResource HintTextStyle}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,8"
+                                                   Text="Seleziona un contatto, poi carica vCard o foto (sola lettura)."/>
+                                        <ListBox x:Name="ContactsListBox"
+                                                 DockPanel.Dock="Top"
+                                                 Height="140"
+                                                 Margin="0,0,0,8"
+                                                 SelectionChanged="ContactsListBox_SelectionChanged"/>
+                                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                            <Button x:Name="ContactsLoadVcardButton"
+                                                    Content="Carica vCard"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    MinWidth="110" Margin="0,0,8,0"
+                                                    IsEnabled="False"
+                                                    Click="ContactsLoadVcardButton_Click"
+                                                    ToolTip="GET della risorsa .vcf del contatto selezionato"/>
+                                            <Button x:Name="ContactsLoadPhotoButton"
+                                                    Content="Mostra foto"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    MinWidth="110"
+                                                    IsEnabled="False"
+                                                    Click="ContactsLoadPhotoButton_Click"
+                                                    ToolTip="GET dell'URL PHOTO (gateway.icloud.com/contacts/…)"/>
+                                        </StackPanel>
+                                        <Border DockPanel.Dock="Top"
+                                                Height="160"
+                                                Margin="0,0,0,8"
+                                                Background="#11000000"
+                                                CornerRadius="4">
+                                            <Image x:Name="ContactsPhotoImage"
+                                                   Stretch="Uniform"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                        </Border>
+                                        <TextBox x:Name="ContactsVcardTextBox"
+                                                 Style="{StaticResource LogTextBoxStyle}"
+                                                 IsReadOnly="True"
+                                                 Text="vCard del contatto selezionato…"/>
+                                    </DockPanel>
+                                </Border>
+                            </Grid>
+                            <!-- Tabella dispositivi Find My Items (dopo decrypt BeaconStore) -->
+                            <Border x:Name="FindMyDevicesPanel"
+                                    Grid.Row="1"
+                                    Style="{StaticResource SectionCardStyle}"
+                                    Padding="8"
+                                    Margin="0,10,0,0"
+                                    Visibility="Collapsed"
+                                    MinHeight="160"
+                                    MaxHeight="280">
+                                <DockPanel LastChildFill="True">
+                                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
+                                        <TextBlock Text="Find My Items — dispositivi decifrati"
+                                                   Style="{StaticResource SectionLabelStyle}"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="FindMyDevicesCountText"
+                                                   Style="{StaticResource HintTextStyle}"
+                                                   Margin="12,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Text=""/>
+                                    </DockPanel>
+                                    <DataGrid x:Name="FindMyDevicesGrid"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              SelectionMode="Single"
+                                              CanUserAddRows="False"
+                                              HeadersVisibility="Column"
+                                              GridLinesVisibility="Horizontal">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Nome" Binding="{Binding DisplayName}" Width="*"/>
+                                            <DataGridTextColumn Header="Tipo" Binding="{Binding Kind}" Width="110"/>
+                                            <DataGridTextColumn Header="Modello" Binding="{Binding Model}" Width="100"/>
+                                            <DataGridTextColumn Header="Seriale / ID" Binding="{Binding Serial}" Width="200"/>
+                                            <DataGridTextColumn Header="Paired (UTC)" Binding="{Binding PairingDate}" Width="160"/>
+                                            <DataGridTextColumn Header="FW" Binding="{Binding SystemVersion}" Width="80"/>
+                                            <DataGridTextColumn Header="Bat" Binding="{Binding BatteryLevel}" Width="50"/>
+                                            <DataGridTextColumn Header="Chiavi" Binding="{Binding KeysLabel}" Width="70"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <!-- IMAP Posta iCloud (app-specific password, sola lettura) -->
+                <TabItem x:Name="ImapMailTab" Header="IMAP Posta (Work in progress)" IsEnabled="True">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,8"
+                                           Text="iCloud Mail via IMAP (sola lettura)"/>
+                                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,10"
+                                           TextWrapping="Wrap"
+                                           Text="Serve una password per le app (non il token IKE e non la password Apple Account). Host tipico: imap.mail.me.com:993."/>
+                                <TextBlock Margin="0,0,0,12">
+                                    <Hyperlink NavigateUri="https://account.apple.com/account/manage/section/security"
+                                               RequestNavigate="ImapAppPasswordLink_RequestNavigate">
+                                        Apri impostazioni password per le app (account.apple.com)
+                                    </Hyperlink>
+                                    <Run Text="  ·  "/>
+                                    <Hyperlink NavigateUri="https://support.apple.com/102654"
+                                               RequestNavigate="ImapAppPasswordLink_RequestNavigate">
+                                        Guida Apple
+                                    </Hyperlink>
+                                </TextBlock>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="160"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Utente"
+                                               VerticalAlignment="Center" Margin="0,0,12,8"/>
+                                    <TextBox x:Name="ImapUserTextBox" Grid.Row="0" Grid.Column="1"
+                                             Margin="0,0,12,8"
+                                             ToolTip="Di solito l’indirizzo @icloud.com completo"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Host"
+                                               VerticalAlignment="Center" Margin="0,0,12,8"/>
+                                    <TextBox x:Name="ImapHostTextBox" Grid.Row="0" Grid.Column="3"
+                                             Text="imap.mail.me.com" Margin="0,0,0,8"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Password app"
+                                               VerticalAlignment="Center" Margin="0,0,12,8"/>
+                                    <PasswordBox x:Name="ImapAppPasswordBox" Grid.Row="1" Grid.Column="1"
+                                                 Grid.ColumnSpan="3" Margin="0,0,0,8"
+                                                 ToolTip="Password per le app generata su account.apple.com"/>
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4"
+                                                Orientation="Horizontal">
+                                        <Button x:Name="ImapConnectButton"
+                                                Content="Connetti"
+                                                Style="{StaticResource PrimaryButtonStyle}"
+                                                MinWidth="110" Margin="0,0,10,0"
+                                                Click="ImapConnectButton_Click"/>
+                                        <Button x:Name="ImapDisconnectButton"
+                                                Content="Disconnetti"
+                                                Style="{StaticResource GhostButtonStyle}"
+                                                MinWidth="110" Margin="0,0,10,0"
+                                                IsEnabled="False"
+                                                Click="ImapDisconnectButton_Click"/>
+                                        <Button x:Name="ImapRefreshButton"
+                                                Content="Aggiorna cartelle"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                MinWidth="130" Margin="0,0,10,0"
+                                                IsEnabled="False"
+                                                Click="ImapRefreshFoldersButton_Click"/>
+                                        <TextBlock x:Name="ImapMailStatusText"
+                                                   Style="{StaticResource HintTextStyle}"
+                                                   VerticalAlignment="Center"
+                                                   Text="Non connesso."/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Grid Grid.Row="1" Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="1.2*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource SectionCardStyle}" Padding="8" Margin="0,0,8,0">
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock DockPanel.Dock="Top" Text="Cartelle"
+                                               Style="{StaticResource SectionLabelStyle}"
+                                               Margin="0,0,0,6"/>
+                                    <ListBox x:Name="ImapFoldersListBox"
+                                             SelectionChanged="ImapFoldersListBox_SelectionChanged"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}"
+                                    Padding="8" Margin="0,0,8,0">
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock DockPanel.Dock="Top" Text="Messaggi (ultimi 100)"
+                                               Style="{StaticResource SectionLabelStyle}"
+                                               Margin="0,0,0,6"/>
+                                    <DataGrid x:Name="ImapMessagesGrid"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              SelectionMode="Single"
+                                              CanUserAddRows="False"
+                                              HeadersVisibility="Column"
+                                              GridLinesVisibility="Horizontal"
+                                              SelectionChanged="ImapMessagesGrid_SelectionChanged">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Data" Binding="{Binding DateLabel}" Width="130"/>
+                                            <DataGridTextColumn Header="Da" Binding="{Binding From}" Width="160"/>
+                                            <DataGridTextColumn Header="Oggetto" Binding="{Binding Subject}" Width="*"/>
+                                            <DataGridTextColumn Header="All." Binding="{Binding AttachLabel}" Width="40"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{StaticResource LogSectionCardStyle}">
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock DockPanel.Dock="Top" Text="Messaggio"
+                                               Style="{StaticResource SectionLabelStyle}"
+                                               Margin="0,0,0,4"/>
+                                    <TextBox x:Name="ImapMessageBodyTextBox"
+                                             Style="{StaticResource LogTextBoxStyle}"
+                                             IsReadOnly="True"
+                                             Text="Seleziona un messaggio per leggere il corpo (sola lettura)."/>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <!-- Dispositivi fidati (post-login GrandSlam) — accanto a Servizi iCloud -->
+                <TabItem x:Name="TrustedDevicesTab" Header="Dispositivi fidati (Work in progress)" IsEnabled="True">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,8"
+                                           Text="Trust Apple ID / token sessione (dopo login SRP GrandSlam)."/>
+                                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,14"
+                                           TextWrapping="Wrap"
+                                           Text="Lista 2FA Apple ID (HSA2) ≠ IDS ≠ TrustToken web. Se GSA non chiede 2FA, l’ADI attuale è già trusted: usa «Nuova identità ADI» poi «Registra in lista 2FA» (e-mail/password sotto, non Accesso)."/>
+                                <TextBlock Text="Credenziali HSA2 (solo lista 2FA)" Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,6"/>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Apple ID" VerticalAlignment="Center" Margin="0,0,12,8"/>
+                                    <TextBox x:Name="Hsa2AppleIdTextBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8"
+                                             ToolTip="E-mail Apple ID per Registra in lista 2FA — indipendente dalla scheda Accesso"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Password" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                    <PasswordBox x:Name="Hsa2PasswordBox" Grid.Row="1" Grid.Column="1"
+                                                 ToolTip="Password Apple ID (non PET). Obbligatoria per il challenge HSA2."/>
+                                </Grid>
+                                <WrapPanel>
+                                    <Button x:Name="TrustedDevicesRefreshButton"
+                                            Content="Aggiorna stato"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="140" Margin="0,0,10,8"
+                                            Click="TrustedDevicesRefreshButton_Click"/>
+                                    <Button x:Name="ApsActivateButton"
+                                            Content="Attiva Albert"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="130" Margin="0,0,10,8"
+                                            Click="ApsActivateButton_Click"
+                                            ToolTip="Albert Windows → DeviceCertificate APS"/>
+                                    <Button x:Name="ApsConnectButton"
+                                            Content="Connetti APS"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="130" Margin="0,0,10,8"
+                                            Click="ApsConnectButton_Click"
+                                            ToolTip="Courier APS: connect + push token"/>
+                                    <Button x:Name="IdsEnrollButton"
+                                            Content="Enroll IDS"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="140" Margin="0,0,10,8"
+                                            Click="IdsEnrollButton_Click"
+                                            ToolTip="Delegate PET → authenticateDS → id-register (multiplex1/FMF). Richiede APS token."/>
+                                    <Button x:Name="Hsa2NewAdiButton"
+                                            Content="Nuova identità ADI"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="160" Margin="0,0,10,8"
+                                            Click="Hsa2NewAdiButton_Click"
+                                            ToolTip="Cancella UUID/ADI locali + MidService (POST /provision?newIdentity=1). Serve se Apple non chiede più 2FA su questa macchina."/>
+                                    <Button x:Name="Hsa2RegisterButton"
+                                            Content="Registra in lista 2FA"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="180" Margin="0,0,10,8"
+                                            Click="Hsa2RegisterButton_Click"
+                                            ToolTip="GSA nativo: e-mail/password HSA2 di questa scheda + ptkn → challenge 2FA → OTP"/>
+                                    <Button x:Name="ApsDisconnectButton"
+                                            Content="Disconnetti APS"
+                                            Style="{StaticResource GhostButtonStyle}"
+                                            MinWidth="130" Margin="0,0,10,8"
+                                            Click="ApsDisconnectButton_Click"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="ApsTokenText"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Margin="0,4,0,8"
+                                           TextWrapping="Wrap"
+                                           FontFamily="Consolas"
+                                           Text="Push token APS: (non connesso)"/>
+                                <Border x:Name="IdmsaOtpPanel" Margin="0,8,0,0" Visibility="Collapsed"
+                                        BorderBrush="#33000000" BorderThickness="1" CornerRadius="6" Padding="12">
+                                    <StackPanel>
+                                        <TextBlock x:Name="IdmsaOtpTitleText"
+                                                   Text="OTP HSA2 — codice dal dispositivo Apple già fidato"
+                                                   Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,8"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <RadioButton x:Name="IdmsaOtpDeviceRadio" Content="Dispositivo attendibile"
+                                                         IsChecked="True" GroupName="IdmsaOtpMethod"
+                                                         Checked="IdmsaOtpMethodRadio_Changed"/>
+                                            <RadioButton x:Name="IdmsaOtpSmsRadio" Content="SMS"
+                                                         GroupName="IdmsaOtpMethod" Margin="16,0,0,0"
+                                                         Checked="IdmsaOtpMethodRadio_Changed"/>
+                                        </StackPanel>
+                                        <StackPanel x:Name="IdmsaOtpSmsPhonePanel" Orientation="Horizontal"
+                                                    Margin="0,0,0,8" Visibility="Collapsed">
+                                            <ComboBox x:Name="IdmsaOtpPhoneComboBox" Width="240" Margin="0,0,10,0"
+                                                      DisplayMemberPath="DisplayLabel"/>
+                                            <Button x:Name="IdmsaOtpRequestSmsButton" Content="Invia SMS"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    Click="IdmsaOtpRequestSmsButton_Click"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBox x:Name="IdmsaOtpCodeTextBox" Width="140" Margin="0,0,10,0"
+                                                     ToolTip="Codice a 6 cifre dal dispositivo Apple già fidato"/>
+                                            <Button x:Name="IdmsaOtpSubmitButton" Content="Invia OTP"
+                                                    Style="{StaticResource PrimaryButtonStyle}"
+                                                    Click="IdmsaOtpSubmitButton_Click"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock x:Name="TrustedDevicesStatusText"
+                                           Style="{StaticResource HintTextStyle}" Margin="0,10,0,0"
+                                           Text="In attesa — effettua il login."/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource LogSectionCardStyle}">
+                            <DockPanel LastChildFill="True">
+                                <TextBlock DockPanel.Dock="Top" Text="Stato trust"
+                                           Style="{StaticResource SectionLabelStyle}"
+                                           Margin="0,0,0,4"/>
+                                <TextBox x:Name="TrustedDevicesResultTextBox"
+                                         Style="{StaticResource LogTextBoxStyle}"
+                                         IsReadOnly="True"
+                                         Text="Dopo il login apparirà lo stato ADSID/PET/trust."/>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- Sync Data -->
+                <TabItem x:Name="SyncDataTab" Header="iCloud Sync Data (Work in progress)" IsEnabled="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14"
+                                           Text="Dopo login: get_account_settings espone le dataclass Sync Data (come SelectSyncDataWidget). Photos è abilitato di default; seleziona le altre categorie da recuperare."/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                    <TextBlock Text="Cartella output" Style="{StaticResource FieldLabelStyle}" Width="120"/>
+                                    <TextBox x:Name="SyncDataOutputTextBox" Width="420" Margin="0,0,10,0"/>
+                                    <Button Content="Sfoglia" Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="BrowseSyncDataOutput_Click"/>
+                                </StackPanel>
+                                <TextBlock x:Name="SyncDataServicesHintText" Style="{StaticResource FieldLabelStyle}"
+                                           Margin="0,0,0,8"
+                                           Text="Servizi Sync Data — effettua il login per caricare le dataclass disponibili."/>
+                                <WrapPanel x:Name="SyncDataServicesPanel" Margin="0,0,0,8"/>
+                                <StackPanel x:Name="SyncDataPhotosOptionsPanel"
+                                            Margin="0,0,0,14"
+                                            Visibility="Collapsed">
+                                    <CheckBox x:Name="SyncDataBuildRecordMetadataCheckBox"
+                                              Content="Photos: BuildRecordMetadata (nomi file originali PCS — lento)"
+                                              IsChecked="False"
+                                              Margin="4,0,0,0"
+                                              VerticalAlignment="Center"
+                                              ToolTip="Dopo Album/Photos.db, decifra filenameEnc/originalFilenameEnc dalle pagine CPL e li salva in decrypt_cache. Opzionale e lento su librerie grandi; non serve per Album o MMCS."/>
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="SyncDataProbeButton" Content="Recupera Sync Data"
+                                                Style="{StaticResource PrimaryButtonStyle}"
+                                                HorizontalAlignment="Left" MinWidth="200"
+                                                Click="SyncDataProbeButton_Click"/>
+                                        <ProgressBar x:Name="SyncDataProgressBar" Width="220" Height="10"
+                                                     Margin="16,0,0,0" VerticalAlignment="Center"
+                                                     Maximum="100" Value="0"
+                                                     ToolTip="Avanzamento complessivo Sync Data"/>
+                                        <TextBlock x:Name="SyncDataStatusText" Margin="12,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Style="{StaticResource HintTextStyle}"
+                                                   Text="In attesa"/>
+                                    </StackPanel>
+                                    <StackPanel x:Name="SyncDataPhasePanel" Orientation="Horizontal"
+                                                Margin="0,8,0,0" Visibility="Collapsed">
+                                        <TextBlock x:Name="SyncDataPhaseLabel" Width="100"
+                                                   VerticalAlignment="Center"
+                                                   Style="{StaticResource FieldLabelStyle}"
+                                                   Text="Fase"/>
+                                        <ProgressBar x:Name="SyncDataPhaseProgressBar" Width="220" Height="10"
+                                                     VerticalAlignment="Center"
+                                                     Maximum="100" Value="0"
+                                                     ToolTip="Stato download / decifratura in corso"/>
+                                        <TextBlock x:Name="SyncDataPhaseStatusText" Margin="12,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Style="{StaticResource HintTextStyle}"
+                                                   Text=""/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource LogSectionCardStyle}">
+                            <DockPanel LastChildFill="True">
+                                <Button DockPanel.Dock="Top" Content="Copia log"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        HorizontalAlignment="Right" Margin="0,0,0,2"
+                                        Click="CopySyncDataLog_Click"
+                                        ToolTip="Copia il testo del log della scheda attiva negli appunti"/>
+                                <TabControl x:Name="SyncDataLogTabs"
+                                            Style="{StaticResource LogTabControlStyle}"
+                                            ItemContainerStyle="{StaticResource LogTabItemStyle}">
+                                    <TabItem Header="Informazioni / Avvisi">
+                                        <RichTextBox x:Name="SyncDataInfoLogBox"
+                                                     Style="{StaticResource LogRichTextBoxStyle}">
+                                            <FlowDocument PagePadding="12,10,12,10" LineHeight="18"/>
+                                        </RichTextBox>
+                                    </TabItem>
+                                    <TabItem Header="Errori">
+                                        <RichTextBox x:Name="SyncDataErrorLogBox"
+                                                     Style="{StaticResource LogRichTextBoxStyle}">
+                                            <FlowDocument PagePadding="12,10,12,10" LineHeight="18"/>
+                                        </RichTextBox>
+                                    </TabItem>
+                                </TabControl>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+
+                <!-- Token / servizi / Quota: fuori dalle schede, sempre visibili -->
+                <Border Grid.Column="2" Style="{StaticResource SectionCardStyle}" Padding="12,12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="10"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="10"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <DockPanel LastChildFill="True">
+                            <DockPanel DockPanel.Dock="Top" LastChildFill="True" Margin="0,0,0,6">
+                                <Button DockPanel.Dock="Right"
+                                        Content="Copia"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="10,3"
+                                        MinWidth="64"
+                                        Click="CopySessionTokensButton_Click"
+                                        ToolTip="Copia i token di sessione completi negli appunti"/>
+                                <TextBlock Text="Token sessione"
+                                           Style="{StaticResource SectionLabelStyle}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                            </DockPanel>
+                            <TextBox x:Name="SessionTokensTextBox"
+                                     Style="{StaticResource LogTextBoxStyle}"
+                                     MinHeight="80"
+                                     IsReadOnly="True"
+                                     TextWrapping="Wrap"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     Text="Effettua il login per vedere i token recuperati."
+                                     ToolTip="Token di sessione completi (post-login / SPD)."/>
+                        </DockPanel>
+
+                        <DockPanel Grid.Row="2" LastChildFill="True">
+                            <DockPanel DockPanel.Dock="Top" LastChildFill="True" Margin="0,0,0,6">
+                                <Button DockPanel.Dock="Right"
+                                        Content="Copia"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="10,3"
+                                        MinWidth="64"
+                                        Click="CopySessionServicesButton_Click"
+                                        ToolTip="Copia servizi / dataclass / URL negli appunti"/>
+                                <TextBlock Text="Servizi / dataclass"
+                                           Style="{StaticResource SectionLabelStyle}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                            </DockPanel>
+                            <TextBox x:Name="SessionServicesTextBox"
+                                     Style="{StaticResource LogTextBoxStyle}"
+                                     MinHeight="80"
+                                     IsReadOnly="True"
+                                     TextWrapping="Wrap"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     Text="Effettua il login per vedere i servizi disponibili."
+                                     ToolTip="GsServiceTokens (spd.t) completi, URL endpoint per dataclass e elenco da get_account_settings."/>
+                        </DockPanel>
+
+                        <DockPanel Grid.Row="4" LastChildFill="True">
+                            <DockPanel DockPanel.Dock="Top" LastChildFill="True" Margin="0,0,0,6">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Button Content="Aggiorna"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="10,3"
+                                            MinWidth="72"
+                                            Margin="0,0,6,0"
+                                            Click="RefreshCloudQuotaButton_Click"
+                                            ToolTip="Ricarica getQuotaInfo / storageUsage* (solo lettura)"/>
+                                    <Button Content="Copia"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="10,3"
+                                            MinWidth="64"
+                                            Click="CopyCloudQuotaButton_Click"
+                                            ToolTip="Copia i dettagli spazio Cloud negli appunti"/>
+                                </StackPanel>
+                                <TextBlock Text="Dettagli Spazio Cloud"
+                                           Style="{StaticResource SectionLabelStyle}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                            </DockPanel>
+                            <TextBox x:Name="CloudQuotaTextBox"
+                                     Style="{StaticResource LogTextBoxStyle}"
+                                     MinHeight="80"
+                                     IsReadOnly="True"
+                                     TextWrapping="Wrap"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     Text="Effettua il login per caricare lo spazio iCloud."
+                                     ToolTip="Quota iCloud (getQuotaInfo, storageUsageInfo, storageUsageDetails) — solo lettura."/>
+                        </DockPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Background="#CCFFFFFF"
+                BorderBrush="#1A1B1C1F"
+                BorderThickness="0,1,0,0"
+                Padding="18,8">
+            <TextBlock Text="Copyright Giordano Sconti Forensis-Lab Development &amp; Research Sector 2026"
+                       FontFamily="Segoe UI Variable Text, Segoe UI"
+                       FontSize="11.5"
+                       Foreground="{StaticResource MutedInkBrush}"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"/>
+        </Border>
+    </Grid>
+</Window>

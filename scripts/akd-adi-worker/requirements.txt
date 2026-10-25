@@ -1,0 +1,3 @@
+anisette>=1.0.0
+unicorn>=2.0.0
+lief>=0.15.0
