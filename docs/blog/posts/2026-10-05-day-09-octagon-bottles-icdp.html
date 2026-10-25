@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>5 October 2026 &mdash; Octagon bottles, iCDP, and device PIN recovery &mdash; Forensis-Lab</title>
+  <meta
+    name="description"
+    content="Discovering Octagon: escrowproxy iCDP bottle records for trusted devices, SRP with the device PIN, BottledPeerEntropy, and Cuttlefish KeySet recovery."
+  />
+  <meta name="theme-color" content="#0c2f34" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../">Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-10-05">5 October 2026</time>
+        &middot; Day 9 &middot; Giordano Sconti
+      </p>
+      <h1>Octagon opens: bottles, iCDP records, and the trusted-device PIN</h1>
+      <p>
+        By early October the MMCS / Ford spine could rebuild an iTunes-shaped backup tree. For many
+        ADP accounts that was still not enough: zone masters and Manatee-class material sit behind
+        <strong>Octagon</strong>&mdash;Apple&rsquo;s trust circle&mdash;not behind another MMCS range.
+        On <strong>5 October 2026</strong> that layer stopped being a black box: the recoverable
+        objects were the <strong>bottles</strong> already bound to devices that had joined the circle.
+      </p>
+      <p>
+        Escrowproxy <code>get_records</code> lists Secure Backup rows. The ones that matter for
+        Octagon are the <strong>iCDP</strong> labels (<code>com.apple.icdp.record.*</code>): each is a
+        bottle tied to a previously trusted device (serial, build, remaining HSM attempts). Listing
+        is non-destructive. Recovering is not&mdash;each wrong PIN burns one of roughly ten HSM tries
+        on that record.
+      </p>
+      <p>
+        The unlock path is device-passcode SRP, not the older PCS &ldquo;dsid:dsid&rdquo; secret:
+        <code>SRP_INIT</code> / <code>RECOVER</code> with Basic email+PET, then unwrap the
+        EscrowBottle plist (PBKDF2 + AES) into <strong>BottledPeerEntropy</strong> (~72 bytes). That
+        entropy is the hinge: with it, Cuttlefish <code>fetchViableBottles</code> returns OTBottle
+        Contents that AES-GCM-open into the peer signing/encryption keys. From there the circle can
+        yield the <strong>KeySet</strong> / vault material the backup decrypt path needs&mdash;recovery
+        through a PIN you already know for a trusted device, without inventing a new peer out of thin air.
+      </p>
+      <p>
+        Two caution lights stayed on after that day. First: iCDP recover is irreversible at the HSM;
+        tooling must refuse without an explicit confirm. Second: this is the bottle path for devices
+        already in the circle. When no bottle PIN is available, the later Recovery Key / TLKShare
+        road (24 October) becomes the other door into the same Octagon vault.
+      </p>
+
+      <aside class="observe" aria-label="Code observation">
+        <p class="observe__label">In the code today</p>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/OctagonBottleRecoveryService.cs"
+          >OctagonBottleRecoveryService.cs</a
+        >
+        <pre><code>/// Unlock bottle iCDP/Octagon via escrowproxy:
+/// get_records &rarr; SRP_INIT/RECOVER with label com.apple.icdp.record.*
+/// and device passcode &rarr; EscrowBottle plist &rarr; BottledPeerEntropy (72 B).
+/// IRREVERSIBLE: max ~10 attempts per record (HSM).
+
+public static bool IsIcdpLabel(string? label) =&gt;
+    label.StartsWith("com.apple.icdp.record.", StringComparison.Ordinal);
+
+// ListIcdpBottles(get_records) &mdash; non-destructive
+// RecoverBottleAsync(..., confirmIrreversible: true) &mdash; PIN / iCSC</code></pre>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/OctagonCuttlefishService.cs"
+          >OctagonCuttlefishService.cs</a
+        >
+        <pre><code>/// fetchViableBottles &rarr; AES-GCM OTBottle with BottledPeerEntropy
+/// &rarr; peer signing / encryption keys (KeySet path for the circle).
+
+if (session.OctagonBottledPeerEntropy is not { Length: &gt; 0 })
+    return fail("BottledPeerEntropy missing &mdash; Unlock Octagon bottle first.");
+
+var raw = await InvokeAsync(..., "fetchViableBottles", ...);
+// decrypt OTBottle Contents &rarr; peer keys</code></pre>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/OctagonEscrowSrp.cs"
+          >OctagonEscrowSrp.cs</a
+        >
+        <pre><code>/// SRP-6a for iCDP/Octagon bottles:
+/// x = H(salt || H(dsid ":" passcode))  &mdash; not the PCS dsid:dsid secret</code></pre>
+      </aside>
+
+      <a class="back-link" href="../">&larr; All notes</a>
+      <aside class="diary-ai-note">
+        <p>
+          These diary entries are drafted with help from an AI coding assistant to speed up the
+          writing. If you spot inconsistencies or errors, please tell me by email:
+          <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>.
+        </p>
+      </aside>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>
