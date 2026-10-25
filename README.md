@@ -129,7 +129,40 @@ dotnet run --project src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
 
 ## Preparing a jailbroken iPhone
 
-> **Placeholder** — step-by-step jailbreak / frida-server / USB forwarding instructions will be added here in a follow-up. Until then, ensure frida-server is reachable at `FRIDA_ANISETTE_HOST` and that `akd` is running on the device.
+Assumes a **rootless** jailbreak (`/var/jb/...`). Over SSH as **root**:
+
+```sh
+ls -l /var/jb/usr/sbin/frida-server
+```
+
+Recreate the LaunchDaemon plist (LF endings, rootless)—no editor needed:
+
+```sh
+cat > /var/jb/Library/LaunchDaemons/re.frida.server.plist <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>re.frida.server</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/var/jb/usr/sbin/frida-server</string>
+		<string>-l</string>
+		<string>0.0.0.0:27042</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>3</integer>
+</dict>
+</plist>
+EOF
+```
+
+This binds **frida-server** on `0.0.0.0:27042` (all interfaces), starts at boot, and keeps it alive. From the PC set e.g. `FRIDA_ANISETTE_HOST=127.0.0.1:27042` after USB port-forward (`iproxy 27042 27042`) or use the device LAN IP.
 
 ## Other anisette backends
 
