@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>4 August 2026 &mdash; Lead byte 0x04 vs 0xC4 &mdash; Forensis-Lab</title>
+  <meta
+    name="description"
+    content="The fulcrum of a clean backup download: Ford lead 0x04 vs data leads like 0xC4, plus orphaned CloudKit files and non-Apple ciphertext."
+  />
+  <meta name="theme-color" content="#0c2f34" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../">Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-08-04">4 August 2026</time>
+        &middot; Day 7 &middot; Giordano Sconti
+      </p>
+      <h1>One nibble: when 0xC4 stopped looking like broken Ford</h1>
+      <p>
+        <strong>4 August 2026</strong> is the day a complete, clean backup download stopped being a
+        fantasy. For months we treated lead byte <strong><code>0x04</code></strong> as the sacred
+        marker of &ldquo;this host is Ford / this slice is decryptable.&rdquo; Force paths scanned for
+        <code>0x04</code>; anything else was discarded or forced through Ford open checks that
+        could not succeed.
+      </p>
+      <p>
+        The fulcrum was absurdly small: many <strong>data</strong> ChunkInfo bodies do not start with
+        <code>0x04</code> at all. They start with values such as <strong><code>0xC4</code></strong>
+        (yes&mdash;a <code>C</code> where we insisted on a <code>0</code>). Those slices are still
+        valid ciphertext for the chunk pipeline; they are simply <em>not</em> Ford CT. Once the
+        classifier stopped requiring lead-<code>0x04</code> for data gates&mdash;and kept
+        <code>0x04</code> as the typical Ford CT marker&mdash;the remaining thousands of files fell
+        into place. Side-by-side with commercial tools, reconstructions covered nearly the whole
+        inventory; the gap had been a nibble, not a missing Apple API.
+      </p>
+      <p>
+        Completeness still has honest ceilings. Some small files are
+        <strong>removed from CloudKit by Apple or third-party developers</strong>: the backup
+        inventory may still name them, but there is no longer an MMCS record / authorizeGet asset to
+        fetch&mdash;you cannot invent edge bytes that the account no longer holds. Separately, a few
+        payloads (notably some <strong>Mozilla translation / on-device AI model</strong> style
+        files we hit in testing) are encrypted under schemes that are
+        <strong>not</strong> the Apple Ford/MMCS path we reverse-engineered. Those remain opaque
+        without a different oracle; calling that a &ldquo;failed MMCS decrypt&rdquo; would be a lie.
+      </p>
+      <p>
+        So August unlocked a <em>protocol-complete</em> Apple backup download for the material that
+        still lives on MMCS&mdash;not a claim that every historical filename on earth is recoverable.
+      </p>
+
+      <aside class="observe" aria-label="Code observation">
+        <p class="observe__label">In the code today</p>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/FileGroupFillDecrypt.cs"
+          >FileGroupFillDecrypt.cs</a
+        >
+        <pre><code>// live (2026-10-09): data CI under hex(checksum21) even with
+// lead != 0x04 (e.g. C4D2...). 0x04 = typical Ford CT, not a data gate.
+
+// Map keyed by Auth checksum21: accept any lead (not only 0x04).
+// Prefer lead-0x04 only as a soft hint when scanning packed hosts.</code></pre>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/FordMmcsDecryptor.cs"
+          >FordMmcsDecryptor.cs</a
+        >
+        <pre><code>public static bool LooksLikeFordCipher(...)
+{
+    // Capture: b0=0x04; other non-ASCII leads may appear on edge
+    return slice[0] is 0x04 or &gt;= 0x01;
+}</code></pre>
+      </aside>
+
+      <a class="back-link" href="../">&larr; All notes</a>
+      <aside class="diary-ai-note">
+        <p>
+          These diary entries are drafted with help from an AI coding assistant to speed up the
+          writing. If you spot inconsistencies or errors, please tell me by email:
+          <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>.
+        </p>
+      </aside>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>

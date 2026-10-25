@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>16 June 2026 &mdash; Finding the IKM &mdash; Forensis-Lab</title>
+  <meta
+    name="description"
+    content="How the Ford IKM is obtained: contents.protectionInfo unwrap with the zone master, not a random EncryptionKey from the file list."
+  />
+  <meta name="theme-color" content="#0c2f34" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../">Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-06-16">16 June 2026</time>
+        &middot; Day 5 &middot; Giordano Sconti
+      </p>
+      <h1>IKM: the key that opens Ford before any chunk makes sense</h1>
+      <p>
+        After MMCS edge GETs started returning real bytes, decrypt still failed in bulk.
+        On <strong>16 June 2026</strong> the missing piece was not another range formula&mdash;it was
+        the <strong>IKM</strong> (input keying material) that Ford AES-SIV expects before per-chunk
+        keys exist at all.
+      </p>
+      <p>
+        Live behaviour (and later the EPB/oracle traces) lined up on a narrow rule:
+        take the asset&rsquo;s <strong><code>contents.protectionInfo</code></strong> wrap from the owned
+        CloudKit record, unwrap it with the <strong>zone master</strong> (NIST KDF label for wrapping),
+        and that unwrapped key is the IKM. It is <em>not</em> the casual
+        <code>EncryptionKey</code> / file-list key some code paths were tempted to reuse&mdash;those
+        look related on paper and poison Ford open checks in practice.
+      </p>
+      <p>
+        Only with a correct IKM does <code>DeriveFordKeyMaterial</code> (HKDF-SHA256, salt
+        <code>PCSMMCS2</code>, empty info) produce the material that opens Ford ciphertext hosts.
+        Without it, every later argument about ChunkInfo offsets is noise.
+      </p>
+
+      <aside class="observe" aria-label="Code observation">
+        <p class="observe__label">In the code today</p>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/AssetMaterialPipeline.cs"
+          >AssetMaterialPipeline.cs</a
+        >
+        <pre><code>/// FillFordIkmFromContents:
+/// 1) wrap = map["contents"].protectionInfo (owned Record + sig)
+/// 2) IKM = AES-KW(NISTKDF(ZM, "wrapping key wrap me"), wrap)
+
+public static AssetCkFile FillFordIkmFromContents(...)</code></pre>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/FordMmcsDecryptor.cs"
+          >FordMmcsDecryptor.cs</a
+        >
+        <pre><code>// Ford key derivation &mdash; salt=PCSMMCS2, info empty
+public static byte[] DeriveFordKeyMaterial(ReadOnlySpan&lt;byte&gt; fileEncryptionKey)
+{
+    return HKDF.DeriveKey(HashAlgorithmName.SHA256, fileEncryptionKey.ToArray(),
+        0x40, salt: PcsMmcs2Salt, info: []);
+}</code></pre>
+      </aside>
+
+      <a class="back-link" href="../">&larr; All notes</a>
+      <aside class="diary-ai-note">
+        <p>
+          These diary entries are drafted with help from an AI coding assistant to speed up the
+          writing. If you spot inconsistencies or errors, please tell me by email:
+          <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>.
+        </p>
+      </aside>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>

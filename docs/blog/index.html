@@ -36,8 +36,7 @@
       <h1>Notes</h1>
       <p>
         A research diary of the last seven months&mdash;starting <strong>25 March 2026</strong>&mdash;tracing
-        how an ADP-protected backup need became iCloudKit Extractor. Entries will fill in as the
-        chronicle is written; newest bookends sit at the top.
+        how an ADP-protected backup need became iCloudKit Extractor. Newest bookends sit at the top.
       </p>
     </header>
 
@@ -52,12 +51,52 @@
         </a>
       </li>
       <li>
-        <a href="./posts/2026-10-24-day-05-recovery-key-tlkshares.html">
-          <time class="date" datetime="2026-10-24">24 Oct 2026 &middot; Day 5</time>
+        <a href="./posts/2026-10-24-day-09-recovery-key-tlkshares.html">
+          <time class="date" datetime="2026-10-24">24 Oct 2026 &middot; Day 9</time>
           <h2>Recovery Key: dumping TLKShares and opening the account vault</h2>
           <p>
             Octagon RK peer via HKDF, <code>fetchRecoverableTLKShares</code>, ECIES unwrap to Manatee/PCS
             TLKs&mdash;account recovery when ADP blocks the commercial road.
+          </p>
+        </a>
+      </li>
+      <li>
+        <a href="./posts/2026-08-28-day-08-itunes-layout.html">
+          <time class="date" datetime="2026-08-28">28 Aug 2026 &middot; Day 8</time>
+          <h2>Closing the loop: an iTunes-shaped backup on disk</h2>
+          <p>
+            <code>Backup/xx/fileID</code>, <code>Manifest.db</code>, Domain loops, and iTunes sidecars
+            so forensic tools see a familiar tree.
+          </p>
+        </a>
+      </li>
+      <li>
+        <a href="./posts/2026-08-04-day-07-c4-vs-04.html">
+          <time class="date" datetime="2026-08-04">4 Aug 2026 &middot; Day 7</time>
+          <h2>One nibble: when 0xC4 stopped looking like broken Ford</h2>
+          <p>
+            Lead <code>0x04</code> vs <code>0xC4</code> as the fulcrum of a clean download&mdash;plus orphaned
+            CloudKit files and non-Apple ciphertext (e.g. Mozilla translation models).
+          </p>
+        </a>
+      </li>
+      <li>
+        <a href="./posts/2026-07-10-day-06-ford-chunkinfo.html">
+          <time class="date" datetime="2026-07-10">10 Jul 2026 &middot; Day 6</time>
+          <h2>Ford vs ChunkInfo: forcing the plan, then learning to wait</h2>
+          <p>
+            AuthorizeGet FileGroups, failed force/demux paths, and checksum21 caching when chunk data
+            arrives after Ford gates.
+          </p>
+        </a>
+      </li>
+      <li>
+        <a href="./posts/2026-06-16-day-05-ikm.html">
+          <time class="date" datetime="2026-06-16">16 Jun 2026 &middot; Day 5</time>
+          <h2>IKM: the key that opens Ford before any chunk makes sense</h2>
+          <p>
+            <code>contents.protectionInfo</code> unwrap with the zone master &rarr; IKM &rarr; HKDF
+            <code>PCSMMCS2</code>&mdash;not the file-list EncryptionKey trap.
           </p>
         </a>
       </li>
@@ -67,7 +106,7 @@
           <h2>MMCS opens: edge-content and the byte-range circus</h2>
           <p>
             Past Lock into MMCS: edge hosts, Ford vs chunk data in the same ranges, life beyond
-            EPB/jailbreak&mdash;and a September coda on lead byte <code>0x04</code> vs <code>0xC4</code>.
+            EPB/jailbreak&mdash;with August&rsquo;s lead-byte story foreshadowed.
           </p>
         </a>
       </li>

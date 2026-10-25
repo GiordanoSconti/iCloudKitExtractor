@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>10 July 2026 &mdash; Ford, ChunkInfo, and the caching war &mdash; Forensis-Lab</title>
+  <meta
+    name="description"
+    content="AuthorizeGet FileGroups: Ford hosts vs data ChunkInfo, failed force paths, and why a chunk cache became mandatory when data arrived late."
+  />
+  <meta name="theme-color" content="#0c2f34" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../">Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-07-10">10 July 2026</time>
+        &middot; Day 6 &middot; Giordano Sconti
+      </p>
+      <h1>Ford vs ChunkInfo: forcing the plan, then learning to wait</h1>
+      <p>
+        With an IKM in hand, <strong>10 July 2026</strong> was about reading the
+        <strong>AuthorizeGet / FileGroup</strong> plan the way backupd does: some edge hosts are
+        <strong>Ford</strong> material (key blobs), others are <strong>ChunkInfo</strong>-addressed
+        data slices (offset/length + checksum21). Refs in the group say which chunk belongs to which
+        logical file. Confuse the two and you decrypt the wrong species of bytes with perfect confidence.
+      </p>
+      <p>
+        The first instinct was to <strong>force</strong> the obstacle&mdash;guess windows, re-slice
+        hosts, plant every lead-<code>0x04</code> candidate into the map, try geometric demux when
+        Auth offsets lied. Those paths burned weeks. They sometimes opened a file; they also
+        <em>poisoned</em> caches with Ford-shaped prefixes sitting where data should be, so later
+        retries failed even worse.
+      </p>
+      <p>
+        The structural fix was humbler: treat MMCS like a store that can deliver
+        <strong>chunk data after</strong> you already saw the Ford gate. We introduced
+        <strong>caching keyed by checksum21</strong> (on-disk <code>.chunks/</code> style maps) so a
+        FillChunks pass can bind Ford keys first, then attach data when the matching body finally
+        lands&mdash;exactly the order live captures showed, and the opposite of &ldquo;one GET must
+        finish the file.&rdquo;
+      </p>
+      <p>
+        By midsummer the pipeline shape was clear (Pipe A Ford inject, Pipe B data fill, optional
+        Pipe C chunkEncryptionKey). Completeness was still not. That fight continues into August,
+        when a single lead byte finally explained the stubborn tail.
+      </p>
+
+      <aside class="observe" aria-label="Code observation">
+        <p class="observe__label">In the code today</p>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/LiveFillPipeline.cs"
+          >LiveFillPipeline.cs</a
+        >
+        <pre><code>// Ford: SpillOpen size == ctLen, head 0x04 &rarr; .chunks/hex(gate)
+// Data: refs &rarr; body/CI (PlantAuthChecksumSlices / FillChunks)
+// Late OID host body &rarr; Put &rarr; packScan(IKM) &rarr; .chunks + retry assemble</code></pre>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/FileGroupFillDecrypt.cs"
+          >FileGroupFillDecrypt.cs</a
+        >
+        <pre><code>// FillChunks #1 HAS-Ford &rarr; DecryptFordKeys+inject
+// FillChunks #2 data attach (slices may arrive after Ford)
+// Cache data under hex(checksum21); refuse Ford-prefix poison in .chunks
+
+if (UbChunkBuilder.IsAuthDataChunk(ch)
+    &amp;&amp; IsFordPrefixPoison(slice, fordIkm, fordCtLens))
+{
+    map.Remove(sigKey);  // do not poison .chunks
+}</code></pre>
+      </aside>
+
+      <a class="back-link" href="../">&larr; All notes</a>
+      <aside class="diary-ai-note">
+        <p>
+          These diary entries are drafted with help from an AI coding assistant to speed up the
+          writing. If you spot inconsistencies or errors, please tell me by email:
+          <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>.
+        </p>
+      </aside>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>

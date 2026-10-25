@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>28 August 2026 &mdash; Rebuilding an iTunes-style backup &mdash; Forensis-Lab</title>
+  <meta
+    name="description"
+    content="From decrypted MMCS assets to Backup/xx/fileID, Manifest.db, and iTunes sidecars so forensic tools see a familiar backup tree."
+  />
+  <meta name="theme-color" content="#0c2f34" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../">Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-08-28">28 August 2026</time>
+        &middot; Day 8 &middot; Giordano Sconti
+      </p>
+      <h1>Closing the loop: an iTunes-shaped backup on disk</h1>
+      <p>
+        Decrypting MMCS assets is not the same as having a backup a forensic workstation can open.
+        On <strong>28 August 2026</strong> the work shifted from edge crypto to
+        <strong>layout</strong>: write files the way a local iTunes / Finder backup expects them, so
+        downstream tools see <code>Backup/</code>, hashed file IDs, and a real
+        <strong>Manifest.db</strong>.
+      </p>
+      <p>
+        The download loop became domain-centric: for each Domain / fileList, authorizeGet and decrypt
+        the listed assets, then place plaintext under <code>Backup/xx/&lt;fileID&gt;</code> while
+        updating SQLite rows. Manifest material itself arrives as MMCS objects (<code>MA:</code>
+        records); after decrypt you want SQLite magic, not a leftover ciphertext stub. Sidecars
+        (<strong>Info.plist</strong>, <strong>Status.plist</strong>, <strong>Manifest.plist</strong>)
+        finish the illusion of a device backup folder that other suites already know how to parse.
+      </p>
+      <p>
+        Parallelism here is careful: several Domains can run, but each keeps its own MMCS session
+        shard so FileGroup caches do not cross-contaminate&mdash;the summer&rsquo;s lesson applied to
+        the filesystem stage.
+      </p>
+
+      <aside class="observe" aria-label="Code observation">
+        <p class="observe__label">In the code today</p>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Backup/BackupFilesystemWriter.cs"
+          >BackupFilesystemWriter.cs</a
+        >
+        <pre><code>/// Writes files as Backup/xx/fileID and updates Manifest.db (iTunes-style).
+public sealed class BackupFilesystemWriter : IAsyncDisposable
+{
+    public static async Task&lt;BackupFilesystemWriter&gt; OpenAsync(
+        string snapshotDirectory, CancellationToken ct = default)
+    {
+        var dbPath = Path.Combine(snapshotDirectory, "Manifest.db");
+        // CREATE TABLE ... Files / Properties (SQLite)
+    }
+}</code></pre>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Download/BackupDownloadService.cs"
+          >BackupDownloadService.cs</a
+        >
+        <pre><code>// per Domain -&gt; FL download/decrypt -&gt; Assets -&gt; next Domain
+// skeleton Manifest.db -&gt; Backup/
+// sidecar: Info.plist + Status.plist + Manifest.plist
+await ItunesBackupSidecarWriter.WriteAsync(...);</code></pre>
+      </aside>
+
+      <a class="back-link" href="../">&larr; All notes</a>
+      <aside class="diary-ai-note">
+        <p>
+          These diary entries are drafted with help from an AI coding assistant to speed up the
+          writing. If you spot inconsistencies or errors, please tell me by email:
+          <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>.
+        </p>
+      </aside>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>
