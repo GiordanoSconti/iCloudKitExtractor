@@ -129,6 +129,8 @@ dotnet run --project src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
 
 ## Preparing a jailbroken iPhone
 
+Install **Frida** (frida-server) and **OpenSSH** from **Sileo** on the device first.
+
 Assumes a **rootless** jailbreak (`/var/jb/...`). Over SSH as **root**:
 
 ```sh
