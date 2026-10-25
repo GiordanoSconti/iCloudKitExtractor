@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>11 April 2026 — Snapshots, EPB 403, and backupProperties — Forensis-Lab</title>
+  <title>11 April 2026 &mdash; Snapshots, EPB 403, and backupProperties &mdash; Forensis-Lab</title>
   <meta
     name="description"
-    content="Resuming after March: snapshot fetch fighting the IDE, EPB’s iOS 26 release still blocked by ADP 403, and first captures past snapshot listing."
+    content="Resuming after March: snapshot fetch fighting the IDE, EPB&rsquo;s iOS 26 release still blocked by ADP 403, and first captures past snapshot listing."
   />
   <meta name="theme-color" content="#0c2f34" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -35,12 +35,12 @@
     <article class="article">
       <p class="article__meta">
         <time datetime="2026-04-11">11 April 2026</time>
-        Â· Day 2 Â· Giordano Sconti
+        &middot; Day 2 &middot; Giordano Sconti
       </p>
       <h1>Snapshots on the wire, ADP still a wall</h1>
       <p>
         I picked the path back up on <strong>11 April 2026</strong>. By then I had reached the
-        endpoints that start a snapshot recovery—and the friction was anything but mild. Every
+        endpoints that start a snapshot recovery&mdash;and the friction was anything but mild. Every
         request I sent to kick off snapshot retrieval seemed to rewrite the surrounding code:
         the coding agent kept pulling in fragments that resembled material published online,
         so the tree drifted under me while I was still trying to stabilize a single flow.
@@ -48,7 +48,7 @@
       <p>
         Meanwhile I checked whether Elcomsoft had moved on their side. They had: a new Phone Breaker
         build could download backups for <strong>iOS 26</strong>. Worth a try. With
-        <strong>ADP</strong> still on, it went nowhere—responses came back
+        <strong>ADP</strong> still on, it went nowhere&mdash;responses came back
         <strong>HTTP 403</strong>. Commercial recovery of that protected backup remained closed.
       </p>
       <p>
@@ -56,7 +56,7 @@
         oracle for <em>how</em> they had unblocked snapshot access at all. Reconstructing the
         outbound network story was hard; the traffic did not hand you a clean playbook. Still,
         enough captures landed that I could at least get past
-        <strong>snapshot enumeration</strong>—list what was there, move one step further than
+        <strong>snapshot enumeration</strong>&mdash;list what was there, move one step further than
         March.
       </p>
       <p>
@@ -66,14 +66,14 @@
       </p>
       <p>
         Progress, then, was uneven: snapshots visible, ADP still denying the commercial path,
-        and the identity material inside backup metadata still locked—waiting for later months.
+        and the identity material inside backup metadata still locked&mdash;waiting for later months.
       </p>
 
       <aside class="observe" aria-label="Code observation">
         <p class="observe__label">In the code today</p>
         <p>
           <code>backupProperties</code> is no longer a mystery blob: it is a named CloudKit field
-          decrypted only after ShareProtection / PCS material is in hand—exactly the door that was
+          decrypted only after ShareProtection / PCS material is in hand&mdash;exactly the door that was
           still shut in April.
         </p>
         <a
@@ -81,13 +81,13 @@
           href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Backup/SnapshotBackupPropertiesDecryptor.cs"
           >SnapshotBackupPropertiesDecryptor.cs</a
         >
-        <pre><code>/// ShareProtection zona/record â†’ CUWK(label=backupProperties) â†’ PCSFP-GCM
+        <pre><code>/// ShareProtection zona/record &rarr; CUWK(label=backupProperties) &rarr; PCSFP-GCM
 public const string FieldName = "backupProperties";
 
-// Lockdown.* — UDID hardware, modello, seriale (from decrypted plist)</code></pre>
+// Lockdown.* &mdash; UDID hardware, modello, seriale (from decrypted plist)</code></pre>
       </aside>
 
-      <a class="back-link" href="../">â† All notes</a>
+      <a class="back-link" href="../">&larr; All notes</a>
     <aside class="diary-ai-note">
       <p>
         These diary entries are drafted with help from an AI coding assistant to speed up the
@@ -100,8 +100,8 @@ public const string FieldName = "backupProperties";
 
   <footer>
     <div class="inner">
-      <span>Â© Forensis-Lab Â· Giordano Sconti</span>
-      <span><a href="../">Notes</a> Â· <a href="../../">Home</a></span>
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
     </div>
   </footer>
 </body>
