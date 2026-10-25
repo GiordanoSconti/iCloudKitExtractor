@@ -162,6 +162,20 @@ cat > /var/jb/Library/LaunchDaemons/re.frida.server.plist <<'EOF'
 EOF
 ```
 
+Normalize line endings, convert the plist to binary, then (re)load the daemon:
+
+```sh
+tr -d '\r' < /var/jb/Library/LaunchDaemons/re.frida.server.plist > /tmp/frida.plist
+mv /tmp/frida.plist /var/jb/Library/LaunchDaemons/re.frida.server.plist
+plutil -convert binary1 /var/jb/Library/LaunchDaemons/re.frida.server.plist
+killall frida-server 2>/dev/null
+launchctl bootout system /var/jb/Library/LaunchDaemons/re.frida.server.plist 2>/dev/null
+launchctl bootstrap system /var/jb/Library/LaunchDaemons/re.frida.server.plist
+launchctl enable system/re.frida.server
+launchctl kickstart -k system/re.frida.server
+ps aux | grep '[f]rida-server'
+```
+
 This binds **frida-server** on `0.0.0.0:27042` (all interfaces), starts at boot, and keeps it alive. From the PC set e.g. `FRIDA_ANISETTE_HOST=127.0.0.1:27042` after USB port-forward (`iproxy 27042 27042`) or use the device LAN IP.
 
 ## Other anisette backends
