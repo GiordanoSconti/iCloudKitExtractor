@@ -2,6 +2,8 @@
 
 **Public experimental phase** — a WPF (.NET 10) app for iCloud sign-in, device backup listing, and download via CloudKit/MMCS.
 
+![iCloudKit Extractor application](docs/press/assets/linkedin-app-ike.png)
+
 > Research / lab software. Not a finished product: undocumented Apple APIs, account-ban risk, no warranty. Use only with **your own** Apple ID and at your own risk.
 
 ## About me
@@ -39,6 +41,8 @@ If you want to try the software before running your own anisette stack, contact 
 ## Github Page
 
 https://giordanosconti.github.io/iCloudKitExtractor/
+
+![iCloudKit Extractor GitHub Pages](docs/press/assets/github-pages-home.png)
 
 ## Important note: Recovery Key & Octagon
 
