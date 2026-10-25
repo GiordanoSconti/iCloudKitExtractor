@@ -1,13 +1,13 @@
-# Anisette Bridge (CGNAT → IP pubblico Windows)
+# Anisette Bridge (CGNAT → public Windows IP)
 
-Quando il Mac è dietro **CGNAT** (Vodafone Station) e Windows ha **IP pubblico + port forwarding**, il Mac non può ricevere connessioni in entrata. Il **client bridge** sul Mac si connette in **uscita** al server bridge su Windows; l’app parla solo con `http://127.0.0.1:6970` in locale.
+When the Mac is behind **CGNAT** (e.g. Vodafone Station) and Windows has a **public IP + port forwarding**, the Mac cannot receive inbound connections. The **bridge client** on the Mac connects **outbound** to the bridge server on Windows; the app only talks to `http://127.0.0.1:6970` locally.
 
 ```
-iCloudKitExtractor ──HTTP──► Bridge Server (Windows :6970 locale)
+iCloudKitExtractor ──HTTP──► Bridge Server (Windows :6970 local)
                                     │
-                              TCP :6971 (IP pubblico, port-forward)
+                              TCP :6971 (public IP, port-forward)
                                     │
-                                    ▼ (connessione in uscita)
+                                    ▼ (outbound connection)
                             Bridge Client (Mac)
                                     │
                               HTTP :6969
@@ -15,67 +15,67 @@ iCloudKitExtractor ──HTTP──► Bridge Server (Windows :6970 locale)
                          Docker anisette-v3
 ```
 
-Windows **non** usa CoreADI né AnisetteServer locale in questo scenario.
+Windows does **not** use CoreADI or a local AnisetteServer in this scenario.
 
-## 1. Sul Mac — Docker anisette
+## 1. On the Mac — Docker anisette
 
 ```bash
-sed -i '' $'s/\r$//' setup-anisette-v3.sh   # se copiato da Windows
+sed -i '' $'s/\r$//' setup-anisette-v3.sh   # if copied from Windows
 bash ./setup-anisette-v3.sh
 curl -s http://127.0.0.1:6969/ | head -c 200
 ```
 
-## 2. Sul Windows — bridge server
+## 2. On Windows — bridge server
 
 ```powershell
 .\scripts\start-anisette-bridge-server.ps1
 ```
 
-Alla prima esecuzione crea `%AppData%\iCloudKitExtractor\bridge-token.txt`.
+On first run this creates `%AppData%\iCloudKitExtractor\bridge-token.txt`.
 
 **Router (port forwarding):**
 
-| Esterno | Interno | Protocollo |
+| External | Internal | Protocol |
 |---------|---------|------------|
-| `6971` | IP PC Windows `:6971` | TCP |
+| `6971` | Windows PC IP `:6971` | TCP |
 
-Firewall Windows: consenti inbound TCP **6971**.
+Windows Firewall: allow inbound TCP **6971**.
 
-Il server espone:
+The server exposes:
 
-| Porta | Bind | Uso |
+| Port | Bind | Use |
 |-------|------|-----|
-| `6971` | `0.0.0.0` | Client Mac (internet) |
-| `6970` | `127.0.0.1` | Solo app locale |
+| `6971` | `0.0.0.0` | Mac client (internet) |
+| `6970` | `127.0.0.1` | Local app only |
 
-## 3. Sul Mac — bridge client
+## 3. On the Mac — bridge client
 
-Copia il token da Windows (`%AppData%\iCloudKitExtractor\bridge-token.txt`).
+Copy the token from Windows (`%AppData%\iCloudKitExtractor\bridge-token.txt`).
 
-**Se hai copiato gli script dal PC (errore `bash\r` o `pipefail^M`):**
+**If you copied scripts from the PC (`bash\r` or `pipefail^M` errors):**
 
 ```bash
 sed -i '' $'s/\r$//' setup-anisette-v3.sh start-anisette-bridge-client.sh
 chmod +x *.sh
 ```
 
-Oppure: `bash fix-line-endings.sh setup-anisette-v3.sh start-anisette-bridge-client.sh`
+Or: `bash fix-line-endings.sh setup-anisette-v3.sh start-anisette-bridge-client.sh`
 
 ```bash
-export ANISETTE_BRIDGE_SERVER_HOST="IP_PUBBLICO_STATICO_WINDOWS"
-export ANISETTE_BRIDGE_TOKEN="incolla-token-da-bridge-token.txt"
+export ANISETTE_BRIDGE_SERVER_HOST="STATIC_PUBLIC_WINDOWS_IP"
+export ANISETTE_BRIDGE_TOKEN="paste-token-from-bridge-token.txt"
 bash start-anisette-bridge-client.sh
 ```
 
-Output atteso: `Registrato — in attesa di comandi fetch…`
+Expected output: `Registered — waiting for fetch commands…`
 
-## 4. Configura l’app
+## 4. Configure the app
 
 ```powershell
 .\scripts\configure-bridge-anisette.ps1 -AuthMode iphone
 ```
 
-Oppure `%AppData%\iCloudKitExtractor\anisette.json`:
+Or edit `%AppData%\iCloudKitExtractor\anisette.json`:
 
 ```json
 {
@@ -84,7 +84,7 @@ Oppure `%AppData%\iCloudKitExtractor\anisette.json`:
 }
 ```
 
-## 5. Verifica
+## 5. Verify
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:6970/health
@@ -93,42 +93,42 @@ Invoke-RestMethod http://127.0.0.1:6970/health
 .\scripts\configure-bridge-anisette.ps1 -TestOnly
 ```
 
-All’avvio iCloudKitExtractor: `MD-M remoto` diverso da `MD-M Windows`, flow iPhone attivo.
+When starting iCloudKitExtractor: remote `MD-M` differs from Windows `MD-M`, iPhone flow active.
 
-## Protocollo (TCP newline JSON)
+## Protocol (TCP newline JSON)
 
 1. Mac → `register` + token + `anisetteUrl`
 2. Windows → `registered` ok
-3. Windows → `fetch` + id (su richiesta HTTP GET `/`)
-4. Mac → GET docker locale → `fetchResult` + body JSON anisette
+3. Windows → `fetch` + id (on HTTP GET `/` request)
+4. Mac → GET local docker → `fetchResult` + anisette JSON body
 
 ## Troubleshooting
 
-| Problema | Soluzione |
+| Problem | Solution |
 |----------|-----------|
-| `Nessun client Mac connesso` | Client non avviato, token errato, port-forward 6971 |
-| `Token non valido` | Allinea `ANISETTE_BRIDGE_TOKEN` Mac/Windows |
-| `Timeout 30s` | Docker anisette spento sul Mac |
-| Probe MD-M uguale a Windows | Stai ancora usando `:6969` locale, usa `:6970` bridge |
+| `No Mac client connected` | Client not running, wrong token, port-forward 6971 |
+| `Invalid token` | Align `ANISETTE_BRIDGE_TOKEN` on Mac/Windows |
+| `Timeout 30s` | Docker anisette stopped on Mac |
+| MD-M probe same as Windows | Still using local `:6969`, use bridge `:6970` |
 
-## Variabili d’ambiente
+## Environment variables
 
 **Server (Windows):**
 
-- `ANISETTE_BRIDGE_TOKEN` — obbligatorio
+- `ANISETTE_BRIDGE_TOKEN` — required
 - `ANISETTE_BRIDGE_TCP_PORT` — default `6971`
 - `ANISETTE_BRIDGE_HTTP_PORT` — default `6970`
 
 **Client (Mac):**
 
-- `ANISETTE_BRIDGE_SERVER_HOST` — IP pubblico Windows
+- `ANISETTE_BRIDGE_SERVER_HOST` — Windows public IP
 - `ANISETTE_BRIDGE_SERVER_PORT` — default `6971`
-- `ANISETTE_BRIDGE_TOKEN` — uguale al server
+- `ANISETTE_BRIDGE_TOKEN` — same as server
 - `ANISETTE_LOCAL_URL` — default `http://127.0.0.1:6969/`
 
-## Pubblicazione client Mac (opzionale)
+## Publishing Mac client (optional)
 
 ```bash
 dotnet publish src/AnisetteBridge.Client/AnisetteBridge.Client.csproj -c Release -r osx-arm64 --self-contained
-# bin in src/AnisetteBridge.Client/bin/Release/net10.0/osx-arm64/publish/
+# output in src/AnisetteBridge.Client/bin/Release/net10.0/osx-arm64/publish/
 ```

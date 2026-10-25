@@ -1,62 +1,62 @@
-# Anisette e modalità auth (EPB vs Docker)
+# Anisette and auth modes (reference iPhone vs Docker)
 
-> **Mac dietro CGNAT?** Vedi [ANISETTE_BRIDGE.md](ANISETTE_BRIDGE.md) per il tunnel bridge.  
-> **Obiettivo EPB (emulazione flusso interno akd):** [IPHONE_INTERNAL_FLOW.md](IPHONE_INTERNAL_FLOW.md) · [EPB_IOS_ADI.md](EPB_IOS_ADI.md).  
-> **Protocollo Apple MidService:** [APPLE_MIDSERVICE_PROVISIONING.md](APPLE_MIDSERVICE_PROVISIONING.md).
+> **Mac behind CGNAT?** See [ANISETTE_BRIDGE.md](ANISETTE_BRIDGE.md) for the bridge tunnel.  
+> **Goal: emulated internal akd flow:** [IPHONE_INTERNAL_FLOW.md](IPHONE_INTERNAL_FLOW.md).  
+> **Apple MidService protocol:** [APPLE_MIDSERVICE_PROVISIONING.md](APPLE_MIDSERVICE_PROVISIONING.md).
 
-## Cosa fa EPB (reale)
+## What real iPhone/akd provisioning looks like
 
-EPB usa **provisioning Apple ufficiale** con identità **iPhone / akd** coerente end-to-end:
+Official Apple provisioning with a consistent **iPhone / akd** identity end-to-end (as seen in live device or MITM reference traffic):
 
-| Campo | EPB (esempio capture) |
+| Field | Reference (example capture) |
 |-------|-------------------------|
 | `X-MMe-Client-Info` | `<iPhone9,3> … com.apple.akd/1.0>` |
-| `X-Apple-I-MD-M` | `SzhEUGjn…` (legato al provisioning iOS) |
+| `X-Apple-I-MD-M` | `SzhEUGjn…` (bound to iOS provisioning) |
 | `cpd.capp` | `com.apple.akd` |
 | `cpd.prtn` | `iPhone9,3` |
 
-`MD-M`, `MD-LU`, `cpd` e header HTTP devono essere **tutti** della stessa identità iOS provisionata.
+`MD-M`, `MD-LU`, `cpd`, and HTTP headers must **all** belong to the same provisioned iOS identity.
 
-## Cosa fa dadoum/anisette-v3-server (Docker)
+## What dadoum/anisette-v3-server (Docker) does
 
-Il container Docker su Mac **non** replica EPB. Provisiona come **Mac / Xcode**:
+The Docker container on Mac does **not** replicate iPhone/akd provisioning. It provisions as **Mac / Xcode**:
 
 ```json
 "X-MMe-Client-Info": "<MacBookPro13,2> <macOS;…> <com.apple.dt.Xcode/…>",
 "X-Apple-I-MD-M": "KxBNsHBG…"
 ```
 
-È anisette Apple reale, ma identità **Mac**, non iPhone/akd.
+It is real Apple anisette, but a **Mac** identity, not iPhone/akd.
 
-### Perché `authMode: iphone` fallisce con Docker
+### Why `authMode: iphone` fails with Docker
 
-Con `authMode: iphone` l'app invia `cpd` e header **akd iPhone**, ma `MD-M` arriva dal Docker **Mac**.  
-`GsService2 init` può passare; **`GsService2 complete` → ec=-22410** perché Apple verifica la coerenza identità.
+With `authMode: iphone` the app sends **akd iPhone** `cpd` and headers, but `MD-M` comes from **Mac** Docker.  
+`GsService2 init` may succeed; **`GsService2 complete` → ec=-22410** because Apple checks identity consistency.
 
-**Non è un bug del bridge** — è un mismatch tra identità provisionata (Mac) e identità dichiarata (iPhone).
+**This is not a bridge bug** — it is a mismatch between provisioned identity (Mac) and declared identity (iPhone).
 
-## Cosa funziona oggi su Windows
+## What works today on Windows
 
-### `hybrid` (default, consigliato)
+### `hybrid` (default, recommended)
 
-| Step | Profilo |
+| Step | Profile |
 |------|---------|
 | SRP init/complete | **AuthKitWin** + CoreADI Windows |
 | 2FA validate / authenticate | AuthKitWin |
-| ckAppInit | Anisette remota (anche Docker) per header iPhone |
+| ckAppInit | Remote anisette (including Docker) for iPhone headers |
 
-Login e backup funzionano senza anisette iPhone reale per il SRP.
+Login and backup work without real iPhone anisette for SRP.
 
-### `iphone` (come EPB end-to-end)
+### `iphone` (end-to-end like real akd)
 
-Richiede anisette con **provisioning iPhone/akd**, non dadoum docker:
+Requires anisette with **iPhone/akd provisioning**, not dadoum docker:
 
-- Omnisette / server che espone `X-MMe-Client-Info` con `com.apple.akd`
-- `MD-M` diverso da Windows **e** identità coerente con akd nel JSON
+- Omnisette / server exposing `X-MMe-Client-Info` with `com.apple.akd`
+- `MD-M` different from Windows **and** identity consistent with akd in the JSON
 
-Se il probe rileva Mac/Xcode nel JSON remoto, l'app **non** attiva il flow iphone e suggerisce hybrid.
+If the probe detects Mac/Xcode in remote JSON, the app does **not** enable the iphone flow and suggests hybrid.
 
-## Setup Docker (solo per hybrid post-login / header CloudKit)
+## Docker setup (hybrid post-login / CloudKit headers only)
 
 ```bash
 bash scripts/mac/setup-anisette-v3.sh
@@ -69,27 +69,27 @@ Bridge (CGNAT):
 .\scripts\configure-bridge-anisette.ps1 -AuthMode hybrid
 ```
 
-## Verifica all'avvio
+## Startup verification
 
 ```
 MD-M Windows: x5VRHo8M…
-MD-M remoto:  KxBNsHBG…   (≠ Windows, OK per hybrid)
+MD-M remote:  KxBNsHBG…   (≠ Windows, OK for hybrid)
 Flow hybrid: SRP/2FA AuthKitWin → ckAppInit iPhone
 ```
 
-Se vedi:
+If you see:
 
 ```
-authMode=iphone ma anisette = Mac/Xcode (docker) → non è EPB
+authMode=iphone but anisette = Mac/Xcode (docker) → not iPhone/akd provisioning
 ```
 
-→ passa a `authMode: hybrid` in `anisette.json`.
+→ switch to `authMode: hybrid` in `anisette.json`.
 
 ## Troubleshooting
 
-| Sintomo | Causa |
+| Symptom | Cause |
 |---------|--------|
-| `ec=-22410` complete con docker + `authMode: iphone` | MD-M Mac + cpd akd iPhone — usa **hybrid** |
-| `ec=-22410` init con `:6969` locale | CoreADI Windows spoof — usa bridge o hybrid |
-| EPB funziona, noi no in iphone | EPB ha provisioning iOS integrato; docker no |
-| Login OK hybrid, backup fallisce | Controlla `ckAppInit` e `get_account_settings` / `cloudKitToken` |
+| `ec=-22410` complete with docker + `authMode: iphone` | Mac MD-M + akd iPhone cpd — use **hybrid** |
+| `ec=-22410` init with local `:6969` | CoreADI Windows spoof — use bridge or hybrid |
+| Reference iPhone flow works, ours fails in iphone mode | Real akd has integrated iOS provisioning; docker does not |
+| Login OK hybrid, backup fails | Check `ckAppInit` and `get_account_settings` / `cloudKitToken` |

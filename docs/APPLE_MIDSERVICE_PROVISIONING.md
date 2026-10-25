@@ -1,46 +1,46 @@
-# Apple GrandSlam — MidService provisioning (anisette reale)
+# Apple GrandSlam — MidService provisioning (real anisette)
 
-Riferimenti: [Dadoum/Provision](https://github.com/Dadoum/Provision) (`lib/provision/adi.d`), capture EPB/MITM, [TCD privacy paper](https://www.scss.tcd.ie/Doug.Leith/pubs/apple_google_additional_material.pdf) (iPhone `akd`).
+References: [Dadoum/Provision](https://github.com/Dadoum/Provision) (`lib/provision/adi.d`), live device / MITM reference captures, [TCD privacy paper](https://www.scss.tcd.ie/Doug.Leith/pubs/apple_google_additional_material.pdf) (iPhone `akd`).
 
-EPB e iOS reale usano questo flusso **prima** di generare `X-Apple-I-MD` / `X-Apple-I-MD-M`. Non è documentazione ufficiale Apple; è ricostruita da traffico e da `libstoreservicescore` (ADI).
+Real iOS and reference traffic use this flow **before** generating `X-Apple-I-MD` / `X-Apple-I-MD-M`. This is not official Apple documentation; it is reconstructed from traffic and from `libstoreservicescore` (ADI).
 
 ---
 
-## Panoramica
+## Overview
 
 ```
 lookup (url bag)
     → startMachineProvisioning  → spim
-    → [locale] ADIProvisioningStart(spim) → cpim + session
+    → [local] ADIProvisioningStart(spim) → cpim + session
     → finishMachineProvisioning(cpim) → ptm, tk, X-Apple-I-MD-RINFO
-    → [locale] ADIProvisioningEnd(ptm, tk)
-    → [locale] ADIOTPRequest → X-Apple-I-MD (OTP) + machine id bytes
+    → [local] ADIProvisioningEnd(ptm, tk)
+    → [local] ADIOTPRequest → X-Apple-I-MD (OTP) + machine id bytes
 ```
 
-Dopo il provisioning, `MD-M` è **stabile** (machine identifier); `MD` cambia a ogni `ADIOTPRequest` (~30s).
+After provisioning, `MD-M` is **stable** (machine identifier); `MD` changes on each `ADIOTPRequest` (~30s).
 
-**dsId** per GrandSlam / iCloud: `-2` (`GrandSlamDsId` nel codice).
+**dsId** for GrandSlam / iCloud: `-2` (`GrandSlamDsId` in code).
 
 ---
 
 ## 1. `GET` `GsService2/lookup`
 
-Ottiene il **url bag** (`urls` nel plist).
+Fetches the **url bag** (`urls` in the plist).
 
-### Request headers (es. iPhone akd — TCD / EPB)
+### Request headers (e.g. iPhone akd — TCD / reference traffic)
 
-| Header | Esempio iPhone reale |
+| Header | Real iPhone example |
 |--------|----------------------|
 | `User-Agent` | `akd/1.0 CFNetwork/1128.0.1 Darwin/19.6.0` |
 | `X-MMe-Client-Info` | `<iPhone10,4> <…> <com.apple.akd/1.0 (com.apple.akd/1.0)>` |
-| `X-Mme-Device-Id` | UUID persistente dispositivo |
-| `X-Apple-I-MD-LU` | Local user UUID (hex su iOS, base64 su Windows AuthKit) |
+| `X-Mme-Device-Id` | Persistent device UUID |
+| `X-Apple-I-MD-LU` | Local user UUID (hex on iOS, base64 on Windows AuthKit) |
 | `X-Apple-Client-App-Name` | `Setup` |
 | `X-Apple-I-Client-Time` | ISO8601 UTC |
 
-### Response (`urls` rilevanti)
+### Response (relevant `urls`)
 
-| Chiave bag | URL |
+| Bag key | URL |
 |------------|-----|
 | `midStartProvisioning` | `https://gsa.apple.com/grandslam/MidService/startMachineProvisioning` |
 | `midFinishProvisioning` | `https://gsa.apple.com/grandslam/MidService/finishMachineProvisioning` |
@@ -50,7 +50,7 @@ Ottiene il **url bag** (`urls` nel plist).
 
 ## 2. `POST` `startMachineProvisioning`
 
-**Metodo: POST** (non GET). Body plist con `Request` vuoto.
+**Method: POST** (not GET). Plist body with empty `Request`.
 
 ### Request body
 
@@ -67,35 +67,35 @@ Ottiene il **url bag** (`urls` nel plist).
 </plist>
 ```
 
-### Request headers (iPhone reale)
+### Request headers (real iPhone)
 
-Come lookup, più:
+Same as lookup, plus:
 
-| Header | Note |
+| Header | Notes |
 |--------|------|
-| `X-Apple-I-SRL-NO` | **Serial hardware** (es. `C8PVCB1HJC67`) — presente su device iOS reali |
-| `Content-Type` | `application/x-www-form-urlencoded` (AuthKit; body resta plist XML) |
+| `X-Apple-I-SRL-NO` | **Hardware serial** (e.g. `C8PVCB1HJC67`) — present on real iOS devices |
+| `Content-Type` | `application/x-www-form-urlencoded` (AuthKit; body remains plist XML) |
 
 ### Response (`Response` dict)
 
-| Chiave | Tipo | Uso |
+| Key | Type | Use |
 |--------|------|-----|
 | `spim` | string (base64) | Server Provisioning Intermediate Metadata → `ADIProvisioningStart` |
 
 ---
 
-## 3. Locale — `ADIProvisioningStart`
+## 3. Local — `ADIProvisioningStart`
 
 Input: `spim` (bytes), `dsId` (-2).
 
 Output:
 
-| Campo | Uso |
+| Field | Use |
 |-------|-----|
 | `cpim` | Client Provisioning Intermediate Metadata (base64 in finish) |
-| `session` | Handle sessione ADI (uint) |
+| `session` | ADI session handle (uint) |
 
-Implementazione: `CoreAdiBridge.exe start-provisioning` / `libstoreservicescore.so` su Linux.
+Implementation: `CoreAdiBridge.exe start-provisioning` / `libstoreservicescore.so` on Linux.
 
 ---
 
@@ -119,98 +119,98 @@ Implementazione: `CoreAdiBridge.exe start-provisioning` / `libstoreservicescore.
 
 ### Response (`Response` dict)
 
-| Chiave | Tipo | Uso |
+| Key | Type | Use |
 |--------|------|-----|
 | `ptm` | string (base64) | Persistent Token Metadata → `ADIProvisioningEnd` |
 | `tk` | string (base64) | Trust Key → `ADIProvisioningEnd` |
-| `X-Apple-I-MD-RINFO` | string | Routing info (es. `17106176` iOS, `84215040` Windows) |
+| `X-Apple-I-MD-RINFO` | string | Routing info (e.g. `17106176` iOS, `84215040` Windows) |
 
-### Errori ADI comuni
+### Common ADI errors
 
-| Codice | Significato |
+| Code | Meaning |
 |--------|-------------|
-| `-45061` | Non provisionato |
-| `-45063` | Sessione pending |
-| `-45066` | Sessione già completata |
+| `-45061` | Not provisioned |
+| `-45063` | Session pending |
+| `-45066` | Session already completed |
 
 ---
 
-## 5. Locale — `ADIProvisioningEnd` + OTP
+## 5. Local — `ADIProvisioningEnd` + OTP
 
-Dopo `endProvisioning`, opzionale `set-routing` con `X-Apple-I-MD-RINFO`.
+After `endProvisioning`, optional `set-routing` with `X-Apple-I-MD-RINFO`.
 
-`ADIOTPRequest(dsId)` restituisce bytes OTP + machine identifier; il bridge li espone come:
+`ADIOTPRequest(dsId)` returns OTP bytes + machine identifier; the bridge exposes them as:
 
-| Header HTTP | Ruolo |
+| HTTP header | Role |
 |-------------|--------|
-| `X-Apple-I-MD` | OTP (cambia spesso) |
-| `X-Apple-I-MD-M` | Machine ID (stabile, base64) |
+| `X-Apple-I-MD` | OTP (changes often) |
+| `X-Apple-I-MD-M` | Machine ID (stable, base64) |
 | `X-Apple-I-MD-RINFO` | Routing |
 
-Su iOS reale, `X-Apple-I-MD-M` in HTTP è la codifica base64 del machine identifier ADI (≈60 byte).
+On real iOS, `X-Apple-I-MD-M` in HTTP is the base64 encoding of the ADI machine identifier (~60 bytes).
 
 ---
 
-## 6. `syncMachine` (ri-sincronizzazione)
+## 6. `syncMachine` (re-synchronization)
 
-Per dispositivi già provisionati (es. dopo reset parziale). Flusso:
+For already provisioned devices (e.g. after partial reset). Flow:
 
 1. `POST syncMachine` → `sim` (server intermediate metadata)
 2. `ADISynchronize(dsId, sim)` → `srm` + machine id
-3. Eventuale nuovo ciclo finish con metadata aggiornato
+3. Optional new finish cycle with updated metadata
 
-EPB referenzia `syncMachine` e `finishMachineProvisioning` nel binario; il traffico HTTP MITM di EPB non sempre li cattura (provisioning può avvenire prima del login visibile).
+Reference binaries mention `syncMachine` and `finishMachineProvisioning`; MITM captures do not always include them (provisioning may occur before visible login).
 
 ---
 
-## Identità EPB vs Docker
+## iPhone/akd reference vs Docker
 
-| | EPB / iPhone akd | dadoum docker |
+| | iPhone akd (reference) | dadoum docker |
 |--|------------------|---------------|
 | `X-MMe-Client-Info` | `<iPhone9,x> … akd` | `<MacBookPro…> … Xcode` |
-| Provisioning headers | `akd/1.0 CFNetwork…` | stesso stack Mac |
-| `MD-M` | Coerente con akd | Coerente con Mac/Xcode |
-| Uso in `cpd` GsService2 akd | ✓ | ✗ (mismatch su complete) |
+| Provisioning headers | `akd/1.0 CFNetwork…` | same Mac stack |
+| `MD-M` | Consistent with akd | Consistent with Mac/Xcode |
+| Use in akd GsService2 `cpd` | ✓ | ✗ (mismatch on complete) |
 
-Per **flow EPB** serve provisioning con **client info akd** e libreria ADI che accetta quell’identità. Il progetto espone:
+For an **end-to-end akd flow** you need provisioning with **akd client info** and an ADI library that accepts that identity. The project provides:
 
-- `AdiProvisioningService` — chiamate HTTP Apple + `CoreAdiBridge`
-- profilo `AdiDeviceProfile.Ios` — header akd su MidService
-- `AnisetteServer` profilo iOS — `POST /provision` per forzare re-provisioning
+- `AdiProvisioningService` — Apple HTTP calls + `CoreAdiBridge`
+- `AdiDeviceProfile.Ios` profile — akd headers on MidService
+- `AnisetteServer` iOS profile — `POST /provision` to force re-provisioning
 
 ---
 
-## In questo repo
+## In this repo
 
-| File | Ruolo |
+| File | Role |
 |------|--------|
 | `AdiProvisioningService.cs` | lookup → start → finish → bridge |
 | `CoreAdiBridgeClient.cs` | start/end/otp via `CoreAdiBridge.exe` |
 | `AdiDeviceProfile.cs` | Windows vs iOS (akd) client info |
-| `%AppData%\iCloudKitExtractor\adi-ios\` | Stato provisioning iOS |
+| `%AppData%\iCloudKitExtractor\adi-ios\` | iOS provisioning state |
 
-### Re-provisioning iOS (test)
+### iOS re-provisioning (test)
 
 ```powershell
-# Rimuovi stato iOS e riavvia AnisetteServer
+# Remove iOS state and restart AnisetteServer
 Remove-Item -Recurse -Force "$env:APPDATA\iCloudKitExtractor\adi-ios" -ErrorAction SilentlyContinue
 dotnet run --project src\AnisetteServer\iCloudKitExtractor.AnisetteServer.csproj -c Release
 # POST http://127.0.0.1:6969/provision
 ```
 
-Verifica JSON `GET /`: `X-MMe-Client-Info` deve contenere `akd`, non `Xcode`.
+Verify JSON from `GET /`: `X-MMe-Client-Info` must contain `akd`, not `Xcode`.
 
 ---
 
-## GsService2 (login) — dopo anisette
+## GsService2 (login) — after anisette
 
-Separate dal MidService; usano lo stesso `cpd` con `MD`/`MD-M`/`MD-LU`:
+Separate from MidService; uses the same `cpd` with `MD`/`MD-M`/`MD-LU`:
 
-| Step | `o` | Campi principali |
+| Step | `o` | Main fields |
 |------|-----|------------------|
 | init | `init` | `A2k`, `u`, `cpd`, `ps` |
-| complete | `complete` | `M1`, `c`, `cpd` (+ opz. `M2`) |
+| complete | `complete` | `M1`, `c`, `cpd` (+ optional `M2`) |
 
-`cpd` akd EPB: `capp=com.apple.akd`, `prtn=iPhone9,3`, `X-Apple-I-MD-RINFO=17106176`.
+akd reference `cpd`: `capp=com.apple.akd`, `prtn=iPhone9,3`, `X-Apple-I-MD-RINFO=17106176`.
 
-Riferimento implementazione: `GsaGrandSlamAuthService.cs`, capture `epb_http_*`.
+Implementation reference: `GsaGrandSlamAuthService.cs`, reference captures `epb_http_*` (filename prefix retained in tooling).
