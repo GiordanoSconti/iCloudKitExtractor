@@ -87,6 +87,32 @@
         felt less like begging a commercial GUI and more like reading a protocol that
         would occupy the rest of the summer.
       </p>
+
+      <aside class="observe" aria-label="Code observation">
+        <p class="observe__label">In the code today</p>
+        <p>
+          Edge ranges still get classified before decrypt: a short offset-0 window “looks like”
+          Ford ciphertext when the lead byte matches the capture oracle. Treating a data chunk
+          as Ford (or rejecting a <code>0xC4</code> Ford as “not <code>0x04</code>”) is how entire
+          file tails vanished until September.
+        </p>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/FordMmcsDecryptor.cs"
+          >FordMmcsDecryptor.cs</a
+        >
+        <pre><code>public static bool LooksLikeFordCipher(ReadOnlySpan&lt;byte&gt; slice, long startOffset)
+{
+    if (startOffset != 0 || slice.Length is &lt; 64 or &gt; 16384)
+        return false;
+    // Capture: b0=0x04; also other non-ASCII leads (incl. paths that needed 0xC4)
+    return slice[0] is 0x04 or &gt;= 0x01;
+}
+
+// Ford key HKDF — salt=PCSMMCS2, empty info
+public static byte[] DeriveFordKeyMaterial(ReadOnlySpan&lt;byte&gt; fileEncryptionKey)</code></pre>
+      </aside>
+
       <a class="back-link" href="../">← All notes</a>
     </article>
   </main>

@@ -79,6 +79,29 @@
         recovery we could not buy off the shelf, into the private Apple surfaces that eventually
         became iCloudKit Extractor.
       </p>
+
+      <aside class="observe" aria-label="Code observation">
+        <p class="observe__label">In the code today</p>
+        <p>
+          Months later, those first CloudKit names are still hard-coded as the backup binding:
+          container <code>com.apple.backup.ios</code>, zones including <code>mbksync</code>.
+        </p>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Models/CloudKitContainerBinding.cs"
+          >CloudKitContainerBinding.cs</a
+        >
+        <pre><code>public static CloudKitContainerBinding Backup { get; } =
+    new("com.apple.backup.ios", "com.apple.backupd");</code></pre>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Protocol/CloudKitDelimitedRequest.cs"
+          >CloudKitDelimitedRequest.cs</a
+        >
+        <pre><code>public static readonly string[] BackupZones =
+    { "_defaultZone", "mbksync" };</code></pre>
+      </aside>
+
       <a class="back-link" href="../">← All notes</a>
     </article>
   </main>

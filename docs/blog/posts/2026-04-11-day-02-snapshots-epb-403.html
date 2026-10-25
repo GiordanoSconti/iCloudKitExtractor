@@ -68,6 +68,25 @@
         Progress, then, was uneven: snapshots visible, ADP still denying the commercial path,
         and the identity material inside backup metadata still locked—waiting for later months.
       </p>
+
+      <aside class="observe" aria-label="Code observation">
+        <p class="observe__label">In the code today</p>
+        <p>
+          <code>backupProperties</code> is no longer a mystery blob: it is a named CloudKit field
+          decrypted only after ShareProtection / PCS material is in hand—exactly the door that was
+          still shut in April.
+        </p>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Backup/SnapshotBackupPropertiesDecryptor.cs"
+          >SnapshotBackupPropertiesDecryptor.cs</a
+        >
+        <pre><code>/// ShareProtection zona/record → CUWK(label=backupProperties) → PCSFP-GCM
+public const string FieldName = "backupProperties";
+
+// Lockdown.* — UDID hardware, modello, seriale (from decrypted plist)</code></pre>
+      </aside>
+
       <a class="back-link" href="../">← All notes</a>
     </article>
   </main>

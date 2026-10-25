@@ -449,6 +449,56 @@ main {
   color: var(--ink);
 }
 
+.observe {
+  margin: 1.75rem 0;
+  padding: 1.15rem 1.25rem 1.25rem;
+  border-left: 3px solid var(--brand);
+  background: linear-gradient(90deg, rgba(11, 92, 87, 0.07), transparent 85%);
+}
+
+.observe__label {
+  margin: 0 0 0.45rem;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand-deep);
+}
+
+.observe p {
+  margin: 0 0 0.85rem;
+  font-size: 1.02rem;
+}
+
+.observe p:last-of-type {
+  margin-bottom: 0.85rem;
+}
+
+.observe .src {
+  display: inline-block;
+  margin: 0 0 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.article pre {
+  margin: 0;
+  padding: 0.95rem 1rem;
+  overflow-x: auto;
+  border-radius: 0.35rem;
+  background: #0c2f34;
+  color: #e8f0f2;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.article pre code {
+  font-family: "Cascadia Code", "Consolas", "Segoe UI Mono", monospace;
+  white-space: pre;
+}
+
 .back-link {
   display: inline-block;
   margin-top: 2.5rem;
