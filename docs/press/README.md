@@ -1,6 +1,6 @@
 # Press / social drafts
 
-Ready-to-paste drafts for LinkedIn and Medium (EN + IT).
+Ready-to-paste drafts for LinkedIn and Medium (EN + IT), plus LinkedIn screenshots.
 
 | File | Channel | Language |
 |------|---------|----------|
@@ -9,11 +9,18 @@ Ready-to-paste drafts for LinkedIn and Medium (EN + IT).
 | [medium-en.md](./medium-en.md) | Medium article | English |
 | [medium-it.md](./medium-it.md) | Medium article | Italian |
 
-Canonical links to include:
+## LinkedIn assets
+
+| File | Content |
+|------|---------|
+| [assets/linkedin-github-repo.png](./assets/linkedin-github-repo.png) | Public GitHub repo header + About + topics |
+| [assets/linkedin-app-ike.png](./assets/linkedin-app-ike.png) | Running `iCloudKitExtractor.exe` (Access tab, signed-out) |
+
+Attach both images to the LinkedIn post (GitHub first, then the app).
+
+Canonical links:
 
 - GitHub: https://github.com/GiordanoSconti/iCloudKitExtractor
-- Notes diary: https://giordanosconti.github.io/iCloudKitExtractor/blog/  
-  (or your configured Pages URL under `/blog/`)
+- Notes diary: https://giordanosconti.github.io/iCloudKitExtractor/blog/
+- Releases: https://github.com/GiordanoSconti/iCloudKitExtractor/releases
 - Contact: giordano.sconti@gruppoinformaticiforensi.it
-
-Confirm the live Pages base URL in repo Settings → Pages before publishing.
