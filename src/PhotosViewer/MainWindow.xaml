@@ -1,0 +1,301 @@
+<Window x:Class="PhotosViewer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:PhotosViewer"
+        xmlns:models="clr-namespace:PhotosViewer.Models"
+        Title="Foto — iCloud"
+        Height="820" Width="1280"
+        MinHeight="640" MinWidth="960"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource CanvasBrush}"
+        FontFamily="{StaticResource BodyFont}"
+        TextOptions.TextFormattingMode="Display">
+    <Window.Resources>
+        <Style x:Key="NavItem" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="8,1"/>
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#0F000000"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="52"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top bar iCloud -->
+        <Border Grid.Row="0" Background="{StaticResource PaperBrush}"
+                BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,0,1">
+            <Grid Margin="20,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="iCloud"
+                               FontFamily="{StaticResource DisplayFont}"
+                               FontSize="17" FontWeight="SemiBold"
+                               Foreground="{StaticResource InkBrush}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="  ·  Foto"
+                               FontFamily="{StaticResource BodyFont}"
+                               FontSize="17"
+                               Foreground="{StaticResource MutedBrush}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock x:Name="SubtitleText"
+                               Margin="16,0,0,0"
+                               FontSize="12"
+                               Foreground="{StaticResource MutedBrush}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="420"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Zoom" VerticalAlignment="Center" Margin="0,0,10,0"
+                               FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                    <Slider x:Name="ZoomSlider" Width="140" Minimum="0" Maximum="3" TickFrequency="1"
+                            IsSnapToTickEnabled="True" VerticalAlignment="Center" Value="1"
+                            Foreground="{StaticResource AccentBrush}"
+                            ValueChanged="ZoomSlider_OnValueChanged"/>
+                    <TextBlock x:Name="ZoomLabel" Width="40" Margin="10,0,0,0"
+                               VerticalAlignment="Center" FontSize="12"
+                               Foreground="{StaticResource MutedBrush}"
+                               Text="6×N"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="232"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="300"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Sidebar -->
+            <Border Grid.Column="0" Background="{StaticResource SidebarBrush}"
+                    BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Style="{StaticResource SectionLabel}" Text="LIBRERIA"/>
+                    <ListBox x:Name="FolderList"
+                             Background="Transparent" BorderThickness="0"
+                             SelectionChanged="FolderList_OnSelectionChanged"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.Resources>
+                            <DataTemplate DataType="{x:Type models:SidebarSectionHeader}">
+                                <TextBlock Text="{Binding Title}"
+                                           Style="{StaticResource SectionLabel}"
+                                           Margin="0"/>
+                            </DataTemplate>
+                            <DataTemplate DataType="{x:Type models:SidebarFolderEntry}">
+                                <TextBlock Text="{Binding Caption}" TextTrimming="CharacterEllipsis"/>
+                            </DataTemplate>
+                        </ListBox.Resources>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource NavItem}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSectionHeader}" Value="True">
+                                        <Setter Property="IsEnabled" Value="False"/>
+                                        <Setter Property="Focusable" Value="False"/>
+                                        <Setter Property="Padding" Value="0"/>
+                                        <Setter Property="Margin" Value="0,12,0,0"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <ContentPresenter Margin="12,0,12,6"/>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- Main canvas -->
+            <Border Grid.Column="1" Background="{StaticResource PaperBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,0,1"
+                            Background="{StaticResource PaperBrush}" Padding="16,10">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="App" VerticalAlignment="Center" Margin="0,0,8,0"
+                                           FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <ComboBox x:Name="AppFilter" Width="180" Style="{StaticResource ICloudCombo}"
+                                          SelectedIndex="0" SelectionChanged="Filter_OnChanged"/>
+                            </StackPanel>
+                            <WrapPanel x:Name="GridFilters" Grid.Row="1">
+                                <TextBlock Text="Dal" VerticalAlignment="Center" Margin="0,0,8,0"
+                                           FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <DatePicker x:Name="FromDate" Width="128" Style="{StaticResource ICloudDate}"
+                                            SelectedDateChanged="Filter_OnChanged"/>
+                                <TextBlock Text="al" VerticalAlignment="Center" Margin="12,0,8,0"
+                                           FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <DatePicker x:Name="ToDate" Width="128" Style="{StaticResource ICloudDate}"
+                                            SelectedDateChanged="Filter_OnChanged"/>
+                                <TextBlock Text="Dimensione" VerticalAlignment="Center" Margin="16,0,8,0"
+                                           FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <ComboBox x:Name="SizeFilter" Width="132" Style="{StaticResource ICloudCombo}"
+                                          SelectedIndex="0" SelectionChanged="Filter_OnChanged">
+                                    <ComboBoxItem Content="Tutte"/>
+                                    <ComboBoxItem Content="&lt; 500 KB"/>
+                                    <ComboBoxItem Content="500 KB – 2 MB"/>
+                                    <ComboBoxItem Content="2 – 8 MB"/>
+                                    <ComboBoxItem Content="&gt; 8 MB"/>
+                                </ComboBox>
+                                <TextBlock x:Name="ResultCount" VerticalAlignment="Center" Margin="16,0,0,0"
+                                           FontSize="12" Foreground="{StaticResource AccentBrush}"/>
+                            </WrapPanel>
+                            <WrapPanel x:Name="MapFilters" Grid.Row="1" Visibility="Collapsed">
+                                <TextBlock Text="Tipo" VerticalAlignment="Center" Margin="0,0,8,0"
+                                           FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <ComboBox x:Name="MapTypeFilter" Width="132" Style="{StaticResource ICloudCombo}"
+                                          SelectedIndex="0" SelectionChanged="Filter_OnChanged">
+                                    <ComboBoxItem Content="Foto e video"/>
+                                    <ComboBoxItem Content="Solo foto"/>
+                                    <ComboBoxItem Content="Solo video"/>
+                                </ComboBox>
+                                <TextBlock Text="Scatto dal" VerticalAlignment="Center" Margin="16,0,8,0"
+                                           FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <DatePicker x:Name="MapFromDate" Width="128" Style="{StaticResource ICloudDate}"
+                                            SelectedDateChanged="Filter_OnChanged"/>
+                                <TextBlock Text="al" VerticalAlignment="Center" Margin="12,0,8,0"
+                                           FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <DatePicker x:Name="MapToDate" Width="128" Style="{StaticResource ICloudDate}"
+                                            SelectedDateChanged="Filter_OnChanged"/>
+                                <TextBlock x:Name="MapResultCount" VerticalAlignment="Center" Margin="16,0,0,0"
+                                           FontSize="12" Foreground="{StaticResource AccentBrush}"/>
+                            </WrapPanel>
+                        </Grid>
+                    </Border>
+
+                    <ScrollViewer x:Name="GridScroller" Grid.Row="1"
+                                  Background="{StaticResource PaperBrush}"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Padding="2"
+                                  SizeChanged="GridScroller_OnSizeChanged"
+                                  ScrollChanged="GridScroller_OnScrollChanged">
+                        <Canvas x:Name="TileHost"/>
+                    </ScrollViewer>
+
+                    <local:WorldMapView x:Name="MapView" Grid.Row="1" Visibility="Collapsed" Margin="8"/>
+                </Grid>
+            </Border>
+
+            <!-- Info panel -->
+            <Border Grid.Column="2" Background="{StaticResource PaperBrush}"
+                    BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1,0,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="18,16">
+                    <StackPanel>
+                        <TextBlock Text="Info"
+                                   FontFamily="{StaticResource DisplayFont}"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource InkBrush}" Margin="0,0,0,12"/>
+                        <Border x:Name="PreviewHost" Height="176" CornerRadius="10" Background="{StaticResource CanvasBrush}"
+                                BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1"
+                                ClipToBounds="True" Margin="0,0,0,14"
+                                Cursor="Hand"
+                                ToolTip="Clic per riprodurre · doppio clic per aprire"
+                                MouseLeftButtonDown="Preview_OnMouseLeftButtonDown">
+                            <Grid>
+                                <Image x:Name="PreviewImage" Stretch="Uniform"/>
+                                <MediaElement x:Name="PreviewVideo" LoadedBehavior="Manual" UnloadedBehavior="Stop"
+                                              Stretch="Uniform" Visibility="Collapsed"
+                                              MediaEnded="PreviewVideo_OnMediaEnded"/>
+                                <Border x:Name="PreviewPlayOverlay" Background="#66000000"
+                                        Visibility="Collapsed" IsHitTestVisible="False">
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                        <TextBlock Text="▶" FontSize="36" Foreground="White"
+                                                   HorizontalAlignment="Center"/>
+                                        <TextBlock x:Name="PreviewPlayHint" Text="Clic per riprodurre"
+                                                   FontSize="11" Foreground="White" Margin="0,6,0,0"
+                                                   HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <TextBlock x:Name="DetailTitle" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{StaticResource InkBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        <TextBlock x:Name="DetailProps" Foreground="{StaticResource MutedBrush}"
+                                   FontSize="12" LineHeight="18" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+                        <Expander x:Name="DownloadMetaExpander" IsExpanded="True" Margin="0,0,0,8">
+                            <Expander.Header>
+                                <TextBlock x:Name="DownloadHeaderText" Text="Metadati download"
+                                           FontFamily="{StaticResource DisplayFont}"
+                                           FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource InkBrush}"/>
+                            </Expander.Header>
+                            <ItemsControl x:Name="DownloadMetaList" Margin="0,8,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,0,0,8">
+                                            <TextBlock DockPanel.Dock="Top" Text="{Binding Key}"
+                                                       FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock Text="{Binding Value}" FontSize="12" TextWrapping="Wrap"
+                                                       Foreground="{StaticResource InkBrush}"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Expander>
+
+                        <Expander x:Name="ExifMetaExpander" IsExpanded="True" Margin="0,0,0,8">
+                            <Expander.Header>
+                                <TextBlock x:Name="ExifHeaderText" Text="Metadati EXIF"
+                                           FontFamily="{StaticResource DisplayFont}"
+                                           FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource InkBrush}"/>
+                            </Expander.Header>
+                            <ItemsControl x:Name="ExifMetaList" Margin="0,8,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,0,0,8">
+                                            <TextBlock DockPanel.Dock="Top" Text="{Binding Key}"
+                                                       FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock Text="{Binding Value}" FontSize="12" TextWrapping="Wrap"
+                                                       Foreground="{StaticResource InkBrush}"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

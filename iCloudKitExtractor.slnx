@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/iCloudKitExtractor/iCloudKitExtractor.csproj" />
+    <Project Path="src/PhotosViewer/PhotosViewer.csproj" />
+    <Project Path="src/AnisetteServer/AnisetteServer.csproj" />
   </Folder>
 </Solution>

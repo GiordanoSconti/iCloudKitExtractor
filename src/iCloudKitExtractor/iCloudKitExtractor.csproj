@@ -32,5 +32,15 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 
+  <!-- Payload visualizzatore portatile (photos/Viewer) -->
+  <Target Name="BuildPhotosViewerPayload" AfterTargets="Build">
+    <MSBuild Projects="..\PhotosViewer\PhotosViewer.csproj" Targets="Restore;Build" Properties="Configuration=$(Configuration)" ContinueOnError="true" />
+    <ItemGroup>
+      <_ViewerOut Include="..\PhotosViewer\bin\$(Configuration)\net10.0-windows\**\*" Exclude="..\PhotosViewer\bin\$(Configuration)\net10.0-windows\**\*.pdb" />
+    </ItemGroup>
+    <RemoveDir Directories="$(OutputPath)viewer-payload" Condition="Exists('$(OutputPath)viewer-payload')" />
+    <MakeDir Directories="$(OutputPath)viewer-payload" />
+    <Copy SourceFiles="@(_ViewerOut)" DestinationFiles="@(_ViewerOut->'$(OutputPath)viewer-payload\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'@(_ViewerOut)' != ''" />
+  </Target>
 
 </Project>

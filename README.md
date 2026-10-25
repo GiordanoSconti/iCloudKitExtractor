@@ -7,6 +7,7 @@
 ## Cosa include
 
 - App principale `src/iCloudKitExtractor`
+- Visualizzatore libreria foto `src/PhotosViewer` (payload copiato in `viewer-payload` al build di IKE)
 - `AnisetteServer` (+ bridge opzionali) per OTP / ADI
 - Script di setup emulazione akd / bridge
 - Documentazione in `docs/`
