@@ -18,6 +18,10 @@ Unlike commercial tools I have used, I achieved a **stable and complete download
 
 It also works when protections such as **Lockdown Mode** are enabled and **iCloud.com** is turned off.
 
+This project took roughly **seven months of research**. Without Cursor coding-agent models it would have taken far longer: the only time I had was during work hours when possible, or late at night. I tried to keep a **modular** code organization—I hope I succeeded.
+
+If you would like to buy me a coffee, I would rather you **thank Forensis-Lab** or offer some other form of recognition instead.
+
 ## Contributing & contact
 
 Anyone who wants to try the software, suggest improvements, or help finish the remaining features is **welcome**.
@@ -42,14 +46,12 @@ Recovery Key unlock uses an **Octagon** endpoint that can dump the full set of *
 
 ## What’s intentionally excluded
 
-- Apple binary dumps / `ios-adi-split`
-- Third-party commercial anisette backends
 - Lab build artifacts, probes, and capture corpora
 
 ## Requirements
 
 - Windows + .NET 10 SDK
-- iCloud / Apple Music / iTunes where CoreADI is needed
+- A phisical Anisette server (emulated ones not work anymore)
 - A test Apple ID you control
 
 ## Build
