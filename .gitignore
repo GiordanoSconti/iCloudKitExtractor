@@ -3,6 +3,7 @@
 **/obj/
 **/out/
 artifacts/
+dist/
 _build*/
 _verify*/
 *.user

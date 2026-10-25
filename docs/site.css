@@ -195,6 +195,33 @@ a:hover {
   color: #fff;
 }
 
+.cta-row--page {
+  margin-top: 1.5rem;
+  opacity: 1;
+  animation: none;
+}
+
+.btn--solid {
+  background: var(--brand);
+  color: #f4f8f9;
+}
+
+.btn--solid:hover {
+  background: var(--brand-deep);
+  color: #fff;
+}
+
+.btn--outline {
+  border-color: var(--line);
+  color: var(--brand-deep);
+  background: transparent;
+}
+
+.btn--outline:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
 /* —— Page sections —— */
 main {
   width: min(100%, var(--max));
