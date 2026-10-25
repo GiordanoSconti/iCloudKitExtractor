@@ -44,3 +44,6 @@ anisette.json
 ios-adi-split/
 **/*.dylib
 **/IMDAppleServices
+
+*.binlog
+
