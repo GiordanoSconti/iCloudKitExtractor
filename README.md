@@ -18,6 +18,20 @@ Unlike commercial tools I have used, I achieved a **stable and complete download
 
 It also works when protections such as **Lockdown Mode** are enabled and **iCloud.com** is turned off.
 
+## Contributing & contact
+
+Anyone who wants to try the software, suggest improvements, or help finish the remaining features is **welcome**.
+
+You may use paid coding-agent models (please avoid free ones—they are often unreliable for code correctness). What matters is that you **always review** the generated code and that there is **no unauthorized appropriation of third-party code** without consent. Pull requests will be reviewed **very carefully**.
+
+Contact: [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gruppoinformaticiforensi.it)
+
+Every line of code in this project belongs to **Forensis-Lab**, under my direct grant. Any use or modification must remain attributable to **Forensis-Lab**.
+
+## Important note: Recovery Key & Octagon
+
+Recovery Key unlock uses an **Octagon** endpoint that can dump the full set of **encrypted TLKShares**. From those shares it is also possible to recover the ones associated with Recovery Key peers (SHA-384 of the public key that signs the Recovery Key). That allows verifying whether a given Recovery Key is among those present and, if it is, recovering the Manatee/PCS KeySet for CloudKit zones—including **ADP-protected backups** and **Keychain**.
+
 ## What’s included
 
 - Main app: `src/iCloudKitExtractor`
@@ -132,9 +146,9 @@ Emulated akd example:
 
 Also see [docs/IPHONE_INTERNAL_FLOW.md](docs/IPHONE_INTERNAL_FLOW.md) and [docs/APPLE_MIDSERVICE_PROVISIONING.md](docs/APPLE_MIDSERVICE_PROVISIONING.md).
 
-## License
+## License & attribution
 
-MIT — see `LICENSE`. Copyright notice names Giordano Sconti / Forensis-Lab; the project belongs to **Forensis-Lab**.
+Released under the **MIT** license (see `LICENSE`). Ownership and attribution remain with **Forensis-Lab** (Giordano Sconti). Downstream use or modification must keep clear attribution to **Forensis-Lab**.
 
 ## Disclaimer
 
