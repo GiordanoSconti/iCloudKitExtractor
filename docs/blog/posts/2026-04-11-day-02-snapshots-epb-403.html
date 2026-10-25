@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>11 April 2026 — Snapshots, EPB 403, and backupProperties — Forensis-Lab</title>
+  <meta
+    name="description"
+    content="Resuming after March: snapshot fetch fighting the IDE, EPB’s iOS 26 release still blocked by ADP 403, and first captures past snapshot listing."
+  />
+  <meta name="theme-color" content="#0c2f34" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../">Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-04-11">11 April 2026</time>
+        · Day 2 · Giordano Sconti
+      </p>
+      <h1>Snapshots on the wire, ADP still a wall</h1>
+      <p>
+        I picked the path back up on <strong>11 April 2026</strong>. By then I had reached the
+        endpoints that start a snapshot recovery—and the friction was anything but mild. Every
+        request I sent to kick off snapshot retrieval seemed to rewrite the surrounding code:
+        the coding agent kept pulling in fragments that resembled material published online,
+        so the tree drifted under me while I was still trying to stabilize a single flow.
+      </p>
+      <p>
+        Meanwhile I checked whether Elcomsoft had moved on their side. They had: a new Phone Breaker
+        build could download backups for <strong>iOS 26</strong>. Worth a try. With
+        <strong>ADP</strong> still on, it went nowhere—responses came back
+        <strong>HTTP 403</strong>. Commercial recovery of that protected backup remained closed.
+      </p>
+      <p>
+        So I used their release the way a lab should when the product path is blocked: as an
+        oracle for <em>how</em> they had unblocked snapshot access at all. Reconstructing the
+        outbound network story was hard; the traffic did not hand you a clean playbook. Still,
+        enough captures landed that I could at least get past
+        <strong>snapshot enumeration</strong>—list what was there, move one step further than
+        March.
+      </p>
+      <p>
+        What I could not do yet was decrypt <strong><code>backupProperties</code></strong>, where
+        the device <strong>UDID</strong> lives. At that point I barely knew those fields existed;
+        they were still an opaque blob on the far side of a door I had only just found the handle for.
+      </p>
+      <p>
+        Progress, then, was uneven: snapshots visible, ADP still denying the commercial path,
+        and the identity material inside backup metadata still locked—waiting for later months.
+      </p>
+      <a class="back-link" href="../">← All notes</a>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>© Forensis-Lab · Giordano Sconti</span>
+      <span><a href="../">Notes</a> · <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>
