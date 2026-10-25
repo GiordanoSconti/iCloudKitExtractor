@@ -32,6 +32,10 @@ Contact: [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gr
 
 Every line of code in this project belongs to **Forensis-Lab**, under my direct grant. Any use or modification must remain attributable to **Forensis-Lab**.
 
+## Preview access to Anisette Server
+
+If you want to try the software before running your own anisette stack, contact me **privately** to request access to my Anisette Server.
+
 ## Important note: Recovery Key & Octagon
 
 Recovery Key unlock uses an **Octagon** endpoint that can dump the full set of **encrypted TLKShares**. From those shares it is also possible to recover the ones associated with Recovery Key peers (SHA-384 of the public key that signs the Recovery Key). That allows verifying whether a given Recovery Key is among those present and, if it is, recovering the Manatee/PCS KeySet for CloudKit zones—including **ADP-protected backups** and **Keychain**.
