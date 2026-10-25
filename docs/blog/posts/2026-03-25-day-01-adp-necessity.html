@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Day 1 — ADP necessity and the first Apple API questions — Forensis-Lab</title>
+  <meta
+    name="description"
+    content="25 March 2026: commercial forensic tools could not pull an ADP-protected iCloud backup. First steps toward Apple’s private APIs via EPB and a jailbroken iPhone."
+  />
+  <meta name="theme-color" content="#0c2f34" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../">Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-03-25">25 March 2026</time>
+        · Day 1 · Giordano Sconti
+      </p>
+      <h1>ADP on the table: when commercial tools were not enough</h1>
+      <p>
+        In late March 2026 we had a concrete operational need: download an iCloud device backup
+        protected by <strong>Advanced Data Protection (ADP)</strong>. The commercial forensic
+        products we relied on simply were not working for that case at the time. That gap pushed
+        me and a colleague to start asking a more fundamental question—how do you even begin to
+        understand the Apple APIs that the <strong>iCloud</strong> section of iOS Settings talks to?
+      </p>
+      <p>
+        The first phase was deliberately practical. We needed a way to observe real traffic and
+        real device behaviour. Two paths were available: obtain (and instrument) a
+        <strong>jailbroken iPhone</strong>, and/or study what
+        <strong>Elcomsoft Phone Breaker</strong> was already doing on the wire. Holding both a
+        valid EPB license and a jailbroken device, I chose to use <em>both</em>.
+      </p>
+      <p>
+        The early blockers clustered around <strong>GrandSlam / GsService2</strong>. EPB itself was
+        broken in that window for the flows we needed; Elcomsoft shipped a fix in a later release
+        the following month. Until then I did not wait: I proceeded through
+        <strong>iCloud.com</strong> on one side and the jailbroken iPhone on the other.
+      </p>
+      <p>
+        The iCloud.com route produces <strong>idmsa</strong>-style web tokens—useful for the
+        browser surface, not for native mobile clients. Even so, those reverse-engineering
+        sessions paid off. I mapped authentication endpoints, including paths around
+        <strong>trusted devices</strong> and <strong>SMS</strong> second-factor flows, and built a
+        clearer picture of metadata that survives around deleted media in
+        <strong>iCloud Photos</strong>.
+      </p>
+      <p>
+        From iCloud.com I moved onto the jailbroken iPhone. There the GrandSlam surface oriented
+        at <strong>mobile clients</strong> became visible, along with the first
+        <strong>CloudKit</strong> endpoints relevant to device backup—especially the
+        <strong><code>mbksync</code></strong> zone inside the
+        <strong><code>com.apple.backup.ios</code></strong> container (the Mobile Backup / backupd
+        stack), not a generic “MobileSync” label.
+      </p>
+      <p>
+        That was the real beginning: not a finished extractor, but a forced path from an ADP
+        recovery we could not buy off the shelf, into the private Apple surfaces that eventually
+        became iCloudKit Extractor.
+      </p>
+      <a class="back-link" href="../">← All notes</a>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>© Forensis-Lab · Giordano Sconti</span>
+      <span><a href="../">Notes</a> · <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>
