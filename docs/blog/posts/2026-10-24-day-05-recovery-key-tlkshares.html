@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>24 October 2026 &mdash; Recovery Key, Octagon, and the TLKShare dump &mdash; Forensis-Lab</title>
+  <meta
+    name="description"
+    content="Account recovery via Recovery Key: HKDF to an RK peer, fetchRecoverableTLKShares, and opening Manatee/PCS from encrypted TLKShares."
+  />
+  <meta name="theme-color" content="#0c2f34" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../">Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-10-24">24 October 2026</time>
+        &middot; Day 5 &middot; Giordano Sconti
+      </p>
+      <h1>Recovery Key: dumping TLKShares and opening the account vault</h1>
+      <p>
+        By late October the download spine (CloudKit Lock, MMCS, Ford) was no longer the only story.
+        For <strong>ADP</strong> accounts the deeper gate is cryptographic identity in
+        <strong>Octagon</strong>: without a device bottle PIN path, the forensic question becomes
+        whether a known <strong>Recovery Key</strong> can reconstitute the peer that CKKS wrapped
+        keys for&mdash;and then unwrap the <strong>TLKShares</strong> that guard Manatee / PCS / Passwords.
+      </p>
+      <p>
+        On <strong>24 October 2026</strong> that path crystallized in the lab tooling. The Recovery Key
+        is not &ldquo;just another password&rdquo; sent to Apple. Locally you derive an Octagon peer
+        (P-384 signing + encryption material) with <strong>HKDF-SHA384</strong> over the RK string and
+        the account <strong>altDSID</strong>. That peer id is the handle Cuttlefish expects when you ask
+        for recoverable shares.
+      </p>
+      <p>
+        The important RPC is <strong><code>fetchRecoverableTLKShares</code></strong> (for a given peer).
+        It can surface the full set of encrypted <strong>tlkshare</strong> records relevant to recovery&mdash;including
+        shares addressed to Recovery Key peers (names in the <code>tlkshare-&hellip;::RK-&hellip;</code> family).
+        With the derived encryption private key you ECIES-unwrap those shares into per-view
+        <strong>TLKs</strong>, then OpenVault into CKKS items and the PCS key material needed for
+        ADP-protected CloudKit zones (backups included) and Keychain-class data.
+      </p>
+      <p>
+        Practically, the dump also lets you <em>verify</em> whether a candidate Recovery Key belongs
+        to the circle: if unwrap against the RK peer yields nothing, the key is wrong or not present;
+        if views open, you hold the same class of trust a legitimate RK recovery would use&mdash;without
+        pretending to be a hardware bottle. That distinction mattered for us: commercial restore
+        roads often stop at ADP; the TLKShare dump is how the research tree crossed into account-level
+        recovery when the Recovery Key was already known.
+      </p>
+      <p>
+        The next day we opened the repository publicly. This entry is the penultimate beat of that
+        arc: MMCS could fetch ciphertext; Octagon RK + TLKShares decided whether ADP ciphertext
+        was ours to read.
+      </p>
+
+      <aside class="observe" aria-label="Code observation">
+        <p class="observe__label">In the code today</p>
+        <p>
+          The live path is spelled out in <code>OctagonRecoveryKeyUnlockService</code>: derive the RK peer,
+          bind it on the session, call Cuttlefish <code>fetchRecoverableTLKShares</code>, then vault open.
+        </p>
+        <a
+          class="src"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/OctagonRecoveryKeyUnlockService.cs"
+          >OctagonRecoveryKeyUnlockService.cs</a
+        >
+        <pre><code>/// Octagon Recovery Key -&gt; peer P-384 -&gt; fetchRecoverableTLKShares
+/// -&gt; CKKS OpenVault (Manatee / PCS / Passwords).
+
+derived = OctagonRecoveryKey.Derive(rk, salt);  // HKDF-SHA384(rk, altDSID)
+session.OctagonPeerId = derived.PeerId;
+// ...
+var recov = await _cuttlefish.FetchRecoverableTlkSharesAsync(
+    session, liveDir, forPeerId: derived.PeerId, ...);
+// tlkshare records -&gt; ECIES unwrap -&gt; TLK per view -&gt; OpenVault</code></pre>
+      </aside>
+
+      <a class="back-link" href="../">&larr; All notes</a>
+
+      <aside class="diary-ai-note">
+        <p>
+          These diary entries are drafted with help from an AI coding assistant to speed up the
+          writing. If you spot inconsistencies or errors, please tell me by email:
+          <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>.
+        </p>
+      </aside>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>
