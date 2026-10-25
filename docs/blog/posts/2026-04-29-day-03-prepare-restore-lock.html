@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>29 April 2026 â€” Prepare Restore Session and the Lock wall â€” Forensis-Lab</title>
+  <title>29 April 2026 — Prepare Restore Session and the Lock wall — Forensis-Lab</title>
   <meta
     name="description"
-    content="After snapshots: Prepare Restore / CloudKit Lock on mbksync, Foreground hw/sha, Frida on a jailbroken iPhone, and EPBâ€™s malformed crumbs."
+    content="After snapshots: Prepare Restore / CloudKit Lock on mbksync, Foreground hw/sha, Frida on a jailbroken iPhone, and EPB’s malformed crumbs."
   />
   <meta name="theme-color" content="#0c2f34" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -40,14 +40,14 @@
       <h1>Prepare Restore Session: the first absurd Lock</h1>
       <p>
         Listing snapshots was not the hard problem. The hard problem started the moment you try to
-        do what the phone does in Settingsâ€”<strong>prepare a restore / download session</strong>.
+        do what the phone does in Settings—<strong>prepare a restore / download session</strong>.
         On the CloudKit side that means earning a
         <strong>Lock</strong> on a zone record before the file catalog and MMCS path open up.
         On <strong>29 April 2026</strong> that wall became impossible to ignore.
       </p>
       <p>
-        What iOS shows as â€œpreparingâ€ is, on the wire, a tightly ordered CloudKit dance inside
-        <code>com.apple.backup.ios</code> / zone <code>mbksync</code>. In todayâ€™s extractor the
+        What iOS shows as “preparing” is, on the wire, a tightly ordered CloudKit dance inside
+        <code>com.apple.backup.ios</code> / zone <code>mbksync</code>. In today’s extractor the
         bootstrap still follows the same spine we were chasing then:
       </p>
       <p>
@@ -66,8 +66,8 @@
         rejection we learned by heart: <strong>Invalid lock id</strong>.
       </p>
       <p>
-        That is where the â€œhardware private signaturesâ€ showed up. The restore session carries a
-        <strong>Foreground Restore</strong> plistâ€”stable <strong>hw/sha</strong> material that must
+        That is where the “hardware private signatures” showed up. The restore session carries a
+        <strong>Foreground Restore</strong> plist—stable <strong>hw/sha</strong> material that must
         match what the backup domain believes about the restoring host. Invent it casually and Lock
         dies. Even protobuf packaging mattered later: a double-wrapped field name produced the wrong
         Lock shape and the same invalid-id failure. Snapshot list success had fooled me into thinking
@@ -77,8 +77,8 @@
         Help came from an ugly coalition. <strong>Frida</strong> on the
         <strong>jailbroken iPhone</strong> let us watch and influence the live AuthKit / backupd
         world that actually knows how to speak Foreground. Beside that, a few
-        <strong>malformed Elcomsoft request/response pairs</strong>â€”broken enough to be wrong for a
-        clean download, useful enough as fossilsâ€”hinted at which records and which order the gateway
+        <strong>malformed Elcomsoft request/response pairs</strong>—broken enough to be wrong for a
+        clean download, useful enough as fossils—hinted at which records and which order the gateway
         insisted on. Reconstructing a coherent Prepare Restore Session from those crumbs was the
         extraordinary part: not a single clever packet, but a state machine that only makes sense
         once Lock, Foreground, and the <code>D:</code>/<code>S:</code> catalog agree.
@@ -92,7 +92,7 @@
       <aside class="observe" aria-label="Code observation">
         <p class="observe__label">In the code today</p>
         <p>
-          The wire order and the Lock record name are still the spine of Prepare Downloadâ€”fail
+          The wire order and the Lock record name are still the spine of Prepare Download—fail
           Foreground hw/sha and MobileBackupServerExtension answers with <code>Invalid lock id</code>.
         </p>
         <a
@@ -102,11 +102,11 @@
         >
         <pre><code>// Wire: zones â†’ Account â†’ D: â†’ S: â†’ (mbs) â†’ Lock â†’ N:
 await BootstrapRestoreCatalogAsync(...);
-// â€¦
-log?.Report("CloudKit: record/save Lock (Foreground Restore)â€¦");
-if (lockText.Contains("Invalid lock id", â€¦))
+// …
+log?.Report("CloudKit: record/save Lock (Foreground Restore)…");
+if (lockText.Contains("Invalid lock id", …))
     throw new InvalidOperationException(
-        "â€¦Verifica Foreground hw/sha e record {device}:Lock.");</code></pre>
+        "…Verifica Foreground hw/sha e record {device}:Lock.");</code></pre>
         <a
           class="src"
           href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Protocol/CloudKitLockRequestBuilder.cs"

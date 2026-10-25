@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>24 May 2026 â€” First steps into MMCS and edge-content â€” Forensis-Lab</title>
+  <title>24 May 2026 — First steps into MMCS and edge-content — Forensis-Lab</title>
   <meta
     name="description"
-    content="After a month of RE: MMCS opens. Independence from EPB/jailbreak for the next climb, edge-content byte ranges, Ford vs chunk dataâ€”and a September coda on 0x04 vs 0xC4."
+    content="After a month of RE: MMCS opens. Independence from EPB/jailbreak for the next climb, edge-content byte ranges, Ford vs chunk data—and a September coda on 0x04 vs 0xC4."
   />
   <meta name="theme-color" content="#0c2f34" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -41,7 +41,7 @@
       <p>
         After roughly a month of reverse engineering past Lock, on
         <strong>24 May 2026</strong> I finally put a foot into
-        <strong>MMCS</strong>â€”Appleâ€™s content pipeline behind backup assets.
+        <strong>MMCS</strong>—Apple’s content pipeline behind backup assets.
         That was the day the adventure got oddly fun again: not because it was easy,
         but because the map changed from CloudKit records to
         <strong>edge-content</strong> hosts, ranged GETs, and blobs that refused to be
@@ -49,9 +49,9 @@
       </p>
       <p>
         By then I no longer needed the jailbroken iPhone or Elcomsoft as a daily crutch
-        for the <em>next</em> problems. Cursorâ€”and, frankly, older public fragments that
-        pointed at <strong>Octagon</strong>â€”let me climb paths EPB never advertised.
-        Elcomsoft stayed on the â€œnormalâ€ restore road. The coding agent made it possible
+        for the <em>next</em> problems. Cursor—and, frankly, older public fragments that
+        pointed at <strong>Octagon</strong>—let me climb paths EPB never advertised.
+        Elcomsoft stayed on the “normal” restore road. The coding agent made it possible
         to stare past that road into escrow / Octagon territory that commercial tooling
         simply did not expose as a research surface.
       </p>
@@ -62,14 +62,14 @@
         through the summer IKE and EPB both left files on the table. Side-by-side, my
         reconstructions often held on the order of
         <strong>~3000 more decrypted files</strong> than theirs, covering nearly the
-        whole available setâ€”yet a stubborn tail of chunks still refused to come out clean
+        whole available set—yet a stubborn tail of chunks still refused to come out clean
         until much later.
       </p>
       <p>
         <em>Coda, September 2026:</em> the last pocket of failures was absurd in the way
         only wire protocols can be. Not every Ford key blob announced itself with lead
         byte <strong><code>0x04</code></strong>; some used <strong><code>0xC4</code></strong>.
-        One hex nibbleâ€”<code>C</code> instead of <code>0</code>â€”and weeks of â€œalmostâ€
+        One hex nibble—<code>C</code> instead of <code>0</code>—and weeks of “almost”
         made sense. We will come back to that day properly; May was about opening the door.
       </p>
       <p>
@@ -81,8 +81,8 @@
         with perfect confidence.
       </p>
       <p>
-        The <strong>fileList</strong> storyâ€”how names, signatures, and ranges bind into a
-        download planâ€”deserves its own entry. On this date the honest summary is simpler:
+        The <strong>fileList</strong> story—how names, signatures, and ranges bind into a
+        download plan—deserves its own entry. On this date the honest summary is simpler:
         Lock was behind us; the content edge was ahead; and for the first time the work
         felt less like begging a commercial GUI and more like reading a protocol that
         would occupy the rest of the summer.
@@ -91,9 +91,9 @@
       <aside class="observe" aria-label="Code observation">
         <p class="observe__label">In the code today</p>
         <p>
-          Edge ranges still get classified before decrypt: a short offset-0 window â€œlooks likeâ€
+          Edge ranges still get classified before decrypt: a short offset-0 window “looks like”
           Ford ciphertext when the lead byte matches the capture oracle. Treating a data chunk
-          as Ford (or rejecting a <code>0xC4</code> Ford as â€œnot <code>0x04</code>â€) is how entire
+          as Ford (or rejecting a <code>0xC4</code> Ford as “not <code>0x04</code>”) is how entire
           file tails vanished until September.
         </p>
         <a
@@ -109,7 +109,7 @@
     return slice[0] is 0x04 or &gt;= 0x01;
 }
 
-// Ford key HKDF â€” salt=PCSMMCS2, empty info
+// Ford key HKDF — salt=PCSMMCS2, empty info
 public static byte[] DeriveFordKeyMaterial(ReadOnlySpan&lt;byte&gt; fileEncryptionKey)</code></pre>
       </aside>
 
