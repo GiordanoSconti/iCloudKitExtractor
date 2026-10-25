@@ -65,6 +65,16 @@ dotnet build src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
 dotnet run --project src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
 ```
 
+## GitHub Pages
+
+A project site lives under [`docs/`](docs/) (`index.html` + `site.css`).
+
+1. Push `main` to GitHub.
+2. Repo **Settings → Pages**.
+3. Source: **Deploy from a branch**.
+4. Branch: `main` / folder: `/docs`.
+5. Save — site URL will be similar to `https://giordanosconti.github.io/iCloudKitExtractor/`.
+
 ## Anisette with Frida (jailbroken iPhone)
 
 Preferred path for a coherent **iPhone/akd** identity: OTP is minted on-device via Frida → AuthKit/`akd`, then served by `AnisetteServer`.

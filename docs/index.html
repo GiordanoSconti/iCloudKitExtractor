@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>iCloudKit Extractor — Forensis-Lab</title>
+  <meta
+    name="description"
+    content="Experimental forensic toolkit for iCloud auth, CloudKit/MMCS backup download, and Octagon/PCS recovery. Research software by Forensis-Lab."
+  />
+  <meta name="theme-color" content="#0c2f34" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="./site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="hero" aria-label="Introduction">
+    <div class="hero__plane" aria-hidden="true"></div>
+    <div class="hero__mesh" aria-hidden="true"></div>
+    <div class="hero__orb" aria-hidden="true"></div>
+    <div class="hero__inner">
+      <p class="brand">Forensis-Lab</p>
+      <h1 class="headline">iCloudKit Extractor</h1>
+      <p class="lede">
+        Experimental forensic research software for iCloud sign-in and complete CloudKit/MMCS backup recovery—including ADP-protected data when you hold the Octagon PIN or Recovery Key.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn--primary" href="https://github.com/GiordanoSconti/iCloudKitExtractor">View on GitHub</a>
+        <a class="btn btn--ghost" href="mailto:giordano.sconti@gruppoinformaticiforensi.it">Contact</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="content">
+    <section class="section" aria-labelledby="why">
+      <h2 id="why">Built for extreme recoveries</h2>
+      <p>
+        When CloudKit data is effectively device-bound—and commercial paths fall short—this project explores the private Apple surfaces needed to restore backups and related key material in a controlled forensic setting.
+      </p>
+      <p>
+        Validated by the author on personal backups with ADP on or off, including scenarios with Lockdown Mode and iCloud.com disabled.
+      </p>
+    </section>
+
+    <section class="section" aria-labelledby="capabilities">
+      <h2 id="capabilities">What it targets</h2>
+      <div class="pillars">
+        <div class="pillar">
+          <h3>CloudKit / MMCS</h3>
+          <p>List devices and download backup payloads through CloudKit authorization and MMCS edge flows.</p>
+        </div>
+        <div class="pillar">
+          <h3>Octagon / PCS</h3>
+          <p>Recovery Key and PIN paths toward Manatee/PCS keysets for ADP-protected zones and Keychain-related material.</p>
+        </div>
+        <div class="pillar">
+          <h3>Anisette / Frida</h3>
+          <p>Optional jailbroken-iPhone Frida backend for coherent iPhone/akd identity during GrandSlam auth.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="about">
+      <h2 id="about">About the author</h2>
+      <p>
+        <strong>Giordano Sconti</strong> collaborates with the forensic laboratory <strong>Forensis-Lab</strong> as a software researcher and technical consultant (Consulente Tecnico).
+      </p>
+      <p>
+        Roughly seven months of research shaped this codebase—often late nights or sparse work-day windows—with Cursor coding agents accelerating implementation while keeping a modular layout.
+      </p>
+      <p>
+        Released under MIT; ownership and attribution remain with <strong>Forensis-Lab</strong>. Highly experimental: Apple’s private APIs can change overnight.
+      </p>
+      <div class="meta">
+        <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor#readme">Full README</a>
+        <a href="./EMULATED_AKD.md">Docs: emulated akd</a>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="contribute">
+      <h2 id="contribute">Contribute</h2>
+      <p>
+        Testers, reviewers, and contributors are welcome. Prefer paid coding-agent models over free ones, always re-check generated code, and never land unlicensed third-party code. Pull requests are reviewed carefully.
+      </p>
+      <p>
+        Prefer recognition for <strong>Forensis-Lab</strong> over buying a coffee. For preview access to the maintainer Anisette Server, ask privately by email.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>© Forensis-Lab · Giordano Sconti</span>
+      <span>MIT License · Experimental research software</span>
+    </div>
+  </footer>
+</body>
+</html>
