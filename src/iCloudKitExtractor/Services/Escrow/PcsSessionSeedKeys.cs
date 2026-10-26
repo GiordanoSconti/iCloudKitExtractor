@@ -14,6 +14,15 @@ public static class PcsSessionSeedKeys
         session.PcsEscrowedKeySet is { Length: > 32 }
         || session.PcsManateeCompactKeys is { Count: > 0 };
 
+    /// <summary>Riga di log UI: Escrow KeySet e/o Manatee compact.</summary>
+    public static string DescribeSeed(ICloudSession session, string? source = null)
+    {
+        var escrow = session.PcsEscrowedKeySet is { Length: > 32 } ks ? $"{ks.Length} B" : "—";
+        var manatee = session.PcsManateeCompactKeys is { Count: > 0 } m ? $"{m.Count}" : "—";
+        var src = string.IsNullOrWhiteSpace(source) ? "" : $" ← {source}";
+        return $"PCS seed: escrow={escrow}, manatee={manatee}{src}";
+    }
+
     /// <summary>KeySet Escrow classico in sessione (consumo originale intatto).</summary>
     public static bool HasEscrowKeySet(ICloudSession session) =>
         session.PcsEscrowedKeySet is { Length: > 32 };

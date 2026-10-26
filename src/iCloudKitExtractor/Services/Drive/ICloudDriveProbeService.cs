@@ -363,7 +363,8 @@ public sealed class ICloudDriveProbeService
 
                 var fetched = await FetchDocumentRecordsAsync(
                     session, binding, docsDir, zone, fetchRecords,
-                    zonePayloadLive, pcsDir, options.RebuildDirectoryPaths, log, ct);
+                    zonePayloadLive, pcsDir, options.RebuildDirectoryPaths,
+                    zonePct, progress, log, ct);
                 recordsFetched += fetched;
                 zoneSummaries.Add(new
                 {
@@ -400,6 +401,8 @@ public sealed class ICloudDriveProbeService
         byte[] zonePayloadLive,
         string pcsKeysDirectory,
         bool rebuildDirectoryPaths,
+        int percent,
+        IProgress<ICloudDriveProgress>? progress,
         IProgress<string>? log,
         CancellationToken ct)
     {
@@ -473,10 +476,15 @@ public sealed class ICloudDriveProbeService
 
         try
         {
+            progress?.Report(new ICloudDriveProgress(
+                "Decrypt", Math.Min(92, percent), $"PCS decrypt {zone}…"));
+            log?.Report(
+                $"  crypto: avvio decifratura PCS (Escrow/Manatee) per zona «{zone}»…");
             var crypto = new CloudDocsDocumentCrypto(_http);
             await crypto.ProcessAsync(
                 session, fetchDir, zone, zonePayloadLive, log,
-                pcsKeysDirectory: pcsKeysDirectory, ct: ct);
+                pcsKeysDirectory: pcsKeysDirectory, ct: ct)
+                .ConfigureAwait(false);
             // #region agent log
             var plainDir = Path.Combine(fetchDir, "crypto", "plaintext");
             var plainCount = Directory.Exists(plainDir)

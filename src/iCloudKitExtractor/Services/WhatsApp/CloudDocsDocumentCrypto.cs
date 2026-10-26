@@ -226,8 +226,9 @@ public sealed class CloudDocsDocumentCrypto
         if (zoneKeys is null)
         {
             log?.Report(
-                "  crypto: skip authorizeGet/download — senza PCS KeySet / zone unwrap " +
-                "i ciphertext non sarebbero decifrabili. Completa Unlock EscrowedKeys e rilancia.");
+                "  crypto: skip authorizeGet/download — senza seed PCS / zone unwrap " +
+                "i ciphertext non sarebbero decifrabili. Unlock EscrowedKeys oppure " +
+                "Octagon → CKKS OpenVault (Manatee), poi rilancia.");
             return;
         }
 
@@ -342,12 +343,14 @@ public sealed class CloudDocsDocumentCrypto
             return (null, Array.Empty<ProtectionZoneKeys>(), null);
         }
 
-        var resolved = await ResolvePcsKeySetAsync(session, pcsKeysDirectory, log, ct);
+        var resolved = await ResolvePcsKeySetAsync(session, pcsKeysDirectory, log, ct)
+            .ConfigureAwait(false);
         if (resolved is null)
             return (null, Array.Empty<ProtectionZoneKeys>(), null);
 
         var (keys, source) = resolved.Value;
-        log?.Report($"  crypto: PCS KeySet ← {source} ({keys.Count} private)");
+        var seedKind = PcsSessionSeedKeys.IsManateePrimary(session) ? "Manatee" : "Escrow";
+        log?.Report($"  crypto: PCS seed ← {source} ({keys.Count} private, {seedKind})");
 
         var tag = ExtractProtectionTags(zonePayload).FirstOrDefault();
         // #region agent log
@@ -366,12 +369,21 @@ public sealed class CloudDocsDocumentCrypto
                 zonePiStats.cont0BlobLens,
             });
         // #endregion
-        var all = PcsProtectionZone.TryUnwrapAll(zonePayload, keys, tag);
+        log?.Report(
+            $"  crypto: decifrando zone ProtectionInfo ({zonePayload.Length:N0} B × {keys.Count} keys, {seedKind})…");
+        // CPU-bound: non sul thread UI (Progress può riprendere sul dispatcher).
+        var all = await Task.Run(
+                () => PcsProtectionZone.TryUnwrapAll(zonePayload, keys, tag), ct)
+            .ConfigureAwait(false);
+        log?.Report(
+            all.Count > 0
+                ? $"  crypto: zone ProtectionInfo decifrata — {all.Count} unwrap OK"
+                : "  crypto: zone ProtectionInfo — nessun unwrap");
         if (all.Count == 0)
         {
             log?.Report(
                 "  crypto: zone ProtectionInfo unwrap FALLITO — nessun match KeyID " +
-                "(atteso BLADERUNNER / service 2 nel KeySet escrow).");
+                "(atteso BLADERUNNER / service 2 nel KeySet escrow, oppure compact Manatee/PCS).");
             return (null, all, keys);
         }
 
@@ -429,9 +441,11 @@ public sealed class CloudDocsDocumentCrypto
     }
 
     /// <summary>
-    /// KeySet PCS: (1) già in <see cref="ICloudSession.PcsEscrowedKeySet"/>;
-    /// (2) file/unlock/recover via <see cref="EscrowPcsSession.EnsureKeySetAsync"/>.
-    /// Non legge dump <c>whatsapp_docs_*</c> / catture.
+    /// Seed PCS per CloudDocs/Drive:
+    /// (1) <see cref="ICloudSession.PcsEscrowedKeySet"/> (file/unlock offline);
+    /// (2) se manca Escrow, compact Manatee/PCS da CKKS OpenVault
+    ///     (<see cref="ICloudSession.PcsManateeCompactKeys"/> / disco Octagon).
+    /// Stesso criterio di backup ADP: Escrow preferito; Manatee solo in assenza.
     /// </summary>
     private static async Task<(List<PcsCompactPrivateKey> Keys, string Source)?> ResolvePcsKeySetAsync(
         ICloudSession session,
@@ -439,20 +453,17 @@ public sealed class CloudDocsDocumentCrypto
         IProgress<string>? log,
         CancellationToken ct)
     {
-        var dir = pcsKeysDirectory
-                  ?? session.PcsKeysDirectory
-                  ?? "";
-        if (string.IsNullOrWhiteSpace(dir))
-        {
-            log?.Report(
-                "  crypto: nessun KeySet PCS — cartella Escrow assente. " +
-                "Imposta cartella Decrypt / Unlock EscrowedKeys.");
-            return null;
-        }
+        var dir = EscrowPcsSession.ResolvePcsKeysDirectory(
+            pcsKeysDirectory,
+            session.PcsKeysDirectory,
+            session.OctagonKeysDirectory);
+        if (!string.IsNullOrWhiteSpace(dir))
+            session.PcsKeysDirectory = dir;
 
-        // HttpClient non disponibile qui staticamente: solo load da sessione/file/unlock offline.
-        // Il recover live è fatto da MainWindow/Ensure prima del probe.
-        if (session.PcsEscrowedKeySet is not { Length: > 32 })
+        // HttpClient non disponibile qui: load da sessione/file/unlock offline.
+        // Recover live / OpenVault sono fatti da MainWindow/Ensure prima del probe.
+        if (session.PcsEscrowedKeySet is not { Length: > 32 }
+            && !string.IsNullOrWhiteSpace(dir))
         {
             var unlocked = EscrowPcsSession.FindUnlockedKeysFile(dir);
             if (unlocked is not null)
@@ -489,23 +500,36 @@ public sealed class CloudDocsDocumentCrypto
             }
         }
 
-        if (session.PcsEscrowedKeySet is not { Length: > 32 } mem)
+        if (session.PcsEscrowedKeySet is { Length: > 32 } mem)
         {
-            log?.Report(
-                $"  crypto: manca {EscrowPcsUnlock.UnlockedKeysFileName} in «{dir}» — " +
-                "completa Unlock EscrowedKeys (tab Escrow KeyBagKey / iCSC), poi rilancia.");
-            return null;
+            try
+            {
+                return (PcsDer.ParseKeySetPrivateKeys(mem), "session.PcsEscrowedKeySet");
+            }
+            catch (Exception ex)
+            {
+                log?.Report($"  crypto: KeySet Escrow non valido: {ex.Message}");
+            }
         }
 
-        try
+        // ADP / solo Octagon: niente Escrow → Manatee compact (OpenVault / disco).
+        if (session.PcsManateeCompactKeys is not { Count: > 0 }
+            && !string.IsNullOrWhiteSpace(dir))
         {
-            return (PcsDer.ParseKeySetPrivateKeys(mem), "session.PcsEscrowedKeySet");
+            _ = EscrowPcsSession.TryLoadManateeFromDisk(session, dir, log);
         }
-        catch (Exception ex)
+
+        if (PcsSessionSeedKeys.IsManateePrimary(session))
         {
-            log?.Report($"  crypto: KeySet in sessione non valido: {ex.Message}");
-            return null;
+            var manatee = PcsSessionSeedKeys.Collect(session, log);
+            if (manatee.Count > 0)
+                return (manatee, "session.PcsManateeCompactKeys");
         }
+
+        log?.Report(
+            "  crypto: nessun seed PCS — Unlock EscrowedKeys (iCSC) oppure " +
+            "Unlock Octagon → CKKS OpenVault (Manatee), poi rilancia.");
+        return null;
     }
 
     /// <summary>
@@ -539,34 +563,45 @@ public sealed class CloudDocsDocumentCrypto
         var plainBasenames = new Dictionary<string, string>(StringComparer.Ordinal);
 
         var workingKeys = PcsProtectionZone.MergeKeys(seedKeys, allZoneKeys);
+        var withRecordPi = entries.Count(static x => x.RecordProtectionInfoDerHex != null);
         log?.Report(
             $"  crypto: keyring per record PI = {workingKeys.Count} " +
             $"(seed={seedKeys.Count} + nested zone)");
+        log?.Report(
+            $"  crypto: decifrando record ProtectionInfo ({withRecordPi} record)…");
 
-        // Pass 1: unwrap tutti i record PI (TryUnwrapAll — più key slot per record).
-        var recordZones = new List<(DocumentCryptoEntry Entry, ProtectionZoneKeys Zone)>();
-        foreach (var e in entries)
+        // Pass 1: unwrap tutti i record PI (CPU-bound → thread pool).
+        var unwrapped = await Task.Run(() =>
         {
-            if (e.RecordProtectionInfoDerHex is not { Length: > 0 })
-                continue;
-            var recordDer = Convert.FromHexString(e.RecordProtectionInfoDerHex);
-            var zones = PcsProtectionZone.TryUnwrapAll(recordDer, workingKeys);
-            if (zones.Count == 0)
-                continue;
-            foreach (var recordZone in zones)
+            var list = new List<(DocumentCryptoEntry Entry, ProtectionZoneKeys Zone, byte[] Master)>();
+            foreach (var e in entries)
             {
-                recordZones.Add((e, recordZone));
-                await File.WriteAllBytesAsync(
-                    Path.Combine(recordPiDir, Sanitize(e.RecordName) + "_master.bin"),
-                    recordZone.MasterKey,
-                    ct);
+                if (e.RecordProtectionInfoDerHex is not { Length: > 0 })
+                    continue;
+                var recordDer = Convert.FromHexString(e.RecordProtectionInfoDerHex);
+                var zones = PcsProtectionZone.TryUnwrapAll(recordDer, workingKeys);
+                if (zones.Count == 0)
+                    continue;
+                foreach (var recordZone in zones)
+                    list.Add((e, recordZone, recordZone.MasterKey));
             }
 
-            recordMasters[e.RecordName] = zones[0].MasterKey;
+            return list;
+        }, ct).ConfigureAwait(false);
+
+        var recordZones = new List<(DocumentCryptoEntry Entry, ProtectionZoneKeys Zone)>();
+        foreach (var (e, recordZone, master) in unwrapped)
+        {
+            recordZones.Add((e, recordZone));
+            await File.WriteAllBytesAsync(
+                Path.Combine(recordPiDir, Sanitize(e.RecordName) + "_master.bin"),
+                master,
+                ct).ConfigureAwait(false);
+            if (!recordMasters.ContainsKey(e.RecordName))
+                recordMasters[e.RecordName] = master;
         }
 
-        log?.Report($"  crypto: record PI unwrap {recordZones.Count}/{entries.Count(x => x.RecordProtectionInfoDerHex != null)}");
-
+        log?.Report($"  crypto: record PI unwrap {recordZones.Count}/{withRecordPi}");
         var decryptPool = allZoneKeys
             .Concat(recordZones.Select(static r => r.Zone))
             .Prepend(zoneKeys)
@@ -575,56 +610,67 @@ public sealed class CloudDocsDocumentCrypto
 
         var keyPool = PcsProtectionZone.MergeKeys(seedKeys, decryptPool);
 
-        // Pass 2: basename — record PI, PI annidati nella finestra record , poi pool zona.
-        var ok = 0;
-        foreach (var e in entries)
+        // Pass 2: basename (CPU + I/O disco sync) → thread pool.
+        var withBasename = entries.Count(static x => x.EncryptedBasenameHex != null);
+        log?.Report($"  crypto: decifrando encryptedBasename ({withBasename})…");
+        var basenameHits = await Task.Run(() =>
         {
-            if (e.EncryptedBasenameHex is not { Length: > 0 })
-                continue;
-            var ctBytes = Convert.FromHexString(e.EncryptedBasenameHex);
-            var structureName = e.RecordName.Replace(
-                "documentContent/", "documentStructure/", StringComparison.Ordinal);
-            var aads = new[]
+            var hits = new List<(string RecordName, byte[] Plain, string Text)>();
+            foreach (var e in entries)
             {
-                "encryptedBasename", "basename", e.RecordName, structureName, ShortName(e.RecordName),
-            };
-
-            var tryZones = new List<(ProtectionZoneKeys Zone, string Source)>();
-            foreach (var z in recordZones
-                         .Where(r => r.Entry.RecordName == e.RecordName)
-                         .Select(static r => r.Zone))
-                tryZones.Add((z, "record-pi"));
-            foreach (var z in CollectRecordWindowZones(fetchDir, e, keyPool))
-                tryZones.Add((z, "record-window-pi"));
-            foreach (var z in decryptPool)
-                tryZones.Add((z, "zone-pool"));
-
-            byte[]? plain = null;
-            var seenZone = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var (zk, _) in tryZones)
-            {
-                var id = Convert.ToHexString(zk.MasterKey);
-                if (!seenZone.Add(id))
+                if (e.EncryptedBasenameHex is not { Length: > 0 })
                     continue;
-                plain = PcsProtectionZone.TryDecryptField(zk, ctBytes, aads);
-                if (plain is not null)
-                    break;
+                var ctBytes = Convert.FromHexString(e.EncryptedBasenameHex);
+                var structureName = e.RecordName.Replace(
+                    "documentContent/", "documentStructure/", StringComparison.Ordinal);
+                var aads = new[]
+                {
+                    "encryptedBasename", "basename", e.RecordName, structureName,
+                    ShortName(e.RecordName),
+                };
+
+                var tryZones = new List<ProtectionZoneKeys>();
+                foreach (var z in recordZones
+                             .Where(r => r.Entry.RecordName == e.RecordName)
+                             .Select(static r => r.Zone))
+                    tryZones.Add(z);
+                tryZones.AddRange(CollectRecordWindowZones(fetchDir, e, keyPool));
+                tryZones.AddRange(decryptPool);
+
+                byte[]? plain = null;
+                var seenZone = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var zk in tryZones)
+                {
+                    var id = Convert.ToHexString(zk.MasterKey);
+                    if (!seenZone.Add(id))
+                        continue;
+                    plain = PcsProtectionZone.TryDecryptField(zk, ctBytes, aads);
+                    if (plain is not null)
+                        break;
+                }
+
+                if (plain is null)
+                    continue;
+                hits.Add((e.RecordName, plain, Encoding.UTF8.GetString(plain)));
             }
 
-            if (plain is null)
-                continue;
+            return hits;
+        }, ct).ConfigureAwait(false);
 
-            ok++;
-            var text = Encoding.UTF8.GetString(plain);
-            plainBasenames[e.RecordName] = text;
-            var baseName = Sanitize(e.RecordName);
-            await File.WriteAllBytesAsync(Path.Combine(outDir, baseName + ".bin"), plain, ct);
-            await File.WriteAllTextAsync(Path.Combine(outDir, baseName + ".txt"), text, ct);
+        foreach (var (recordName, plain, text) in basenameHits)
+        {
+            plainBasenames[recordName] = text;
+            var baseName = Sanitize(recordName);
+            await File.WriteAllBytesAsync(Path.Combine(outDir, baseName + ".bin"), plain, ct)
+                .ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Combine(outDir, baseName + ".txt"), text, ct)
+                .ConfigureAwait(false);
         }
 
+        var ok = basenameHits.Count;
         log?.Report(
             ok > 0
-                ? $"  crypto: decryptedBasename {ok}/{entries.Count(x => x.EncryptedBasenameHex != null)}"
+                ? $"  crypto: decryptedBasename {ok}/{withBasename}"
                 : "  crypto: encryptedBasename non decifrati — verificare pairing record↔PI e AAD.");
         return (ok, recordMasters, plainBasenames, recordZones);
     }
@@ -1061,75 +1107,89 @@ public sealed class CloudDocsDocumentCrypto
             return (0, plainBasenames);
 
         var workingKeys = PcsProtectionZone.MergeKeys(seedKeys, allZoneKeys);
-        var recordZones = new List<(DirectoryCryptoEntry Entry, ProtectionZoneKeys Zone)>();
-        foreach (var e in directories)
+        var withDirPi = directories.Count(static x => x.RecordProtectionInfoDerHex != null);
+        var withDirBasename = directories.Count(static x => x.EncryptedBasenameHex != null);
+        log?.Report(
+            $"  crypto: decifrando directory ProtectionInfo/basename " +
+            $"({withDirPi} PI, {withDirBasename} basename)…");
+
+        var basenameHits = await Task.Run(() =>
         {
-            if (e.RecordProtectionInfoDerHex is not { Length: > 0 })
-                continue;
-            var recordDer = Convert.FromHexString(e.RecordProtectionInfoDerHex);
-            var zones = PcsProtectionZone.TryUnwrapAll(recordDer, workingKeys);
-            foreach (var recordZone in zones)
-                recordZones.Add((e, recordZone));
-        }
-
-        var decryptPool = allZoneKeys
-            .Concat(recordZones.Select(static r => r.Zone))
-            .Concat(documentRecordZones.Select(static r => r.Zone))
-            .Prepend(zoneKeys)
-            .DistinctBy(static z => Convert.ToHexString(z.MasterKey))
-            .ToList();
-        var keyPool = PcsProtectionZone.MergeKeys(seedKeys, decryptPool);
-
-        var ok = 0;
-        foreach (var e in directories)
-        {
-            if (e.EncryptedBasenameHex is not { Length: > 0 })
-                continue;
-            var ctBytes = Convert.FromHexString(e.EncryptedBasenameHex);
-            var altName = e.RecordName.StartsWith(".directory/", StringComparison.Ordinal)
-                ? e.RecordName[".".Length..]
-                : e.RecordName;
-            var aads = new[]
+            var zones = new List<(DirectoryCryptoEntry Entry, ProtectionZoneKeys Zone)>();
+            foreach (var e in directories)
             {
-                "encryptedBasename", "basename", e.RecordName, altName, ShortDirectoryName(e.RecordName),
-            };
-
-            var tryZones = new List<ProtectionZoneKeys>();
-            foreach (var z in recordZones
-                         .Where(r => r.Entry.RecordName == e.RecordName)
-                         .Select(static r => r.Zone))
-                tryZones.Add(z);
-            foreach (var z in CollectDirectoryWindowZones(fetchDir, e, keyPool))
-                tryZones.Add(z);
-            foreach (var z in decryptPool)
-                tryZones.Add(z);
-
-            byte[]? plain = null;
-            var seenZone = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var zk in tryZones)
-            {
-                var id = Convert.ToHexString(zk.MasterKey);
-                if (!seenZone.Add(id))
+                if (e.RecordProtectionInfoDerHex is not { Length: > 0 })
                     continue;
-                plain = PcsProtectionZone.TryDecryptField(zk, ctBytes, aads);
-                if (plain is not null)
-                    break;
+                var recordDer = Convert.FromHexString(e.RecordProtectionInfoDerHex);
+                foreach (var recordZone in PcsProtectionZone.TryUnwrapAll(recordDer, workingKeys))
+                    zones.Add((e, recordZone));
             }
 
-            if (plain is null)
-                continue;
+            var decryptPool = allZoneKeys
+                .Concat(zones.Select(static r => r.Zone))
+                .Concat(documentRecordZones.Select(static r => r.Zone))
+                .Prepend(zoneKeys)
+                .DistinctBy(static z => Convert.ToHexString(z.MasterKey))
+                .ToList();
+            var keyPool = PcsProtectionZone.MergeKeys(seedKeys, decryptPool);
 
-            ok++;
-            var text = Encoding.UTF8.GetString(plain);
-            plainBasenames[e.RecordName] = text;
-            var baseName = Sanitize(e.RecordName);
-            await File.WriteAllBytesAsync(Path.Combine(outDir, baseName + ".bin"), plain, ct);
-            await File.WriteAllTextAsync(Path.Combine(outDir, baseName + ".txt"), text, ct);
+            var hits = new List<(string RecordName, byte[] Plain, string Text)>();
+            foreach (var e in directories)
+            {
+                if (e.EncryptedBasenameHex is not { Length: > 0 })
+                    continue;
+                var ctBytes = Convert.FromHexString(e.EncryptedBasenameHex);
+                var altName = e.RecordName.StartsWith(".directory/", StringComparison.Ordinal)
+                    ? e.RecordName[".".Length..]
+                    : e.RecordName;
+                var aads = new[]
+                {
+                    "encryptedBasename", "basename", e.RecordName, altName,
+                    ShortDirectoryName(e.RecordName),
+                };
+
+                var tryZones = new List<ProtectionZoneKeys>();
+                foreach (var z in zones
+                             .Where(r => r.Entry.RecordName == e.RecordName)
+                             .Select(static r => r.Zone))
+                    tryZones.Add(z);
+                tryZones.AddRange(CollectDirectoryWindowZones(fetchDir, e, keyPool));
+                tryZones.AddRange(decryptPool);
+
+                byte[]? plain = null;
+                var seenZone = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var zk in tryZones)
+                {
+                    var id = Convert.ToHexString(zk.MasterKey);
+                    if (!seenZone.Add(id))
+                        continue;
+                    plain = PcsProtectionZone.TryDecryptField(zk, ctBytes, aads);
+                    if (plain is not null)
+                        break;
+                }
+
+                if (plain is null)
+                    continue;
+                hits.Add((e.RecordName, plain, Encoding.UTF8.GetString(plain)));
+            }
+
+            return hits;
+        }, ct).ConfigureAwait(false);
+
+        foreach (var (recordName, plain, text) in basenameHits)
+        {
+            plainBasenames[recordName] = text;
+            var baseName = Sanitize(recordName);
+            await File.WriteAllBytesAsync(Path.Combine(outDir, baseName + ".bin"), plain, ct)
+                .ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Combine(outDir, baseName + ".txt"), text, ct)
+                .ConfigureAwait(false);
         }
 
+        var ok = basenameHits.Count;
         log?.Report(
             ok > 0
-                ? $"  crypto: directoryBasename {ok}/{directories.Count(x => x.EncryptedBasenameHex != null)}"
+                ? $"  crypto: directoryBasename {ok}/{withDirBasename}"
                 : "  crypto: directory encryptedBasename non decifrati.");
         return (ok, plainBasenames);
     }

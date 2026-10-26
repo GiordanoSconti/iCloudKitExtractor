@@ -1549,12 +1549,15 @@ public partial class MainWindow : Window
             WhatsAppProbeButton.IsEnabled = false;
             AppendWhatsAppLog($"Probe WhatsApp (CK + Documents) → {outputDir}");
 
-            var pcsDir = DecryptOutputTextBox.Text.Trim();
-            if (string.IsNullOrEmpty(pcsDir))
-                pcsDir = outputDir;
+            var pcsDir = EscrowPcsSession.ResolvePcsKeysDirectory(
+                DecryptOutputTextBox.Text.Trim(),
+                _session.OctagonKeysDirectory,
+                _session.PcsKeysDirectory,
+                outputDir);
             Directory.CreateDirectory(pcsDir);
+            _ = EscrowPcsSession.TryLoadManateeFromDisk(_session, pcsDir, null);
 
-            // KeySet PCS obbligatorio per basename + MMCS decrypt: assicurati prima del probe.
+            // Seed PCS (Escrow KeySet o Manatee) obbligatorio per basename + MMCS decrypt.
             var iCsc = ResolveEscrowIcsc();
             if (string.IsNullOrEmpty(EscrowPasswordBox.Password.Trim()) && !string.IsNullOrEmpty(iCsc))
                 AppendWhatsAppLog($"iCSC vuoto → default DSID ({iCsc})");
@@ -1567,27 +1570,34 @@ public partial class MainWindow : Window
             var ensureLog = new Progress<string>(msg => Dispatcher.Invoke(() => AppendWhatsAppLog(msg)));
             var ensure = await EscrowPcsSession.EnsureKeySetAsync(
                 _session, Http, pcsDir, iCsc, sms, ensureLog);
-            if (!ensure.Success)
+            if (!ensure.Success || !PcsSessionSeedKeys.HasAny(_session))
             {
                 AppendWhatsAppLog($"FAIL PCS: {ensure.Message}");
                 MessageBox.Show(this,
-                    ensure.Message ?? "KeySet PCS assente.",
+                    ensure.Message
+                    ?? "PCS assente — Unlock EscrowedKeys oppure Octagon/CKKS OpenVault (Manatee).",
                     "WhatsApp CloudKit",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 return;
             }
 
-            AppendWhatsAppLog(
-                $"PCS KeySet in sessione: {_session.PcsEscrowedKeySet?.Length ?? 0} B ← {ensure.Source}");
+            AppendWhatsAppLog(PcsSessionSeedKeys.DescribeSeed(_session, ensure.Source));
 
+            var session = _session;
             var log = new Progress<string>(msg => Dispatcher.Invoke(() => AppendWhatsAppLog(msg)));
-            var ckProbe = new WhatsAppCloudKitProbeService(Http, Orchestrator);
-            var ckResult = await ckProbe.ProbePrivateDatabaseAsync(_session, outputDir, log);
-            AppendWhatsAppLog($"CK probe OK: {ckResult.OutputDirectory}");
+            var ckResult = await Task.Run(async () =>
+            {
+                var ckProbe = new WhatsAppCloudKitProbeService(Http, Orchestrator);
+                var ck = await ckProbe.ProbePrivateDatabaseAsync(session, outputDir, log)
+                    .ConfigureAwait(false);
+                var docsProbe = new WhatsAppDocumentsProbeService(Http, Orchestrator);
+                await docsProbe.ProbeAsync(session, outputDir, log, pcsKeysDirectory: pcsDir)
+                    .ConfigureAwait(false);
+                return ck;
+            }).ConfigureAwait(true);
 
-            var docsProbe = new WhatsAppDocumentsProbeService(Http, Orchestrator);
-            await docsProbe.ProbeAsync(_session, outputDir, log, pcsKeysDirectory: pcsDir);
+            AppendWhatsAppLog($"CK probe OK: {ckResult.OutputDirectory}");
             AppendWhatsAppLog("Documents probe finito.");
             MessageBox.Show(this,
                 $"Probe completato (solo valori live di questa run).\n" +
@@ -1648,10 +1658,13 @@ public partial class MainWindow : Window
             ICloudDriveStatusText.Text = "Avvio…";
             AppendICloudDriveLog($"iCloud Drive → {outputDir}");
 
-            var pcsDir = DecryptOutputTextBox.Text.Trim();
-            if (string.IsNullOrEmpty(pcsDir))
-                pcsDir = outputDir;
+            var pcsDir = EscrowPcsSession.ResolvePcsKeysDirectory(
+                DecryptOutputTextBox.Text.Trim(),
+                _session.OctagonKeysDirectory,
+                _session.PcsKeysDirectory,
+                outputDir);
             Directory.CreateDirectory(pcsDir);
+            _ = EscrowPcsSession.TryLoadManateeFromDisk(_session, pcsDir, null);
 
             var iCsc = ResolveEscrowIcsc();
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
@@ -1663,22 +1676,23 @@ public partial class MainWindow : Window
             var ensureLog = new Progress<string>(msg => Dispatcher.Invoke(() => AppendICloudDriveLog(msg)));
             var ensure = await EscrowPcsSession.EnsureKeySetAsync(
                 _session, Http, pcsDir, iCsc, sms, ensureLog);
-            if (!ensure.Success)
+            if (!ensure.Success || !PcsSessionSeedKeys.HasAny(_session))
             {
                 AppendICloudDriveLog($"FAIL PCS: {ensure.Message}");
                 ICloudDriveStatusText.Text = "PCS assente";
                 MessageBox.Show(this,
-                    ensure.Message ?? "KeySet PCS assente.",
+                    ensure.Message
+                    ?? "PCS assente — Unlock EscrowedKeys oppure Octagon/CKKS OpenVault (Manatee).",
                     "iCloud Drive",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 return;
             }
 
-            AppendICloudDriveLog(
-                $"PCS KeySet: {_session.PcsEscrowedKeySet?.Length ?? 0} B ← {ensure.Source}");
+            AppendICloudDriveLog(PcsSessionSeedKeys.DescribeSeed(_session, ensure.Source));
 
             var includeApps = ICloudDriveIncludeAppZonesCheckBox.IsChecked == true;
+            var session = _session;
             var log = new Progress<string>(msg => Dispatcher.Invoke(() => AppendICloudDriveLog(msg)));
             var progress = new Progress<ICloudDriveProgress>(p => Dispatcher.Invoke(() =>
             {
@@ -1687,13 +1701,16 @@ public partial class MainWindow : Window
             }));
 
             var probe = new ICloudDriveProbeService(Http, Orchestrator);
-            var result = await probe.ProbeAsync(
-                _session,
-                outputDir,
-                includeApps,
-                log,
-                progress,
-                pcsKeysDirectory: pcsDir);
+            var result = await Task.Run(
+                    () => probe.ProbeAsync(
+                        session,
+                        outputDir,
+                        includeApps,
+                        log,
+                        progress,
+                        pcsKeysDirectory: pcsDir),
+                    CancellationToken.None)
+                .ConfigureAwait(true);
 
             ICloudDriveProgressBar.Value = 100;
             ICloudDriveStatusText.Text = result.Success ? "Completato" : "Errore";
@@ -1761,10 +1778,13 @@ public partial class MainWindow : Window
             ICloudFilesStatusText.Text = "Avvio…";
             AppendICloudFilesLog($"iCloud Files  → {outputDir}");
 
-            var pcsDir = DecryptOutputTextBox.Text.Trim();
-            if (string.IsNullOrEmpty(pcsDir))
-                pcsDir = outputDir;
+            var pcsDir = EscrowPcsSession.ResolvePcsKeysDirectory(
+                DecryptOutputTextBox.Text.Trim(),
+                _session.OctagonKeysDirectory,
+                _session.PcsKeysDirectory,
+                outputDir);
             Directory.CreateDirectory(pcsDir);
+            _ = EscrowPcsSession.TryLoadManateeFromDisk(_session, pcsDir, null);
 
             var iCsc = ResolveEscrowIcsc();
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
@@ -1776,21 +1796,22 @@ public partial class MainWindow : Window
             var ensureLog = new Progress<string>(msg => Dispatcher.Invoke(() => AppendICloudFilesLog(msg)));
             var ensure = await EscrowPcsSession.EnsureKeySetAsync(
                 _session, Http, pcsDir, iCsc, sms, ensureLog);
-            if (!ensure.Success)
+            if (!ensure.Success || !PcsSessionSeedKeys.HasAny(_session))
             {
                 AppendICloudFilesLog($"FAIL PCS: {ensure.Message}");
                 ICloudFilesStatusText.Text = "PCS assente";
                 MessageBox.Show(this,
-                    ensure.Message ?? "KeySet PCS assente.",
+                    ensure.Message
+                    ?? "PCS assente — Unlock EscrowedKeys oppure Octagon/CKKS OpenVault (Manatee).",
                     "iCloud Files",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 return;
             }
 
-            AppendICloudFilesLog(
-                $"PCS KeySet: {_session.PcsEscrowedKeySet?.Length ?? 0} B ← {ensure.Source}");
+            AppendICloudFilesLog(PcsSessionSeedKeys.DescribeSeed(_session, ensure.Source));
 
+            var session = _session;
             var log = new Progress<string>(msg => Dispatcher.Invoke(() => AppendICloudFilesLog(msg)));
             var progress = new Progress<ICloudDriveProgress>(p => Dispatcher.Invoke(() =>
             {
@@ -1799,13 +1820,16 @@ public partial class MainWindow : Window
             }));
 
             var probe = new ICloudDriveProbeService(Http, Orchestrator);
-            var result = await probe.ProbeAsync(
-                _session,
-                outputDir,
-                ICloudDriveProbeOptions.ICloudFiles(),
-                log,
-                progress,
-                pcsKeysDirectory: pcsDir);
+            var result = await Task.Run(
+                    () => probe.ProbeAsync(
+                        session,
+                        outputDir,
+                        ICloudDriveProbeOptions.ICloudFiles(),
+                        log,
+                        progress,
+                        pcsKeysDirectory: pcsDir),
+                    CancellationToken.None)
+                .ConfigureAwait(true);
 
             ICloudFilesProgressBar.Value = 100;
             ICloudFilesStatusText.Text = result.Success ? "Completato" : "Errore";
