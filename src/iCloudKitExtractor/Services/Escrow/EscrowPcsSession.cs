@@ -43,6 +43,8 @@ public static class EscrowPcsSession
         {
             log?.Report(
                 $"  PCS KeySet già in sessione ({session.PcsEscrowedKeySet.Length} B).");
+            // ADP / Sync Data Photos: aggiungi comunque Manatee da disco se presente.
+            _ = TryLoadManateeFromDisk(session, resolved, log);
             return new EscrowPcsEnsureResult(true, "session", session.PcsEscrowedKeySet);
         }
 

@@ -2021,19 +2021,22 @@ public partial class MainWindow : Window
                     }
 
                     await Dispatcher.InvokeAsync(() => AppendSyncDataLog(
-                        PcsSessionSeedKeys.IsManateePrimary(session)
-                            ? $"PCS Manatee in sessione: {session.PcsManateeCompactKeys!.Count} compact ← {ensure.Source}"
-                            : $"PCS KeySet in sessione: {session.PcsEscrowedKeySet?.Length ?? 0} B ← {ensure.Source}"));
+                        PcsSessionSeedKeys.DescribeSeed(session, ensure.Source)));
                 }
                 else
                 {
+                    // Escrow già in sessione: Ensure ricarica comunque Manatee da disco.
+                    if (session.PcsManateeCompactKeys is not { Count: > 0 })
+                    {
+                        await Task.Run(
+                                () => EscrowPcsSession.EnsureKeySetAsync(
+                                    session, Http, pcsDir, iCsc, sms, uiLog),
+                                CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+
                     await Dispatcher.InvokeAsync(() => AppendSyncDataLog(
-                        PcsSessionSeedKeys.IsManateePrimary(session)
-                            ? $"PCS Manatee già pronto: {session.PcsManateeCompactKeys!.Count} compact"
-                            : $"PCS KeySet già in sessione: {session.PcsEscrowedKeySet?.Length ?? 0} B"
-                              + (session.PcsManateeCompactKeys is { Count: > 0 } m
-                                  ? $" (+ Manatee {m.Count})"
-                                  : "")));
+                        PcsSessionSeedKeys.DescribeSeed(session, "session")));
                 }
             }
             else

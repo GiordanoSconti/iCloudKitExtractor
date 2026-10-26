@@ -951,14 +951,21 @@ public sealed class PhotosCloudSyncService
             PhaseLabel: "Organizza",
             PhaseIndeterminate: true));
         log?.Report("  Photos: OrganizeAsync (Album / rename / Photos.db)…");
-        var catalog = PhotosCryptoPlaintextCatalog.LoadInto(photosCloudDir, cache, albums, log);
-        await PhotosLibraryOrganizer.OrganizeAsync(
-            photosDir, cache, albums, relations, catalog.AlbumNames, log, ct);
-        WriteInventory(photosDir, albums, relations, media, catalog.AlbumNames);
-        PhotosViewerPublisher.Publish(photosDir, log);
-        log?.Report(
-            $"  inventory.json: nomi album aggiornati " +
-            $"({CountNamedAlbums(albums, catalog.AlbumNames)}/{albums.Count(a => !a.IsRootFolder)})");
+        try
+        {
+            var catalog = PhotosCryptoPlaintextCatalog.LoadInto(photosCloudDir, cache, albums, log);
+            await PhotosLibraryOrganizer.OrganizeAsync(
+                photosDir, cache, albums, relations, catalog.AlbumNames, log, ct);
+            WriteInventory(photosDir, albums, relations, media, catalog.AlbumNames);
+            PhotosViewerPublisher.Publish(photosDir, log);
+            log?.Report(
+                $"  inventory.json: nomi album aggiornati " +
+                $"({CountNamedAlbums(albums, catalog.AlbumNames)}/{albums.Count(a => !a.IsRootFolder)})");
+        }
+        catch (Exception ex)
+        {
+            log?.Report($"  Photos organize ERRORE: {ex.Message}");
+        }
 
         // Offline: i nomi file/album arrivano già da crypto/ (Organize). BRM senza zone
         // precomputate rifà unwrap+localTryUnwrap silenzioso per decine di minuti
@@ -1288,9 +1295,29 @@ public sealed class PhotosCloudSyncService
         if (!File.Exists(kekCachePath) && File.Exists(legacyKek))
             File.Copy(legacyKek, kekCachePath);
 
+        // Preferisci Manatee da disco anche se Escrow KeySet è già in sessione (ADP Photos).
+        if (session.PcsManateeCompactKeys is not { Count: > 0 })
+            _ = EscrowPcsSession.TryLoadManateeFromDisk(
+                session,
+                session.OctagonKeysDirectory ?? session.PcsKeysDirectory,
+                log);
+
         var seedKeys = PcsSessionSeedKeys.HasAny(session)
             ? PcsSessionSeedKeys.CollectForSyncData(session, log)
             : [];
+        if (seedKeys.Count == 0)
+        {
+            log?.Report(
+                "  Photos PCS unwrap: seed vuoto — Unlock EscrowedKeys oppure " +
+                "Octagon/CKKS OpenVault (Manatee) prima di Sync Data Photos.");
+        }
+        else
+        {
+            log?.Report(
+                $"  Photos PCS seed: {PcsSessionSeedKeys.DescribeSeed(session)}" +
+                $" → CollectForSyncData={seedKeys.Count}");
+        }
+
         var zones = new List<ProtectionZoneKeys>();
         var pool = new List<PcsCompactPrivateKey>(seedKeys);
         var swAll = System.Diagnostics.Stopwatch.StartNew();
@@ -1305,6 +1332,7 @@ public sealed class PhotosCloudSyncService
                 zones.AddRange(fromZone);
                 pool = PcsProtectionZone.MergeKeys(seedKeys, fromZone);
                 fromZoneCount = fromZone.Count;
+                PcsSessionSeedKeys.RememberFromZones(session, fromZone, seedKeys);
                 log?.Report(
                     $"  PCS unwrap zone PrimarySync: +{fromZone.Count} (pool={pool.Count})");
             }
@@ -1335,7 +1363,11 @@ public sealed class PhotosCloudSyncService
                     includeDer: true);
                 zones.AddRange(fromPage);
                 if (fromPage.Count > 0)
+                {
                     pool = PcsProtectionZone.MergeKeys(pool, fromPage);
+                    PcsSessionSeedKeys.RememberFromZones(session, fromPage, seedKeys);
+                }
+
                 log?.Report(
                     $"  PCS unwrap page {i + 1}/{assetPages.Count} full: +{fromPage.Count} " +
                     $"in {sw.ElapsedMilliseconds} ms (tot zones={zones.Count}, pool={pool.Count})");
@@ -1368,7 +1400,16 @@ public sealed class PhotosCloudSyncService
         swAll.Stop();
         log?.Report(
             $"  Photos PCS unwrap: zones={zones.Count} kek={kekPool.Count} " +
-            $"in {swAll.ElapsedMilliseconds} ms (page-full)");
+            $"in {swAll.ElapsedMilliseconds} ms (page-full" +
+            (fromZoneCount > 0 ? $", zonePI={fromZoneCount}" : "") + ")");
+        if (kekPool.Count == 0 && seedKeys.Count > 0)
+        {
+            log?.Report(
+                "  Photos PCS: nessun KEK da unwrap — le compact Manatee/Escrow " +
+                "non aprono ProtectionInfo CPL. Rilancia CKKS OpenVault (view Photos/PCS) " +
+                "oppure Unlock EscrowedKeys per questo account.");
+        }
+
         return (zones, kekPool);
     }
 
@@ -1872,7 +1913,9 @@ public sealed class PhotosCloudSyncService
         if (File.Exists(ctPath)
             && MmcsAuthBuilder.TrySplitMmcsAuth(item.MmcsAuth, out var sig21, out _, out _))
         {
-            token = SanitizeFileToken(item.RecordName) + "_" + Convert.ToHexString(sig21)[..8];
+            var sigHex = Convert.ToHexString(sig21);
+            var sigTag = sigHex.Length >= 8 ? sigHex[..8] : sigHex;
+            token = SanitizeFileToken(item.RecordName) + "_" + sigTag;
             ctPath = Path.Combine(allPhotos, token + ".ct");
         }
 
@@ -1880,8 +1923,11 @@ public sealed class PhotosCloudSyncService
         {
             await DownloadChunksAsync(ctPath, chunks, ct, omitHttpRange: false);
         }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden
-                                               || ex.Message.Contains("403", StringComparison.Ordinal))
+        catch (Exception ex) when (
+            ex is ArgumentOutOfRangeException
+            || (ex is HttpRequestException http
+                && (http.StatusCode == System.Net.HttpStatusCode.Forbidden
+                    || http.Message.Contains("403", StringComparison.Ordinal))))
         {
             await DownloadChunksAsync(ctPath, chunks, ct, omitHttpRange: true);
         }
@@ -2137,7 +2183,11 @@ public sealed class PhotosCloudSyncService
 
                     using var request = new HttpRequestMessage(HttpMethod.Get, chunk.Url);
                     // Photos: URL ha content-byte-range E Range HTTP allineato.
-                    if (!omitHttpRange && chunk.ByteRange is { } range)
+                    // RangeHeaderValue throws ArgumentOutOfRangeException se from>to o negativi
+                    // (stesso guard di BackupDownloadService.BuildBackupEdgeGetRequest).
+                    if (!omitHttpRange && chunk.ByteRange is { } range
+                        && range.Start >= 0
+                        && range.End >= range.Start)
                         request.Headers.Range = new RangeHeaderValue(range.Start, range.End);
                     Download.BackupDownloadService.ApplyEdgeHeaders(
                         request,

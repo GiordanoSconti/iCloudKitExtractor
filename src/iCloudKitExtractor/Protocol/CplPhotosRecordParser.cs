@@ -388,7 +388,11 @@ public static class CplPhotosRecordParser
 
     private static string? ExtractWireNameAfterMasterRef(byte[] payload, int masterRefAt)
     {
+        if (masterRefAt < 0 || masterRefAt >= payload.Length)
+            return null;
         var end = Math.Min(payload.Length, masterRefAt + 220);
+        if (end <= masterRefAt)
+            return null;
         var span = payload.AsSpan(masterRefAt, end - masterRefAt);
         var idx = span.IndexOf((byte)0x1c);
         if (idx < 0 || idx + 29 > span.Length)
