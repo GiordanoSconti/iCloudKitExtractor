@@ -271,6 +271,31 @@ public sealed class ICloudBackupOrchestrator
     }
 
     /// <summary>
+    /// Dopo Escrow recover (bottle PIN / iCDP) il <c>mmeAuthToken</c> spesso non è più
+    /// accettato da <c>ckAppInit</c> (HTTP 401 su <c>com.apple.security.keychain</c>)
+    /// finché non si rifà GrandSlam. Preferire Relogin proattivo invece di attendere il 401.
+    /// Preserva campi Octagon/PCS già in sessione (<see cref="AbsorbAuthIntoSession"/>).
+    /// </summary>
+    public async Task EnsureFreshCloudKitAfterEscrowAsync(
+        ICloudSession session,
+        IProgress<string>? log = null,
+        CancellationToken ct = default)
+    {
+        if (HasStoredCredentials)
+        {
+            log?.Report(
+                "  refresh sessione post-Escrow (GrandSlam) — evita ckAppInit 401 su Cuttlefish…");
+            await ReloginIntoSessionAsync(session, log, ct).ConfigureAwait(false);
+            return;
+        }
+
+        log?.Report(
+            "  WARN: password non in RAM dopo Escrow — ckAppInit può rispondere 401; " +
+            "se fallisce, rifai Accesso e poi «OTBottle / Peer».");
+        await RefreshAnisetteAsync(session, ct, forceRemint: false).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// GsService2 + authenticate + ckAppInit sulla stessa istanza sessione
     /// (preserva PCS/Octagon/Manatee). Usato quando Apple risponde 401 mid-download.
     /// </summary>

@@ -317,7 +317,7 @@ public sealed class OctagonCuttlefishService
     /// <param name="tryLegacyFieldVariants">
     /// false (path RK/prod): solo <c>fetchRecoverableTLKShares</c> f1 poi f2
     /// (niente casing <c>Tlkshares</c> → HTTP 500).
-    /// true (lab/authz): prova anche casing legacy.
+    /// true: prova anche casing legacy.
     /// </param>
     public async Task<RecoverableTlkSharesResult> FetchRecoverableTlkSharesAsync(
         ICloudSession session,
@@ -327,13 +327,8 @@ public sealed class OctagonCuttlefishService
         CancellationToken ct = default,
         bool tryLegacyFieldVariants = true)
     {
-        // allowEmptyForPeer: probe authz with explicit empty string (IKE_AUTHZ_PROBES).
-        var allowEmpty = string.Equals(
-            Environment.GetEnvironmentVariable("IKE_AUTHZ_ALLOW_EMPTY_FORPEER"),
-            "1",
-            StringComparison.Ordinal);
         var peerId = forPeerId ?? session.OctagonPeerId;
-        if (string.IsNullOrWhiteSpace(peerId) && !(allowEmpty && forPeerId is not null))
+        if (string.IsNullOrWhiteSpace(peerId))
         {
             return new RecoverableTlkSharesResult(
                 false, "OctagonPeerId assente.",
@@ -341,7 +336,6 @@ public sealed class OctagonCuttlefishService
                 []);
         }
 
-        peerId ??= "";
 
         if (session.OctagonPeerEncryptionPkcs8 is not { Length: > 0 })
         {

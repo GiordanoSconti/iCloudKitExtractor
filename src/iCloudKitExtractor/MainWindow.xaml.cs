@@ -1330,6 +1330,11 @@ public partial class MainWindow : Window
             return;
         AppendDecryptLog($"OTBottle / Peer keys → {outputDir}");
         var log = new Progress<string>(msg => Dispatcher.Invoke(() => AppendDecryptLog(msg)));
+        // Escrow recover (PIN bottle) lascia spesso mmeAuthToken rifiutato da ckAppInit
+        // finché non si rifà GrandSlam — evita il 401 su com.apple.security.keychain.
+        await Orchestrator
+            .EnsureFreshCloudKitAfterEscrowAsync(_session, log, CancellationToken.None)
+            .ConfigureAwait(true);
         var svc = new OctagonCuttlefishService(Http, Orchestrator);
         var peer = await svc.FetchAndDecryptPeerAsync(_session, outputDir, log)
             .ConfigureAwait(true);
@@ -1347,14 +1352,6 @@ public partial class MainWindow : Window
             if (vault.PcsKeysFound > 0)
                 AppendDecryptLog($"Manatee PCS keys in sessione: {vault.PcsKeysFound}");
             AppendDecryptLog("Export password (se view Passwords OK): ckks_passwords.csv");
-            if (OctagonAuthzProbeRunner.IsEnabled)
-            {
-                AppendDecryptLog("AUTHZ probes (IKE_AUTHZ_PROBES=1)…");
-                await OctagonAuthzProbeRunner.RunRecoverableForPeerMatrixAsync(
-                        new OctagonCuttlefishService(Http, Orchestrator),
-                        _session, outputDir, log)
-                    .ConfigureAwait(true);
-            }
 
             FlushHttpHarIfEnabled();
         }
@@ -1460,14 +1457,6 @@ public partial class MainWindow : Window
             var pwdCsv = Path.Combine(outputDir, "ckks_passwords.csv");
             if (File.Exists(pwdCsv))
                 AppendDecryptLog($"Passwords CSV: {pwdCsv}");
-            if (OctagonAuthzProbeRunner.IsEnabled && _session is not null)
-            {
-                AppendDecryptLog("AUTHZ probes (IKE_AUTHZ_PROBES=1)…");
-                await OctagonAuthzProbeRunner.RunRecoverableForPeerMatrixAsync(
-                        new OctagonCuttlefishService(Http, Orchestrator),
-                        _session, outputDir, log)
-                    .ConfigureAwait(true);
-            }
 
             FlushHttpHarIfEnabled();
             MessageBox.Show(this, result.Message, "CKKS OpenVault",
