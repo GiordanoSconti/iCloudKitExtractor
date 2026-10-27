@@ -182,6 +182,38 @@ public static class PcsProtectionZone
         bool includeLight = true,
         bool includeDer = true)
     {
+        // Try*: mai propagare (scan CPL multi-MB può colpire TLV/span malformati → AOR).
+        try
+        {
+            return TryUnwrapAllCore(
+                protectionInfoPayload, seedKeys, protectionInfoTag, lightKeys,
+                includeLight, includeDer);
+        }
+        catch (Exception ex)
+        {
+            AgentWaLog(
+                "H-AOR-UNWRAP",
+                "TryUnwrapAll_swallowed",
+                new
+                {
+                    type = ex.GetType().FullName,
+                    msg = ex.Message,
+                    param = (ex as ArgumentOutOfRangeException)?.ParamName,
+                    payloadLen = protectionInfoPayload.Length,
+                    seeds = seedKeys.Count,
+                });
+            return [];
+        }
+    }
+
+    private static List<ProtectionZoneKeys> TryUnwrapAllCore(
+        ReadOnlySpan<byte> protectionInfoPayload,
+        IReadOnlyList<PcsCompactPrivateKey> seedKeys,
+        string? protectionInfoTag,
+        IReadOnlyList<PcsCompactPrivateKey>? lightKeys,
+        bool includeLight,
+        bool includeDer)
+    {
         var results = new List<ProtectionZoneKeys>();
         var seenMasters = new HashSet<string>(StringComparer.Ordinal);
         // Un indice per tutto il batch DER (N candidati × M EncryptedKeys).
@@ -191,7 +223,16 @@ public static class PcsProtectionZone
         {
             foreach (var der in TryExtractProtectionInfoCandidates(protectionInfoPayload))
             {
-                var result = TryUnwrapDer(der, seedKeys, protectionInfoTag, index);
+                ProtectionZoneKeys? result;
+                try
+                {
+                    result = TryUnwrapDer(der, seedKeys, protectionInfoTag, index);
+                }
+                catch
+                {
+                    continue;
+                }
+
                 if (result is null)
                     continue;
                 var id = Convert.ToHexString(result.MasterKey);
@@ -202,9 +243,16 @@ public static class PcsProtectionZone
 
             if (results.Count == 0)
             {
-                var scan = TryUnwrapByPublicScan(protectionInfoPayload, seedKeys, protectionInfoTag);
-                if (scan is not null)
-                    results.Add(scan);
+                try
+                {
+                    var scan = TryUnwrapByPublicScan(protectionInfoPayload, seedKeys, protectionInfoTag);
+                    if (scan is not null)
+                        results.Add(scan);
+                }
+                catch
+                {
+                    // scan pubblico best-effort
+                }
             }
         }
 

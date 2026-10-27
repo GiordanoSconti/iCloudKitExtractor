@@ -232,8 +232,40 @@ public sealed class PhotosCloudSyncService
         }
         catch (Exception ex)
         {
-            log?.Report($"  Photos ERRORE: {ex.Message}");
-            return new SyncDataContainerResult(binding.ContainerId, false, totalBytes, ex.Message);
+            var root = ex is AggregateException agg
+                ? agg.Flatten().InnerExceptions.FirstOrDefault() ?? ex
+                : ex;
+            while (root.InnerException is not null
+                   && root is not ArgumentOutOfRangeException)
+                root = root.InnerException;
+
+            var param = (root as ArgumentOutOfRangeException)?.ParamName;
+            var marks = (root.StackTrace ?? ex.StackTrace ?? "")
+                .Split('\n')
+                .Select(static l => l.Trim())
+                .Where(static l => l.Contains("iCloudKitExtractor", StringComparison.Ordinal))
+                .Take(6)
+                .ToList();
+            log?.Report(
+                $"  Photos ERRORE: {root.GetType().Name}: {root.Message}" +
+                (string.IsNullOrEmpty(param) ? "" : $" (param={param})"));
+            foreach (var mark in marks)
+                log?.Report($"    at {mark}");
+            // #region agent log
+            AgentLogPhotos(
+                "H-AOR-PHOTOS",
+                "PhotosCloudSyncService.RecoverAsync",
+                "photos_fatal",
+                new
+                {
+                    type = root.GetType().FullName,
+                    msg = root.Message,
+                    param,
+                    marks,
+                    outer = ex.GetType().FullName,
+                });
+            // #endregion
+            return new SyncDataContainerResult(binding.ContainerId, false, totalBytes, root.Message);
         }
     }
 
@@ -1355,12 +1387,24 @@ public sealed class PhotosCloudSyncService
                     PhaseLabel: reportOverallPercent ? "CPL PCS" : "CPL PCS∥DL",
                     PhasePercent: 100.0 * (i + 1) / Math.Max(1, assetPages.Count)));
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var fromPage = PcsProtectionZone.TryUnwrapAll(
-                    assetPages[i],
-                    pool,
-                    lightKeys: seedKeys,
-                    includeLight: true,
-                    includeDer: true);
+                List<ProtectionZoneKeys> fromPage;
+                try
+                {
+                    fromPage = PcsProtectionZone.TryUnwrapAll(
+                        assetPages[i],
+                        pool,
+                        lightKeys: seedKeys,
+                        includeLight: true,
+                        includeDer: true);
+                }
+                catch (Exception ex)
+                {
+                    log?.Report(
+                        $"  PCS unwrap page {i + 1}/{assetPages.Count} skip: " +
+                        $"{ex.GetType().Name}: {ex.Message}");
+                    continue;
+                }
+
                 zones.AddRange(fromPage);
                 if (fromPage.Count > 0)
                 {

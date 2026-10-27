@@ -2110,8 +2110,12 @@ public partial class MainWindow : Window
         else
         {
             SyncDataProgressBar.IsIndeterminate = false;
-            if (r.Percent is { } pct)
-                SyncDataProgressBar.Value = Math.Clamp(pct, 0, 100);
+            if (r.Percent is { } pct && double.IsFinite(pct))
+            {
+                var lo = SyncDataProgressBar.Minimum;
+                var hi = SyncDataProgressBar.Maximum;
+                SyncDataProgressBar.Value = Math.Clamp(pct, lo, hi);
+            }
         }
 
         if (r.ClearPhase)
@@ -2141,8 +2145,12 @@ public partial class MainWindow : Window
         }
 
         SyncDataPhaseProgressBar.IsIndeterminate = false;
-        if (r.PhasePercent is { } phasePct)
-            SyncDataPhaseProgressBar.Value = Math.Clamp(phasePct, 0, 100);
+        if (r.PhasePercent is { } phasePct && double.IsFinite(phasePct))
+        {
+            var lo = SyncDataPhaseProgressBar.Minimum;
+            var hi = SyncDataPhaseProgressBar.Maximum;
+            SyncDataPhaseProgressBar.Value = Math.Clamp(phasePct, lo, hi);
+        }
     }
 
     private void UpdateSessionUi(bool connected)

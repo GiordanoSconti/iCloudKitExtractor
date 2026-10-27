@@ -34,6 +34,21 @@ public static class PcsProtectionLight
         if (keys.Count == 0 || payload.Length < 1 + FieldLen + 24 + 2)
             return results;
 
+        try
+        {
+            return TryUnwrapAllCore(payload, keys);
+        }
+        catch
+        {
+            return results;
+        }
+    }
+
+    private static List<ProtectionZoneKeys> TryUnwrapAllCore(
+        ReadOnlySpan<byte> payload,
+        IReadOnlyList<PcsCompactPrivateKey> keys)
+    {
+        var results = new List<ProtectionZoneKeys>();
         var seenMasters = new HashSet<string>(StringComparer.Ordinal);
         var okPub = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var failPub = new HashSet<string>(StringComparer.Ordinal);
@@ -43,6 +58,8 @@ public static class PcsProtectionLight
             if (payload[i] != 0xFF)
                 continue;
 
+            if (i + 1 + FieldLen > payload.Length)
+                break;
             var pub = payload.Slice(i + 1, FieldLen);
             var pubId = Convert.ToHexString(pub);
             if (failPub.Contains(pubId))
