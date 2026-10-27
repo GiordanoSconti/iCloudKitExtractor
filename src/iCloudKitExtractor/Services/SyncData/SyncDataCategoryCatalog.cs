@@ -123,6 +123,11 @@ public static class SyncDataCategoryCatalog
     public static bool SelectionRequiresPcs(IEnumerable<string> selectedIds) =>
         ContainersForSelection(selectedIds).Count > 0;
 
+    /// <summary>
+    /// Solo Photos e Account Info sono recuperabili oggi; le altre categorie
+    /// restano in UI come «(presto)» disabilitate.
+    /// </summary>
     public static bool IsRecoverable(Category cat) =>
-        cat.Containers.Count > 0 || cat.IncludeAccountInfo;
+        string.Equals(cat.Id, PhotosId, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(cat.Id, AccountInfoId, StringComparison.OrdinalIgnoreCase);
 }

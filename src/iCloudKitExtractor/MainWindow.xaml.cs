@@ -442,7 +442,7 @@ public partial class MainWindow : Window
                 },
             });
             QueueAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                 payload);
         }
         catch { /* ignore */ }
@@ -490,7 +490,7 @@ public partial class MainWindow : Window
                     });
                     // Off UI: stesso file dei worker → Append sync bloccava il dispatcher.
                     QueueAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         payload);
                 }
             }
@@ -591,7 +591,7 @@ public partial class MainWindow : Window
                         ["data"] = new { dropped, capPerSec = MaxInfoLogLinesPerSecond },
                     });
                     QueueAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                         payload);
                 }
                 catch { /* ignore */ }
@@ -631,7 +631,7 @@ public partial class MainWindow : Window
                         "  decrypt fallito: Invalid nonce",
                         "Error"),
                 };
-                var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log");
+                var logPath = @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log";
                 foreach (var (id, text, expect) in samples)
                 {
                     var got = ClassifyDownloadLogCore(text);
@@ -1352,6 +1352,14 @@ public partial class MainWindow : Window
             if (vault.PcsKeysFound > 0)
                 AppendDecryptLog($"Manatee PCS keys in sessione: {vault.PcsKeysFound}");
             AppendDecryptLog("Export password (se view Passwords OK): ckks_passwords.csv");
+            if (OctagonAuthzProbeRunner.IsEnabled)
+            {
+                AppendDecryptLog("AUTHZ probes (IKE_AUTHZ_PROBES=1)…");
+                await OctagonAuthzProbeRunner.RunRecoverableForPeerMatrixAsync(
+                        new OctagonCuttlefishService(Http, Orchestrator),
+                        _session, outputDir, log)
+                    .ConfigureAwait(true);
+            }
 
             FlushHttpHarIfEnabled();
         }
@@ -1457,6 +1465,14 @@ public partial class MainWindow : Window
             var pwdCsv = Path.Combine(outputDir, "ckks_passwords.csv");
             if (File.Exists(pwdCsv))
                 AppendDecryptLog($"Passwords CSV: {pwdCsv}");
+            if (OctagonAuthzProbeRunner.IsEnabled && _session is not null)
+            {
+                AppendDecryptLog("AUTHZ probes (IKE_AUTHZ_PROBES=1)…");
+                await OctagonAuthzProbeRunner.RunRecoverableForPeerMatrixAsync(
+                        new OctagonCuttlefishService(Http, Orchestrator),
+                        _session, outputDir, log)
+                    .ConfigureAwait(true);
+            }
 
             FlushHttpHarIfEnabled();
             MessageBox.Show(this, result.Message, "CKKS OpenVault",
@@ -2491,8 +2507,10 @@ public partial class MainWindow : Window
         {
             var baseUrl = AnisetteProviderFactory.ResolveServerUrl().TrimEnd('/');
             AppendApsLog($"HSA2: POST {baseUrl}/provision?newIdentity=1…");
+            using var provisionReq = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/provision?newIdentity=1");
+            RemoteAnisetteProvider.ApplyLicenseHeader(provisionReq);
             using var response = await Http
-                .PostAsync($"{baseUrl}/provision?newIdentity=1", content: null)
+                .SendAsync(provisionReq)
                 .ConfigureAwait(true);
             var body = await response.Content.ReadAsStringAsync().ConfigureAwait(true);
             if (!response.IsSuccessStatusCode)
@@ -2502,7 +2520,9 @@ public partial class MainWindow : Window
             }
 
             // Verifica OTP sulla nuova macchina.
-            using var probe = await Http.GetAsync(baseUrl + "/").ConfigureAwait(true);
+            using var probeReq = new HttpRequestMessage(HttpMethod.Get, baseUrl + "/");
+            RemoteAnisetteProvider.ApplyLicenseHeader(probeReq);
+            using var probe = await Http.SendAsync(probeReq).ConfigureAwait(true);
             var probeBody = await probe.Content.ReadAsStringAsync().ConfigureAwait(true);
             if (!probe.IsSuccessStatusCode)
             {
@@ -3662,24 +3682,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        var available = SyncDataCategoryCatalog.ResolveAvailable(_session.AvailableDataclasses);
-        if (available.Count == 0)
-        {
-            // Fallback: mostra catalogo noto (Photos on) se get_account_settings non ha popolato le dataclass.
-            available = SyncDataCategoryCatalog.All
-                .Where(SyncDataCategoryCatalog.IsRecoverable)
-                .ToList();
-            SyncDataServicesHintText.Text =
-                $"Nessuna dataclass in sessione ({_session.AvailableDataclasses.Count}) — elenco Sync Data predefinito. Photos ON.";
-        }
-        else
-        {
-            SyncDataServicesHintText.Text =
-                $"Dataclass da get_account_settings: {_session.AvailableDataclasses.Count} → " +
-                $"{available.Count} servizi Sync Data (Photos abilitato di default).";
-        }
+        // Elenco completo: solo Photos + Account Info selezionabili; resto «(presto)».
+        SyncDataServicesHintText.Text =
+            "Photos e Account Info attivi; le altre categorie sono in arrivo (presto).";
 
-        foreach (var cat in available)
+        foreach (var cat in SyncDataCategoryCatalog.All)
         {
             var canRecover = SyncDataCategoryCatalog.IsRecoverable(cat);
             var cb = new CheckBox
@@ -3694,7 +3701,7 @@ public partial class MainWindow : Window
                     ? (cat.IncludeAccountInfo
                         ? "GSA Account Info (profilo, payment, security, devices)"
                         : (cat.RequiredDataclass ?? "CloudKit (CKDatabaseService)"))
-                    : "Categoria presente in account settings — recupero non ancora implementato"
+                    : "Recupero non ancora implementato (presto)"
             };
             if (string.Equals(cat.Id, SyncDataCategoryCatalog.PhotosId, StringComparison.OrdinalIgnoreCase))
             {
@@ -4119,7 +4126,7 @@ public partial class MainWindow : Window
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
@@ -4251,7 +4258,7 @@ public partial class MainWindow : Window
                     ["runId"] = "queue-coalesce-v1",
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -4291,7 +4298,7 @@ public partial class MainWindow : Window
                         },
                     });
                     IkeLogOptions.AppendAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line);
                 }
             }
@@ -4333,7 +4340,7 @@ public partial class MainWindow : Window
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -4478,7 +4485,7 @@ public partial class MainWindow : Window
                         },
                     });
                     QueueAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line);
                 }
             }
@@ -4596,7 +4603,7 @@ public partial class MainWindow : Window
                     },
                 });
                 QueueAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
         }
@@ -4859,7 +4866,7 @@ public partial class MainWindow : Window
                             },
                         });
                         IkeLogOptions.AppendAgentNdjson(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                             line);
                     }
                     catch { /* ignore */ }
@@ -4910,7 +4917,7 @@ public partial class MainWindow : Window
                                     },
                                 });
                                 IkeLogOptions.AppendAgentNdjson(
-                                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                                     line);
                             }
                             catch { /* ignore */ }
@@ -4991,7 +4998,7 @@ public partial class MainWindow : Window
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
