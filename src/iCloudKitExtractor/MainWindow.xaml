@@ -860,6 +860,27 @@
                                                 MinWidth="130" Margin="0,0,10,0"
                                                 IsEnabled="False"
                                                 Click="ImapRefreshFoldersButton_Click"/>
+                                        <Button x:Name="ImapExportSelectedButton"
+                                                Content="Esporta selezionato"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                MinWidth="140" Margin="0,0,8,0"
+                                                IsEnabled="False"
+                                                ToolTip="Esporta il messaggio selezionato in .eml"
+                                                Click="ImapExportSelectedButton_Click"/>
+                                        <Button x:Name="ImapExportFolderButton"
+                                                Content="Esporta cartella"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                MinWidth="130" Margin="0,0,8,0"
+                                                IsEnabled="False"
+                                                ToolTip="Esporta tutti i messaggi della cartella corrente in .eml"
+                                                Click="ImapExportFolderButton_Click"/>
+                                        <Button x:Name="ImapExportAllButton"
+                                                Content="Esporta tutto"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                MinWidth="120" Margin="0,0,10,0"
+                                                IsEnabled="False"
+                                                ToolTip="Esporta tutte le cartelle IMAP in .eml"
+                                                Click="ImapExportAllButton_Click"/>
                                         <TextBlock x:Name="ImapMailStatusText"
                                                    Style="{StaticResource HintTextStyle}"
                                                    VerticalAlignment="Center"
@@ -886,9 +907,59 @@
                             <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}"
                                     Padding="8" Margin="0,0,8,0">
                                 <DockPanel LastChildFill="True">
-                                    <TextBlock DockPanel.Dock="Top" Text="Messaggi (ultimi 100)"
-                                               Style="{StaticResource SectionLabelStyle}"
-                                               Margin="0,0,0,6"/>
+                                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                        <TextBlock x:Name="ImapMessagesHeaderText"
+                                                   Text="Messaggi (ultimi 100)"
+                                                   Style="{StaticResource SectionLabelStyle}"
+                                                   Margin="0,0,0,6"/>
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="118"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="118"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Dal"
+                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <DatePicker x:Name="ImapFilterFromDate"
+                                                        Grid.Column="1"
+                                                        Margin="0,0,10,0"
+                                                        ToolTip="Data inviata (inclusa) — lascia vuoto per nessun limite"/>
+                                            <TextBlock Grid.Column="2" Text="Al"
+                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <DatePicker x:Name="ImapFilterToDate"
+                                                        Grid.Column="3"
+                                                        ToolTip="Data inviata (inclusa) — lascia vuoto per nessun limite"/>
+                                        </Grid>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Parole chiave"
+                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBox x:Name="ImapFilterKeywordsTextBox"
+                                                     Grid.Column="1"
+                                                     VerticalContentAlignment="Center"
+                                                     IsEnabled="False"
+                                                     ToolTip="Token separati da spazio (AND) su oggetto, mittente e corpo"/>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
+                                                <Button x:Name="ImapFilterApplyButton"
+                                                        Content="Applica"
+                                                        Style="{StaticResource SecondaryButtonStyle}"
+                                                        MinWidth="80" Margin="0,0,6,0"
+                                                        IsEnabled="False"
+                                                        Click="ImapFilterApplyButton_Click"/>
+                                                <Button x:Name="ImapFilterClearButton"
+                                                        Content="Azzera"
+                                                        Style="{StaticResource GhostButtonStyle}"
+                                                        MinWidth="70"
+                                                        IsEnabled="False"
+                                                        Click="ImapFilterClearButton_Click"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
                                     <DataGrid x:Name="ImapMessagesGrid"
                                               AutoGenerateColumns="False"
                                               IsReadOnly="True"
@@ -911,10 +982,8 @@
                                     <TextBlock DockPanel.Dock="Top" Text="Messaggio"
                                                Style="{StaticResource SectionLabelStyle}"
                                                Margin="0,0,0,4"/>
-                                    <TextBox x:Name="ImapMessageBodyTextBox"
-                                             Style="{StaticResource LogTextBoxStyle}"
-                                             IsReadOnly="True"
-                                             Text="Seleziona un messaggio per leggere il corpo (sola lettura)."/>
+                                    <WebBrowser x:Name="ImapMessageBrowser"
+                                                Navigating="ImapMessageBrowser_Navigating"/>
                                 </DockPanel>
                             </Border>
                         </Grid>

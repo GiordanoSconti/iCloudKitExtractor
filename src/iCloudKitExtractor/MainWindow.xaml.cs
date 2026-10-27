@@ -101,6 +101,7 @@ public partial class MainWindow : Window
     private ImapMailClient? _imapMail;
     private string? _imapSelectedFolder;
     private CancellationTokenSource? _imapCts;
+    private ImapMessageFilter? _imapFilter;
 
     public MainWindow()
 
@@ -2950,6 +2951,8 @@ public partial class MainWindow : Window
                 ImapDisconnectButton.IsEnabled = true;
             if (ImapRefreshButton is not null)
                 ImapRefreshButton.IsEnabled = true;
+            SetImapExportEnabled(true);
+            SetImapFilterControlsEnabled(true);
 
             await ReloadImapFoldersAsync(ct).ConfigureAwait(true);
             SetImapBusy(false, $"Connesso a {host} come {user}");
@@ -2959,8 +2962,7 @@ public partial class MainWindow : Window
         {
             await ClearImapUiAsync().ConfigureAwait(true);
             SetImapBusy(false, "Errore connessione");
-            if (ImapMessageBodyTextBox is not null)
-                ImapMessageBodyTextBox.Text = $"Errore IMAP: {ex.Message}";
+            ShowImapPreviewStatus($"Errore IMAP: {ex.Message}");
             MessageBox.Show(this, ex.Message, "IMAP Posta", MessageBoxButton.OK, MessageBoxImage.Warning);
             LogAuth($"IMAP: {ex.Message}");
         }
@@ -3011,8 +3013,7 @@ public partial class MainWindow : Window
             ImapFoldersListBox.ItemsSource = rows;
         if (ImapMessagesGrid is not null)
             ImapMessagesGrid.ItemsSource = null;
-        if (ImapMessageBodyTextBox is not null)
-            ImapMessageBodyTextBox.Text = "Seleziona una cartella.";
+        ShowImapPreviewStatus("Seleziona una cartella.");
         _imapSelectedFolder = null;
 
         var inbox = rows.FirstOrDefault(r =>
@@ -3028,15 +3029,73 @@ public partial class MainWindow : Window
         if (_imapMail is not { IsConnected: true })
             return;
 
-        SetImapBusy(true, $"Carico {folder.FullName}…");
+        _imapSelectedFolder = folder.FullName;
+        await ReloadImapMessagesAsync().ConfigureAwait(true);
+    }
+
+    private async void ImapFilterApplyButton_Click(object sender, RoutedEventArgs e)
+    {
+        _imapFilter = ReadImapFilterFromUi();
+        if (_imapFilter is { IsEmpty: true })
+            _imapFilter = null;
+        UpdateImapMessagesHeader();
+        await ReloadImapMessagesAsync().ConfigureAwait(true);
+    }
+
+    private async void ImapFilterClearButton_Click(object sender, RoutedEventArgs e)
+    {
+        _imapFilter = null;
+        if (ImapFilterFromDate is not null)
+            ImapFilterFromDate.SelectedDate = null;
+        if (ImapFilterToDate is not null)
+            ImapFilterToDate.SelectedDate = null;
+        if (ImapFilterKeywordsTextBox is not null)
+            ImapFilterKeywordsTextBox.Text = "";
+        UpdateImapMessagesHeader();
+        await ReloadImapMessagesAsync().ConfigureAwait(true);
+    }
+
+    private ImapMessageFilter ReadImapFilterFromUi()
+    {
+        DateTime? from = ImapFilterFromDate?.SelectedDate?.Date;
+        DateTime? to = ImapFilterToDate?.SelectedDate?.Date;
+        var keywords = ImapFilterKeywordsTextBox?.Text?.Trim();
+        if (from is not null && to is not null && from > to)
+            (from, to) = (to, from);
+        return new ImapMessageFilter(from, to, string.IsNullOrWhiteSpace(keywords) ? null : keywords);
+    }
+
+    private void UpdateImapMessagesHeader()
+    {
+        if (ImapMessagesHeaderText is null)
+            return;
+        if (_imapFilter is { IsEmpty: false } f)
+            ImapMessagesHeaderText.Text = $"Messaggi (filtro: {f.Describe()})";
+        else
+            ImapMessagesHeaderText.Text = "Messaggi (ultimi 100)";
+    }
+
+    private async Task ReloadImapMessagesAsync()
+    {
+        if (_imapMail is not { IsConnected: true })
+            return;
+        if (string.IsNullOrWhiteSpace(_imapSelectedFolder))
+            return;
+
+        var folder = _imapSelectedFolder;
+        var filter = _imapFilter is { IsEmpty: false } ? _imapFilter : null;
+        var busy = filter is null
+            ? $"Carico {folder}…"
+            : $"Cerco in {folder}…";
+        SetImapBusy(true, busy);
         _imapCts?.Cancel();
         _imapCts = new CancellationTokenSource();
         var ct = _imapCts.Token;
         try
         {
-            var msgs = await _imapMail.ListMessagesAsync(folder.FullName, 100, ct)
+            var max = filter is null ? 100 : 500;
+            var msgs = await _imapMail.ListMessagesAsync(folder, max, filter, ct)
                 .ConfigureAwait(true);
-            _imapSelectedFolder = folder.FullName;
             var rows = msgs.Select(m => new ImapMessageRowVm
             {
                 Uid = m.Uid,
@@ -3047,11 +3106,16 @@ public partial class MainWindow : Window
             }).ToList();
             if (ImapMessagesGrid is not null)
                 ImapMessagesGrid.ItemsSource = rows;
-            if (ImapMessageBodyTextBox is not null)
-                ImapMessageBodyTextBox.Text = rows.Count == 0
-                    ? "(cartella vuota)"
-                    : "Seleziona un messaggio.";
-            SetImapBusy(false, $"{folder.Label}: {rows.Count} messaggi");
+            ShowImapPreviewStatus(
+                rows.Count == 0
+                    ? (filter is null ? "(cartella vuota)" : "(nessun messaggio con questi filtri)")
+                    : "Seleziona un messaggio.");
+
+            UpdateImapMessagesHeader();
+            var status = filter is null
+                ? $"{folder}: {rows.Count} messaggi"
+                : $"{folder}: {rows.Count} risultati ({filter.Describe()})";
+            SetImapBusy(false, status);
         }
         catch (OperationCanceledException)
         {
@@ -3060,8 +3124,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             SetImapBusy(false, "Errore elenco");
-            if (ImapMessageBodyTextBox is not null)
-                ImapMessageBodyTextBox.Text = ex.Message;
+            ShowImapPreviewStatus(ex.Message);
         }
     }
 
@@ -3081,19 +3144,9 @@ public partial class MainWindow : Window
         {
             var body = await _imapMail.FetchMessageAsync(_imapSelectedFolder, row.Uid, _imapCts.Token)
                 .ConfigureAwait(true);
-            if (ImapMessageBodyTextBox is not null)
-            {
-                ImapMessageBodyTextBox.Text =
-                    $"Oggetto: {body.Subject}\n" +
-                    $"Da: {body.From}\n" +
-                    $"A: {body.To}\n" +
-                    $"Data: {body.Date?.ToLocalTime():yyyy-MM-dd HH:mm:ss}\n" +
-                    (body.IsHtml ? "(corpo da HTML)\n" : "") +
-                    "----------------------------------------\n" +
-                    body.TextBody;
-            }
-
-            SetImapBusy(false, "Messaggio caricato (sola lettura).");
+            ShowImapHtmlDocument(body.HtmlDocument);
+            SetImapBusy(false,
+                body.IsHtml ? "Messaggio HTML (sola lettura)." : "Messaggio testo (sola lettura).");
         }
         catch (OperationCanceledException)
         {
@@ -3102,8 +3155,51 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             SetImapBusy(false, "Errore messaggio");
-            if (ImapMessageBodyTextBox is not null)
-                ImapMessageBodyTextBox.Text = ex.Message;
+            ShowImapPreviewStatus(ex.Message);
+        }
+    }
+
+    private void ShowImapPreviewStatus(string message) =>
+        ShowImapHtmlDocument(ImapMailClient.BuildStatusHtmlDocument(message));
+
+    private void ShowImapHtmlDocument(string html)
+    {
+        if (ImapMessageBrowser is null)
+            return;
+        try
+        {
+            ImapMessageBrowser.NavigateToString(html);
+        }
+        catch (Exception ex)
+        {
+            // IE engine a volte rifiuta documenti molto grandi: fallback minimale.
+            try
+            {
+                ImapMessageBrowser.NavigateToString(
+                    ImapMailClient.BuildStatusHtmlDocument("Anteprima non disponibile: " + ex.Message));
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sola lettura: blocca navigazione verso http(s)/mailto (niente pixel/redirect).
+    /// </summary>
+    private void ImapMessageBrowser_Navigating(
+        object sender, System.Windows.Navigation.NavigatingCancelEventArgs e)
+    {
+        if (e.Uri is null)
+            return;
+        var scheme = e.Uri.Scheme;
+        if (scheme.Equals("http", StringComparison.OrdinalIgnoreCase)
+            || scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+            || scheme.Equals("mailto", StringComparison.OrdinalIgnoreCase)
+            || scheme.Equals("file", StringComparison.OrdinalIgnoreCase))
+        {
+            e.Cancel = true;
         }
     }
 
@@ -3117,6 +3213,201 @@ public partial class MainWindow : Window
             ImapConnectButton.IsEnabled = true;
         if (ImapConnectButton is not null && !busy && _imapMail is { IsConnected: true })
             ImapConnectButton.IsEnabled = true;
+        if (busy)
+        {
+            SetImapExportEnabled(false);
+            SetImapFilterControlsEnabled(false);
+        }
+        else if (_imapMail is { IsConnected: true })
+        {
+            SetImapExportEnabled(true);
+            SetImapFilterControlsEnabled(true);
+        }
+    }
+
+    private void SetImapExportEnabled(bool enabled)
+    {
+        if (ImapExportSelectedButton is not null)
+            ImapExportSelectedButton.IsEnabled = enabled;
+        if (ImapExportFolderButton is not null)
+            ImapExportFolderButton.IsEnabled = enabled;
+        if (ImapExportAllButton is not null)
+            ImapExportAllButton.IsEnabled = enabled;
+    }
+
+    private void SetImapFilterControlsEnabled(bool enabled)
+    {
+        if (ImapFilterFromDate is not null)
+            ImapFilterFromDate.IsEnabled = enabled;
+        if (ImapFilterToDate is not null)
+            ImapFilterToDate.IsEnabled = enabled;
+        if (ImapFilterKeywordsTextBox is not null)
+            ImapFilterKeywordsTextBox.IsEnabled = enabled;
+        if (ImapFilterApplyButton is not null)
+            ImapFilterApplyButton.IsEnabled = enabled;
+        if (ImapFilterClearButton is not null)
+            ImapFilterClearButton.IsEnabled = enabled;
+    }
+
+    private string? PickImapExportParentDirectory()
+    {
+        var dlg = new OpenFolderDialog
+        {
+            Title = "Cartella di destinazione per l’export posta (.eml)",
+        };
+        var hint = OutputFolderTextBox?.Text?.Trim();
+        if (!string.IsNullOrWhiteSpace(hint) && Directory.Exists(hint))
+            dlg.InitialDirectory = hint;
+        else
+        {
+            dlg.InitialDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                "iCloudBackups");
+        }
+
+        return dlg.ShowDialog(this) == true ? dlg.FolderName : null;
+    }
+
+    private async void ImapExportSelectedButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_imapMail is not { IsConnected: true })
+            return;
+        if (string.IsNullOrWhiteSpace(_imapSelectedFolder))
+        {
+            MessageBox.Show(this, "Seleziona prima una cartella IMAP.", "IMAP Posta",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (ImapMessagesGrid?.SelectedItem is not ImapMessageRowVm row)
+        {
+            MessageBox.Show(this, "Seleziona un messaggio da esportare.", "IMAP Posta",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var parent = PickImapExportParentDirectory();
+        if (parent is null)
+            return;
+
+        await RunImapExportAsync(
+            "Esporto messaggio…",
+            async (client, progress, ct) =>
+                await ImapMailExportService.ExportAsync(
+                    client, parent, _imapSelectedFolder!, [row.Uid], progress, ct)
+                    .ConfigureAwait(true)).ConfigureAwait(true);
+    }
+
+    private async void ImapExportFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_imapMail is not { IsConnected: true })
+            return;
+        if (string.IsNullOrWhiteSpace(_imapSelectedFolder))
+        {
+            MessageBox.Show(this, "Seleziona prima una cartella IMAP.", "IMAP Posta",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var parent = PickImapExportParentDirectory();
+        if (parent is null)
+            return;
+
+        var folder = _imapSelectedFolder!;
+        var filter = _imapFilter is { IsEmpty: false } ? _imapFilter : null;
+        var label = filter is null
+            ? $"Esporto cartella {folder}…"
+            : $"Esporto cartella {folder} (filtro)…";
+        await RunImapExportAsync(
+            label,
+            async (client, progress, ct) =>
+            {
+                progress.Report($"Elenco UID {folder}…");
+                var uids = await client.ListAllUidsAsync(folder, filter, ct).ConfigureAwait(true);
+                if (uids.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        filter is null
+                            ? $"La cartella «{folder}» non contiene messaggi."
+                            : $"Nessun messaggio in «{folder}» con i filtri attivi.");
+                }
+
+                return await ImapMailExportService.ExportAsync(
+                        client, parent, folder, uids, progress, ct)
+                    .ConfigureAwait(true);
+            }).ConfigureAwait(true);
+    }
+
+    private async void ImapExportAllButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_imapMail is not { IsConnected: true })
+            return;
+
+        var filter = _imapFilter is { IsEmpty: false } ? _imapFilter : null;
+        var confirmMsg = filter is null
+            ? "Esportare tutti i messaggi di tutte le cartelle IMAP?\n" +
+              "Può richiedere molto tempo su caselle grandi."
+            : "Esportare da tutte le cartelle solo i messaggi che rispettano i filtri attivi?\n" +
+              $"Filtro: {filter.Describe()}";
+        var confirm = MessageBox.Show(this, confirmMsg, "IMAP Posta",
+            MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes)
+            return;
+
+        var parent = PickImapExportParentDirectory();
+        if (parent is null)
+            return;
+
+        await RunImapExportAsync(
+            filter is null ? "Esporto tutte le cartelle…" : "Esporto tutte le cartelle (filtro)…",
+            async (client, progress, ct) =>
+                await ImapMailExportService.ExportAllFoldersAsync(
+                        client, parent, filter, progress, ct)
+                    .ConfigureAwait(true)).ConfigureAwait(true);
+    }
+
+    private async Task RunImapExportAsync(
+        string busyLabel,
+        Func<ImapMailClient, IProgress<string>, CancellationToken, Task<ImapMailExportService.ExportResult>> work)
+    {
+        if (_imapMail is not { IsConnected: true } client)
+            return;
+
+        SetImapBusy(true, busyLabel);
+        _imapCts?.Cancel();
+        _imapCts = new CancellationTokenSource();
+        var ct = _imapCts.Token;
+        var progress = new Progress<string>(msg =>
+        {
+            if (ImapMailStatusText is not null)
+                ImapMailStatusText.Text = msg;
+        });
+
+        try
+        {
+            var result = await work(client, progress, ct).ConfigureAwait(true);
+            SetImapBusy(false,
+                $"Export: {result.Written} .eml" +
+                (result.Failed > 0 ? $", fail={result.Failed}" : ""));
+            LogAuth($"IMAP export: ok={result.Written} fail={result.Failed} → {result.RootDirectory}");
+            MessageBox.Show(this,
+                $"Esportati {result.Written} messaggi (.eml)" +
+                (result.Failed > 0 ? $"\nFalliti: {result.Failed}" : "") +
+                $"\n\n{result.RootDirectory}",
+                "IMAP Posta",
+                MessageBoxButton.OK,
+                result.Failed > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+        }
+        catch (OperationCanceledException)
+        {
+            SetImapBusy(false, "Export annullato.");
+        }
+        catch (Exception ex)
+        {
+            SetImapBusy(false, "Errore export");
+            MessageBox.Show(this, ex.Message, "IMAP Posta", MessageBoxButton.OK, MessageBoxImage.Warning);
+            LogAuth($"IMAP export: {ex.Message}");
+        }
     }
 
     private async Task ClearImapUiAsync()
@@ -3128,16 +3419,25 @@ public partial class MainWindow : Window
         }
 
         _imapSelectedFolder = null;
+        _imapFilter = null;
         if (ImapFoldersListBox is not null)
             ImapFoldersListBox.ItemsSource = null;
         if (ImapMessagesGrid is not null)
             ImapMessagesGrid.ItemsSource = null;
-        if (ImapMessageBodyTextBox is not null)
-            ImapMessageBodyTextBox.Text = "Seleziona un messaggio per leggere il corpo (sola lettura).";
+        ShowImapPreviewStatus("Seleziona un messaggio per leggere il corpo (sola lettura).");
+        if (ImapFilterFromDate is not null)
+            ImapFilterFromDate.SelectedDate = null;
+        if (ImapFilterToDate is not null)
+            ImapFilterToDate.SelectedDate = null;
+        if (ImapFilterKeywordsTextBox is not null)
+            ImapFilterKeywordsTextBox.Text = "";
+        UpdateImapMessagesHeader();
         if (ImapDisconnectButton is not null)
             ImapDisconnectButton.IsEnabled = false;
         if (ImapRefreshButton is not null)
             ImapRefreshButton.IsEnabled = false;
+        SetImapExportEnabled(false);
+        SetImapFilterControlsEnabled(false);
         if (ImapConnectButton is not null)
             ImapConnectButton.IsEnabled = true;
         if (ImapAppPasswordBox is not null)
