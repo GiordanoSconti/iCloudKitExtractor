@@ -1,0 +1,57 @@
+[
+  {
+    "label": "01-backup-dispositivi",
+    "title": "Backup dispositivi",
+    "source": "2026-10-27 21-53-51.mov",
+    "source_duration_s": 507.9,
+    "highlight_duration_s": 19.3,
+    "mp4": "01-backup-dispositivi.mp4",
+    "mp4_mb": 0.99,
+    "gif": "01-backup-dispositivi.gif",
+    "gif_mb": 1.82
+  },
+  {
+    "label": "02-whatsapp-cloudkit",
+    "title": "WhatsApp CloudKit",
+    "source": "2026-10-27 22-02-27.mov",
+    "source_duration_s": 2213.0,
+    "highlight_duration_s": 26.8,
+    "mp4": "02-whatsapp-cloudkit.mp4",
+    "mp4_mb": 1.74,
+    "gif": "02-whatsapp-cloudkit.gif",
+    "gif_mb": 3.29
+  },
+  {
+    "label": "03-icloud-drive",
+    "title": "iCloud Drive",
+    "source": "2026-10-27 22-39-26.mov",
+    "source_duration_s": 310.7,
+    "highlight_duration_s": 16.9,
+    "mp4": "03-icloud-drive.mp4",
+    "mp4_mb": 0.58,
+    "gif": "03-icloud-drive.gif",
+    "gif_mb": 1.37
+  },
+  {
+    "label": "04-imap-posta",
+    "title": "IMAP Posta",
+    "source": "2026-10-27 22-46-44.mov",
+    "source_duration_s": 32.6,
+    "highlight_duration_s": 20.8,
+    "mp4": "04-imap-posta.mp4",
+    "mp4_mb": 0.17,
+    "gif": "04-imap-posta.gif",
+    "gif_mb": 0.66
+  },
+  {
+    "label": "05-icloud-sync-photos",
+    "title": "iCloud Sync Data (Photos)",
+    "source": "2026-10-27 22-47-32.mov",
+    "source_duration_s": 2219.0,
+    "highlight_duration_s": 26.4,
+    "mp4": "05-icloud-sync-photos.mp4",
+    "mp4_mb": 0.68,
+    "gif": "05-icloud-sync-photos.gif",
+    "gif_mb": 1.94
+  }
+]
