@@ -147,8 +147,9 @@ public static class CplPhotosRecordParser
                 break;
             searchFrom = fieldAt + fieldName.Length;
 
-            // Finestra ampia: PI/flag/UUID prima della risorsa, CAog subito dopo.
-            var winStart = Math.Max(0, fieldAt - 8_000);
+            // Finestra ampia: PI CPLMaster può stare >8 KB prima della risorsa.
+            const int lookback = 48_000;
+            var winStart = Math.Max(0, fieldAt - lookback);
             var winEnd = Math.Min(payload.Length, fieldAt + 3_000);
             var window = payload.AsSpan(winStart, winEnd - winStart).ToArray();
             var fieldInWindow = fieldAt - winStart;
@@ -165,7 +166,7 @@ public static class CplPhotosRecordParser
                 continue;
 
             // Nearest CPLMaster/CPLAsset before the resource (not first in lookback window).
-            var lookStart = Math.Max(0, fieldAt - 8_000);
+            var lookStart = Math.Max(0, fieldAt - lookback);
             var lookSpan = payload.AsSpan(lookStart, fieldAt - lookStart);
             var masterRel = lookSpan.LastIndexOf("CPLMaster"u8);
             var masterMarkerAt = masterRel >= 0 ? lookStart + masterRel : -1;
@@ -184,7 +185,7 @@ public static class CplPhotosRecordParser
                 : null;
 
             var recordName = masterName ?? assetName
-                             ?? FindNearestUuidBefore(payload, fieldAt, 8_000)
+                             ?? FindNearestUuidBefore(payload, fieldAt, lookback)
                              ?? $"UNKNOWN_{fieldAt:X}";
             if (liveSuffix)
                 recordName += "_Live";
@@ -198,7 +199,16 @@ public static class CplPhotosRecordParser
             if (MmcsAuthBuilder.TrySplitMmcsAuth(mmcsAuth, out var sig21, out _, out _))
                 wrap = MmcsAssetProtection.TryExtractForSignature(window, sig21);
             wrap ??= MmcsAssetProtection.TryExtract(window);
-            var recordPi = PcsRecordPi(window);
+            // PI wrapping: ancora sul CPLMaster (non solo vicino a resOriginalRes).
+            byte[]? recordPi = null;
+            if (masterMarkerAt >= 0)
+            {
+                var piStart = Math.Max(0, masterMarkerAt - 512);
+                var piEnd = Math.Min(payload.Length, masterMarkerAt + 2_048);
+                recordPi = PcsRecordPi(payload.AsSpan(piStart, piEnd - piStart).ToArray());
+            }
+
+            recordPi ??= PcsRecordPi(window);
             var size = TryExtractSize(window);
             var url = TryExtractContentUrl(window);
             var isMaster = IndexOfAscii(window, "CPLMaster"u8) >= 0;

@@ -28,7 +28,8 @@ public static class PcsProtectionLight
     /// </summary>
     public static List<ProtectionZoneKeys> TryUnwrapAll(
         ReadOnlySpan<byte> payload,
-        IReadOnlyList<PcsCompactPrivateKey> keys)
+        IReadOnlyList<PcsCompactPrivateKey> keys,
+        bool bruteForceUnknownPub = true)
     {
         var results = new List<ProtectionZoneKeys>();
         if (keys.Count == 0 || payload.Length < 1 + FieldLen + 24 + 2)
@@ -36,7 +37,7 @@ public static class PcsProtectionLight
 
         try
         {
-            return TryUnwrapAllCore(payload, keys);
+            return TryUnwrapAllCore(payload, keys, bruteForceUnknownPub);
         }
         catch
         {
@@ -46,12 +47,15 @@ public static class PcsProtectionLight
 
     private static List<ProtectionZoneKeys> TryUnwrapAllCore(
         ReadOnlySpan<byte> payload,
-        IReadOnlyList<PcsCompactPrivateKey> keys)
+        IReadOnlyList<PcsCompactPrivateKey> keys,
+        bool bruteForceUnknownPub)
     {
         var results = new List<ProtectionZoneKeys>();
         var seenMasters = new HashSet<string>(StringComparer.Ordinal);
         var okPub = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var failPub = new HashSet<string>(StringComparer.Ordinal);
+        // O(1) quando compactPubX nel light PI è la nostra PublicX (caso tipico PCS).
+        var byPub = PcsDer.IndexOf(keys);
 
         for (var i = 0; i + FieldLen + 3 < payload.Length; i++)
         {
@@ -73,7 +77,7 @@ public static class PcsProtectionLight
             }
             else
             {
-                // Decode EC una volta per pub; poi prova wrap 24→40→48 × keys (già ordered).
+                // Decode EC una volta per pub; poi prova wrap 24→40→48.
                 BCPoint q;
                 try
                 {
@@ -87,6 +91,16 @@ public static class PcsProtectionLight
                     continue;
                 }
 
+                // Fast path: compactPubX == nostra PublicX → 1 ECDH.
+                // Su CPL multi-MB i 0xFF falsi positivi × N keys = minuti: default
+                // bruteForce solo se indexed miss e bruteForceUnknownPub=true.
+                var indexed = PcsDer.FindByPublicX(byPub, pub);
+                if (indexed is null && !bruteForceUnknownPub)
+                {
+                    failPub.Add(pubId);
+                    continue;
+                }
+
                 master = null;
                 foreach (var wrapLen in new[] { 24, 40, 48 })
                 {
@@ -95,7 +109,10 @@ public static class PcsProtectionLight
                         continue;
 
                     var wrapped = payload.Slice(i + 1 + FieldLen, wrapLen);
-                    master = TryMasterKey(q, wrapped, keys);
+                    if (indexed is not null)
+                        master = TryMasterKey(q, wrapped, new[] { indexed });
+                    if (master is null && bruteForceUnknownPub)
+                        master = TryMasterKey(q, wrapped, keys);
                     if (master is null)
                         continue;
                     usedWrap = wrapLen;

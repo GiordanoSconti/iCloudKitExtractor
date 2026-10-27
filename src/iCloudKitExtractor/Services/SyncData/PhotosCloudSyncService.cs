@@ -1305,9 +1305,13 @@ public sealed class PhotosCloudSyncService
         return null;
     }
 
+    /// <summary>Parallelismo full-scan PCS sulle pagine CPL (DER+light).</summary>
+    private static readonly int PcsPageUnwrapParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8);
+
     /// <summary>
-    /// Unwrap zone + pagine CPL → KEK MMCS (full-scan DER+light).
-    /// Pool crescente tra pagine (nested keys): corretto per aprire i wrap MMCS.
+    /// Unwrap zone + pagine CPL → KEK MMCS. Un solo path: full-scan DER+light
+    /// (Escrow e Manatee uguali). Pagine in parallelo; 2ª passata sulle pagine a 0
+    /// con pool allargato (nested keys).
     /// </summary>
     private async Task<(List<ProtectionZoneKeys> Zones, List<byte[]> KekPool)> BuildPcsZonesAndKekAsync(
         ICloudSession session,
@@ -1327,7 +1331,6 @@ public sealed class PhotosCloudSyncService
         if (!File.Exists(kekCachePath) && File.Exists(legacyKek))
             File.Copy(legacyKek, kekCachePath);
 
-        // Preferisci Manatee da disco anche se Escrow KeySet è già in sessione (ADP Photos).
         if (session.PcsManateeCompactKeys is not { Count: > 0 })
             _ = EscrowPcsSession.TryLoadManateeFromDisk(
                 session,
@@ -1357,8 +1360,11 @@ public sealed class PhotosCloudSyncService
 
         if (seedKeys.Count > 0 && zonePayload is { Length: > 32 })
         {
-            var fromZone = PcsProtectionZone.TryUnwrapAll(
-                zonePayload, seedKeys, lightKeys: seedKeys);
+            var fromZone = await Task.Run(
+                    () => PcsProtectionZone.TryUnwrapAll(
+                        zonePayload, seedKeys, lightKeys: seedKeys),
+                    ct)
+                .ConfigureAwait(false);
             if (fromZone.Count > 0)
             {
                 zones.AddRange(fromZone);
@@ -1370,67 +1376,103 @@ public sealed class PhotosCloudSyncService
             }
         }
 
-        if (seedKeys.Count > 0)
+        if (seedKeys.Count > 0 && assetPages.Count > 0)
         {
+            // lightKeys = pool (seed ∪ nested zona): i light 0xFF CPL usano spesso
+            // la pub delle nested MasterKeySet, non solo il KeyId zona/seed.
+            var dop = Math.Min(PcsPageUnwrapParallelism, Math.Max(1, assetPages.Count));
             log?.Report(
                 $"  PCS unwrap: full-scan {assetPages.Count} pagine CPL " +
-                $"(DER+light; seedKeys={seedKeys.Count}, pool={pool.Count}" +
+                $"(DER+light iter ×{dop}; seedKeys={seedKeys.Count}, pool={pool.Count}" +
                 (reportOverallPercent ? ")" : "; ∥download)"));
-            for (var i = 0; i < assetPages.Count; i++)
+
+            var poolBeforePages = pool.Count;
+            var pass1 = await UnwrapCplPagesParallelAsync(
+                    assetPages, pool, log, progress, ct, reportOverallPercent,
+                    passLabel: "full")
+                .ConfigureAwait(false);
+
+            foreach (var pageZones in pass1)
             {
-                ct.ThrowIfCancellationRequested();
-                progress?.Report(new SyncDataProgressReport(
-                    $"Chiavi PCS pagina {i + 1}/{assetPages.Count}…",
-                    reportOverallPercent
-                        ? 78 + 4.0 * (i + 1) / Math.Max(1, assetPages.Count)
-                        : null,
-                    PhaseLabel: reportOverallPercent ? "CPL PCS" : "CPL PCS∥DL",
-                    PhasePercent: 100.0 * (i + 1) / Math.Max(1, assetPages.Count)));
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                List<ProtectionZoneKeys> fromPage;
-                try
-                {
-                    fromPage = PcsProtectionZone.TryUnwrapAll(
-                        assetPages[i],
-                        pool,
-                        lightKeys: seedKeys,
-                        includeLight: true,
-                        includeDer: true);
-                }
-                catch (Exception ex)
-                {
-                    log?.Report(
-                        $"  PCS unwrap page {i + 1}/{assetPages.Count} skip: " +
-                        $"{ex.GetType().Name}: {ex.Message}");
+                if (pageZones.Count == 0)
                     continue;
-                }
+                zones.AddRange(pageZones);
+                pool = PcsProtectionZone.MergeKeys(pool, pageZones);
+                PcsSessionSeedKeys.RememberFromZones(session, pageZones, seedKeys);
+            }
 
-                zones.AddRange(fromPage);
-                if (fromPage.Count > 0)
-                {
-                    pool = PcsProtectionZone.MergeKeys(pool, fromPage);
-                    PcsSessionSeedKeys.RememberFromZones(session, fromPage, seedKeys);
-                }
-
+            // 2ª passata su TUTTE le pagine se il pool EC è cresciuto (nested cross-page).
+            if (pool.Count > poolBeforePages)
+            {
                 log?.Report(
-                    $"  PCS unwrap page {i + 1}/{assetPages.Count} full: +{fromPage.Count} " +
-                    $"in {sw.ElapsedMilliseconds} ms (tot zones={zones.Count}, pool={pool.Count})");
+                    $"  PCS unwrap: rescan {assetPages.Count} pagine con pool={pool.Count} " +
+                    $"(+{pool.Count - poolBeforePages} nested)…");
+                var pass2 = await UnwrapCplPagesParallelAsync(
+                        assetPages, pool, log, progress, ct, reportOverallPercent,
+                        passLabel: "rescan")
+                    .ConfigureAwait(false);
+                var seen = new HashSet<string>(
+                    zones.Select(static z => Convert.ToHexString(z.MasterKey)),
+                    StringComparer.Ordinal);
+                foreach (var pageZones in pass2)
+                {
+                    foreach (var z in pageZones)
+                    {
+                        if (!seen.Add(Convert.ToHexString(z.MasterKey)))
+                            continue;
+                        zones.Add(z);
+                    }
+
+                    if (pageZones.Count > 0)
+                    {
+                        pool = PcsProtectionZone.MergeKeys(pool, pageZones);
+                        PcsSessionSeedKeys.RememberFromZones(session, pageZones, seedKeys);
+                    }
+                }
             }
         }
 
+        // Master da recordProtectionInfo media (PI ~400 → MasterKey; ~535 → nested 16 B).
+        if (media is { Count: > 0 } && pool.Count > 0)
+        {
+            var fromRecordPi = 0;
+            var seen = new HashSet<string>(
+                zones.Select(static z => Convert.ToHexString(z.MasterKey)),
+                StringComparer.Ordinal);
+            foreach (var m in media)
+            {
+                if (m.RecordProtectionInfoDerHex is not { Length: > 0 })
+                    continue;
+                byte[] der;
+                try { der = Convert.FromHexString(m.RecordProtectionInfoDerHex); }
+                catch { continue; }
+                foreach (var z in PcsProtectionZone.TryUnwrapAll(
+                             der, pool, includeLight: false, includeDer: true))
+                {
+                    if (!seen.Add(Convert.ToHexString(z.MasterKey)))
+                        continue;
+                    zones.Add(z);
+                    fromRecordPi++;
+                }
+            }
+
+            if (fromRecordPi > 0)
+            {
+                pool = PcsProtectionZone.MergeKeys(pool, zones);
+                log?.Report($"  PCS unwrap: +{fromRecordPi} master da recordProtectionInfo media");
+            }
+        }
+
+        // MasterKey + DecryptKey + nested wrap-ref 16 B (PI ~535 Photos/ADP).
         var kekPool = zones
-            .Select(static z => z.MasterKey)
+            .SelectMany(PcsProtectionZone.EnumerateMmcsKekCandidates)
             .Where(static k => k is { Length: >= 16 })
             .Distinct(ByteArrayComparer.Instance)
             .ToList();
 
         if (kekPool.Count == 0 && File.Exists(kekCachePath))
         {
-            kekPool = (await File.ReadAllLinesAsync(kekCachePath, ct))
-                .Where(static l => !string.IsNullOrWhiteSpace(l))
-                .Select(static l => Convert.FromHexString(l.Trim()))
-                .Where(static k => k.Length >= 16)
-                .ToList();
+            kekPool = await LoadKekCacheAsync(kekCachePath, ct).ConfigureAwait(false);
             log?.Report($"  PCS unwrap: pool vuoto → riuso cache kek={kekPool.Count}");
         }
         else if (kekPool.Count > 0)
@@ -1438,13 +1480,13 @@ public sealed class PhotosCloudSyncService
             await File.WriteAllLinesAsync(
                 kekCachePath,
                 kekPool.Select(static k => Convert.ToHexString(k)),
-                ct);
+                ct).ConfigureAwait(false);
         }
 
         swAll.Stop();
         log?.Report(
             $"  Photos PCS unwrap: zones={zones.Count} kek={kekPool.Count} " +
-            $"in {swAll.ElapsedMilliseconds} ms (page-full" +
+            $"in {swAll.ElapsedMilliseconds} ms (full-scan ∥{PcsPageUnwrapParallelism}" +
             (fromZoneCount > 0 ? $", zonePI={fromZoneCount}" : "") + ")");
         if (kekPool.Count == 0 && seedKeys.Count > 0)
         {
@@ -1455,6 +1497,125 @@ public sealed class PhotosCloudSyncService
         }
 
         return (zones, kekPool);
+    }
+
+    private static async Task<List<ProtectionZoneKeys>[]> UnwrapCplPagesParallelAsync(
+        IReadOnlyList<byte[]> pages,
+        IReadOnlyList<PcsCompactPrivateKey> pool,
+        IProgress<string>? log,
+        IProgress<SyncDataProgressReport>? progress,
+        CancellationToken ct,
+        bool reportOverallPercent,
+        string passLabel)
+    {
+        var results = new List<ProtectionZoneKeys>[pages.Count];
+        for (var i = 0; i < pages.Count; i++)
+            results[i] = [];
+
+        if (pages.Count == 0)
+            return results;
+
+        var done = 0;
+        var dop = Math.Min(PcsPageUnwrapParallelism, pages.Count);
+        // pool = seed ∪ nested: serve sia a DER sia a light (pub nested nei 0xFF CPL).
+        var poolSnapshot = pool.ToList();
+
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, pages.Count),
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = dop,
+                CancellationToken = ct,
+            },
+            async (i, token) =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                List<ProtectionZoneKeys> fromPage;
+                try
+                {
+                    fromPage = await Task.Run(
+                            () => UnwrapOneCplPage(pages[i], poolSnapshot),
+                            token)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    fromPage = [];
+                    log?.Report(
+                        $"  PCS unwrap page {i + 1}/{pages.Count} {passLabel} skip: " +
+                        $"{ex.GetType().Name}: {ex.Message}");
+                }
+
+                results[i] = fromPage;
+                var n = Interlocked.Increment(ref done);
+                progress?.Report(new SyncDataProgressReport(
+                    $"Chiavi PCS pagina {n}/{pages.Count}…",
+                    reportOverallPercent
+                        ? 78 + 4.0 * n / Math.Max(1, pages.Count)
+                        : null,
+                    PhaseLabel: reportOverallPercent ? "CPL PCS" : "CPL PCS∥DL",
+                    PhasePercent: 100.0 * n / Math.Max(1, pages.Count)));
+                log?.Report(
+                    $"  PCS unwrap page {i + 1}/{pages.Count} {passLabel}: +{fromPage.Count} " +
+                    $"in {sw.ElapsedMilliseconds} ms");
+            }).ConfigureAwait(false);
+
+        return results;
+    }
+
+    /// <summary>
+    /// Una pagina CPL: DER (tutti i candidati) + light indexed-only (niente ECDH×N
+    /// su ogni 0xFF falso positivo). I master MMCS utili sono i PI ~400 B.
+    /// </summary>
+    private static List<ProtectionZoneKeys> UnwrapOneCplPage(
+        byte[] page,
+        IReadOnlyList<PcsCompactPrivateKey> pool)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var list = new List<ProtectionZoneKeys>();
+
+        void AddRange(IEnumerable<ProtectionZoneKeys> zones)
+        {
+            foreach (var z in zones)
+            {
+                if (!seen.Add(Convert.ToHexString(z.MasterKey)))
+                    continue;
+                list.Add(z);
+            }
+        }
+
+        AddRange(PcsProtectionZone.TryUnwrapAll(
+            page, pool, lightKeys: pool, includeLight: false, includeDer: true));
+        AddRange(PcsProtectionLight.TryUnwrapAll(page, pool, bruteForceUnknownPub: false));
+
+        // Harvest esplicito PI 380–430 B (wrapping master Photos): la full DER
+        // a volte AOR-skippa pezzi di pagina; qui filtriamo per lunghezza.
+        foreach (var der in PcsProtectionZone.TryExtractAllRecordProtectionInfoDer(page))
+        {
+            if (der.Length is < 380 or > 430)
+                continue;
+            AddRange(PcsProtectionZone.TryUnwrapAll(
+                der, pool, includeLight: false, includeDer: true));
+        }
+
+        return list;
+    }
+
+    private static async Task<List<byte[]>> LoadKekCacheAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            return (await File.ReadAllLinesAsync(path, ct).ConfigureAwait(false))
+                .Where(static l => !string.IsNullOrWhiteSpace(l))
+                .Select(static l => Convert.FromHexString(l.Trim()))
+                .Where(static k => k.Length >= 16)
+                .Distinct(ByteArrayComparer.Instance)
+                .ToList();
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     private async Task<(int Ok, int Fail, int Total, int KekCount)> DecryptDownloadedMediaAsync(
@@ -1695,17 +1856,18 @@ public sealed class PhotosCloudSyncService
                     Interlocked.Add(ref sumKekTried, kekTried);
                     swPart.Restart();
 
-                    // assemble_fail con wrap valido: AG stale o wrap↔chunk mismatch.
-                    // Re-authorizeGet fresco + wrap da referenceSignature (CloudDocs-style).
+                    // assemble_fail: AG stale. unwrap_miss: wrap sbagliato o master assente.
+                    // In entrambi i casi prova AG fresco (solo assemble) + wrap alternativi dal wire.
                     if (plain is null
-                        && failReason.StartsWith("assemble_fail", StringComparison.Ordinal)
-                        && !string.IsNullOrWhiteSpace(mmcsAuth))
+                        && !string.IsNullOrWhiteSpace(mmcsAuth)
+                        && (failReason.StartsWith("assemble_fail", StringComparison.Ordinal)
+                            || failReason.StartsWith("unwrap_miss", StringComparison.Ordinal)))
                     {
                         // #region agent log
                         AgentLogPhotos(
                             "H-P2",
                             "PhotosCloudSyncService.cs:decrypt-retry",
-                            "assemble_fail_retry",
+                            "decrypt_retry",
                             new
                             {
                                 token,
@@ -1716,25 +1878,28 @@ public sealed class PhotosCloudSyncService
                             });
                         // #endregion
 
-                        var refreshed = await TryRefreshAuthorizeGetAsync(
-                            session, mmcsAuth, ct).ConfigureAwait(false);
-                        if (refreshed is { Length: > 0 })
+                        if (failReason.StartsWith("assemble_fail", StringComparison.Ordinal))
                         {
-                            ag = refreshed;
-                            await File.WriteAllBytesAsync(agPath, ag, ct);
-                            await File.WriteAllBytesAsync(agCache, ag, ct);
-                            plain = TryDecryptCipher(
-                                wrapHex, cipher, ag, kekPool, out failReason, out var kekTried2);
-                            Interlocked.Add(ref sumKekTried, kekTried2);
-                            if (plain is not null)
+                            var refreshed = await TryRefreshAuthorizeGetAsync(
+                                session, mmcsAuth, ct).ConfigureAwait(false);
+                            if (refreshed is { Length: > 0 })
                             {
-                                // #region agent log
-                                AgentLogPhotos(
-                                    "H-P2",
-                                    "PhotosCloudSyncService.cs:decrypt-retry",
-                                    "reauth_ag_ok",
-                                    new { token, agLen = ag.Length });
-                                // #endregion
+                                ag = refreshed;
+                                await File.WriteAllBytesAsync(agPath, ag, ct);
+                                await File.WriteAllBytesAsync(agCache, ag, ct);
+                                plain = TryDecryptCipher(
+                                    wrapHex, cipher, ag, kekPool, out failReason, out var kekTried2);
+                                Interlocked.Add(ref sumKekTried, kekTried2);
+                                if (plain is not null)
+                                {
+                                    // #region agent log
+                                    AgentLogPhotos(
+                                        "H-P2",
+                                        "PhotosCloudSyncService.cs:decrypt-retry",
+                                        "reauth_ag_ok",
+                                        new { token, agLen = ag.Length });
+                                    // #endregion
+                                }
                             }
                         }
 
@@ -2333,7 +2498,7 @@ public sealed class PhotosCloudSyncService
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
         }
         catch

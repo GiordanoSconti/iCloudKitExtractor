@@ -134,6 +134,50 @@ public static class PcsProtectionZone
         }
     }
 
+    /// <summary>
+    /// Photos MMCS: nei PI ~530 B il nested ProtectionObject porta un OCTET STRING 16 B
+    /// che è il master PZKeyUnwrap (non il <see cref="ProtectionZoneKeys.MasterKey"/> ECDH).
+    /// Nei PI ~400 B quel campo è vuoto e apre il wrap il MasterKey di zona.
+    /// </summary>
+    public static byte[]? TryExtractNestedWrappingKeyRef(ReadOnlySpan<byte> nestedProtectionObject)
+    {
+        if (nestedProtectionObject.Length < 18)
+            return null;
+        for (var i = 0; i + 18 <= nestedProtectionObject.Length; i++)
+        {
+            if (nestedProtectionObject[i] != 0x04 || nestedProtectionObject[i + 1] != 0x10)
+                continue;
+            // Skip empty placeholder (tag+len only already excluded by +18).
+            var key = nestedProtectionObject.Slice(i + 2, 16).ToArray();
+            // Ignore all-zero (unseen) — keep any other 16 B ref.
+            var any = false;
+            for (var j = 0; j < 16; j++)
+            {
+                if (key[j] != 0) { any = true; break; }
+            }
+            if (any)
+                return key;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Candidati KEK per Asset.protectionInfo wrap24/40 da una zone unwrapped.
+    /// </summary>
+    public static IEnumerable<byte[]> EnumerateMmcsKekCandidates(ProtectionZoneKeys zone)
+    {
+        if (zone.MasterKey is { Length: >= 16 })
+            yield return zone.MasterKey;
+        if (zone.DecryptKey is { Length: >= 16 })
+            yield return zone.DecryptKey;
+        if (zone.NestedProtectionObject is { Length: > 0 } nested)
+        {
+            var nestedRef = TryExtractNestedWrappingKeyRef(nested);
+            if (nestedRef is not null)
+                yield return nestedRef;
+        }
+    }
+
     public static bool TryExtractProtectionInfoDer(ReadOnlySpan<byte> payload, out byte[]? der)
     {
         var list = TryExtractProtectionInfoCandidates(payload);
@@ -148,15 +192,32 @@ public static class PcsProtectionZone
         {
             if (payload[i] != 0x61)
                 continue;
-            if (!TrySliceTlv(payload, i, out var slice))
+            ReadOnlySpan<byte> slice;
+            try
+            {
+                if (!TrySliceTlv(payload, i, out slice))
+                    continue;
+            }
+            catch
+            {
                 continue;
+            }
+
             if (slice.Length < 64)
                 continue;
             // Evita falsi positivi ASCII ("aultZone", URL, …): content = SEQUENCE 0x30.
-            if (!TryReadTagLen(slice, 0, out _, out _, out _, out var cOff, out _, out _)
-                || cOff >= slice.Length
-                || slice[cOff] != 0x30)
+            try
+            {
+                if (!TryReadTagLen(slice, 0, out _, out _, out _, out var cOff, out _, out _)
+                    || cOff >= slice.Length
+                    || slice[cOff] != 0x30)
+                    continue;
+            }
+            catch
+            {
                 continue;
+            }
+
             list.Add(slice.ToArray());
         }
 
@@ -630,7 +691,7 @@ public static class PcsProtectionZone
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
         }
         catch
@@ -787,24 +848,56 @@ public static class PcsProtectionZone
         return null;
     }
 
-    /// <summary>Cerca DER appl[1] ProtectionInfo nel window di un record CloudDocs.</summary>
+    /// <summary>
+    /// Cerca DER appl[1] ProtectionInfo nel window record.
+    /// Photos MMCS: PI ~400 B → MasterKey apre wrap24; PI ~530 B → apre il
+    /// nested OCTET STRING 16 B (<see cref="TryExtractNestedWrappingKeyRef"/>).
+    /// Preferisci ~400 se presenti; altrimenti il più lungo.
+    /// </summary>
     public static byte[]? TryExtractRecordProtectionInfoDer(ReadOnlySpan<byte> recordWindow)
     {
-        var best = (byte[]?)null;
+        var all = TryExtractAllRecordProtectionInfoDer(recordWindow);
+        if (all.Count == 0)
+            return null;
+
+        // Preferisci ~400 B (wrapping master Photos); poi il più lungo.
+        var sweet = all
+            .Where(static b => b.Length is >= 380 and <= 430)
+            .OrderByDescending(static b => b.Length)
+            .FirstOrDefault();
+        return sweet ?? all.OrderByDescending(static b => b.Length).First();
+    }
+
+    /// <summary>Tutti i candidati appl[1] 200–900 B nel window (Photos: provarli tutti).</summary>
+    public static List<byte[]> TryExtractAllRecordProtectionInfoDer(ReadOnlySpan<byte> recordWindow)
+    {
+        var list = new List<byte[]>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i + 4 < recordWindow.Length; i++)
         {
             if (recordWindow[i] != 0x61)
                 continue;
-            if (!TrySliceTlv(recordWindow, i, out var slice))
+            ReadOnlySpan<byte> slice;
+            try
+            {
+                if (!TrySliceTlv(recordWindow, i, out slice))
+                    continue;
+            }
+            catch
+            {
                 continue;
+            }
+
             // Record PI tipicamente ~400 B (zone ~570+, recordProtectionInfo ~1500)
             if (slice.Length is < 200 or > 900)
                 continue;
-            if (best is null || slice.Length > best.Length)
-                best = slice.ToArray();
+            var arr = slice.ToArray();
+            if (!seen.Add(Convert.ToHexString(arr)))
+                continue;
+            list.Add(arr);
         }
 
-        return best;
+        return list;
     }
 
     public static byte[]? TryDecryptField(

@@ -56,11 +56,34 @@ public static class SyncDataPcsDecryptor
             }
         }
 
-        var fromRecords = PcsProtectionZone.TryUnwrapAllIterative(recordSyncPayload, poolKeys);
+        // CPL Photos multi-MB: TryUnwrapAllIterative + light brute = decine di minuti
+        // bloccati su "unwrap zone…" (query_cplasset_p* ~2–3 MB × 200 Manatee keys).
+        const int largePayloadBytes = 200_000;
+        List<ProtectionZoneKeys> fromRecords;
+        if (recordSyncPayload.Length >= largePayloadBytes)
+        {
+            log?.Report(
+                $"  PCS: payload grande ({recordSyncPayload.Length:N0} B) — " +
+                "PI~400 + light indexed (no iterative/brute)…");
+            fromRecords = UnwrapLargeRecordPayload(recordSyncPayload, poolKeys);
+        }
+        else
+        {
+            fromRecords = PcsProtectionZone.TryUnwrapAllIterative(recordSyncPayload, poolKeys);
+        }
+
         if (fromRecords.Count > 0)
         {
             zones.AddRange(fromRecords);
             poolKeys = PcsProtectionZone.MergeKeys(poolKeys, fromRecords);
+        }
+
+        // Evita O(campi × migliaia di master spuri) sul decrypt type=20.
+        if (recordSyncPayload.Length >= largePayloadBytes && zones.Count > 128)
+        {
+            var before = zones.Count;
+            zones = CapZonesForFieldDecrypt(zones, max: 128);
+            log?.Report($"  PCS: cap zoneKeys {before}→{zones.Count} per decrypt campi");
         }
 
         log?.Report($"  PCS: zoneKeys={zones.Count} poolKeys={poolKeys.Count}");
@@ -243,6 +266,56 @@ public static class SyncDataPcsDecryptor
     private static List<PcsCompactPrivateKey> CollectSeedKeys(
         ICloudSession session, IProgress<string>? log) =>
         PcsSessionSeedKeys.CollectForSyncData(session, log);
+
+    /// <summary>
+    /// Unwrap su query CPL multi-MB: solo PI 380–430 B (master utili) + light
+    /// indexed-only. Niente DER full-page né ECDH brute su ogni 0xFF.
+    /// </summary>
+    private static List<ProtectionZoneKeys> UnwrapLargeRecordPayload(
+        byte[] payload,
+        IReadOnlyList<PcsCompactPrivateKey> poolKeys)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var list = new List<ProtectionZoneKeys>();
+
+        void AddRange(IEnumerable<ProtectionZoneKeys> zones)
+        {
+            foreach (var z in zones)
+            {
+                if (!seen.Add(Convert.ToHexString(z.MasterKey)))
+                    continue;
+                list.Add(z);
+            }
+        }
+
+        foreach (var der in PcsProtectionZone.TryExtractAllRecordProtectionInfoDer(payload))
+        {
+            if (der.Length is < 380 or > 430)
+                continue;
+            AddRange(PcsProtectionZone.TryUnwrapAll(
+                der, poolKeys, includeLight: false, includeDer: true));
+        }
+
+        AddRange(PcsProtectionLight.TryUnwrapAll(
+            payload, poolKeys, bruteForceUnknownPub: false));
+        return list;
+    }
+
+    private static List<ProtectionZoneKeys> CapZonesForFieldDecrypt(
+        List<ProtectionZoneKeys> zones,
+        int max)
+    {
+        if (zones.Count <= max)
+            return zones;
+
+        // Preferisci zone con nested / tag (PI zona o MasterKeySet), poi le altre.
+        return zones
+            .OrderByDescending(static z => z.NestedPrivateKeys.Count)
+            .ThenByDescending(static z => z.ProtectionInfoTag is null ? 0 : 1)
+            .ThenByDescending(static z => z.MasterKey.Length)
+            .Take(max)
+            .ToList();
+    }
 
     private static int CountPublicXHits(
         byte[]? zonesPayload,

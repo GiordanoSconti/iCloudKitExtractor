@@ -145,7 +145,11 @@ public sealed class PhotosMediaMetaCache
                 log?.Report(
                     $"  BuildRecordMetadata: unwrap pagina {pi + 1}/{assetPages.Count} " +
                     $"({assetPages[pi].Length:N0} B)…");
-                var fromPage = PcsProtectionZone.TryUnwrapAll(assetPages[pi], pool, lightKeys: seedKeys);
+                // Come SyncDataPcsDecryptor: no light brute su multi-MB CPL.
+                var page = assetPages[pi];
+                var fromPage = page.Length >= 200_000
+                    ? UnwrapPhotosPageFast(page, pool)
+                    : PcsProtectionZone.TryUnwrapAll(page, pool, lightKeys: seedKeys);
                 zones.AddRange(fromPage);
                 pool = PcsProtectionZone.MergeKeys(pool, fromPage);
             }
@@ -478,6 +482,34 @@ public sealed class PhotosMediaMetaCache
 
         // Evita TryUnwrapAll su ogni ciphertext campo (costoso × migliaia di field).
         return null;
+    }
+
+    private static List<ProtectionZoneKeys> UnwrapPhotosPageFast(
+        byte[] page,
+        IReadOnlyList<PcsCompactPrivateKey> pool)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var list = new List<ProtectionZoneKeys>();
+        void AddRange(IEnumerable<ProtectionZoneKeys> zones)
+        {
+            foreach (var z in zones)
+            {
+                if (!seen.Add(Convert.ToHexString(z.MasterKey)))
+                    continue;
+                list.Add(z);
+            }
+        }
+
+        foreach (var der in PcsProtectionZone.TryExtractAllRecordProtectionInfoDer(page))
+        {
+            if (der.Length is < 380 or > 430)
+                continue;
+            AddRange(PcsProtectionZone.TryUnwrapAll(
+                der, pool, includeLight: false, includeDer: true));
+        }
+
+        AddRange(PcsProtectionLight.TryUnwrapAll(page, pool, bruteForceUnknownPub: false));
+        return list;
     }
 
     public sealed class MediaEntry
