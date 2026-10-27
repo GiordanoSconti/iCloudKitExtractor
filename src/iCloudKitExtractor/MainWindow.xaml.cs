@@ -62,6 +62,10 @@ public partial class MainWindow : Window
     /// <summary>True mentre è in corso Scarica backup (HTTP GET/POST vanno nel log Backup).</summary>
     private bool _downloadBusy;
 
+    /// <summary>Sessione live del download in attesa di Accesso/2FA mid-download.</summary>
+    private ICloudSession? _midDownloadLiveSession;
+    private TaskCompletionSource<bool>? _midDownloadAuthTcs;
+
     /// <summary>Ultimo stato progresso download (per ripristino dopo “copia log”).</summary>
     private string _lastDownloadProgressStatus = "";
 
@@ -290,11 +294,121 @@ public partial class MainWindow : Window
 
 
 
-    private ICloudBackupOrchestrator Orchestrator =>
-        _orchestrator ??= new ICloudBackupOrchestrator(
-            Http,
-            AnisetteProviderFactory.CreateAuth(Http),
-            _authProfile?.UseFullIphoneAuth ?? false);
+    private ICloudBackupOrchestrator Orchestrator
+    {
+        get
+        {
+            if (_orchestrator is null)
+            {
+                _orchestrator = new ICloudBackupOrchestrator(
+                    Http,
+                    AnisetteProviderFactory.CreateAuth(Http),
+                    _authProfile?.UseFullIphoneAuth ?? false);
+                WireOrchestratorCallbacks(_orchestrator);
+            }
+
+            return _orchestrator;
+        }
+    }
+
+    private void WireOrchestratorCallbacks(ICloudBackupOrchestrator orchestrator)
+    {
+        orchestrator.InteractiveSessionRecovery = RecoverSessionMidDownloadAsync;
+    }
+
+    /// <summary>
+    /// Pausa download: mostra Accesso/2FA; dopo login OK assorbe token nella sessione live e riprende.
+    /// </summary>
+    private async Task<bool> RecoverSessionMidDownloadAsync(
+        ICloudSession liveSession,
+        SessionReloginException ex,
+        IProgress<string>? log,
+        CancellationToken ct)
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _midDownloadLiveSession = liveSession;
+        _midDownloadAuthTcs = tcs;
+
+        using var reg = ct.Register(() =>
+        {
+            tcs.TrySetCanceled(ct);
+            _midDownloadLiveSession = null;
+            _midDownloadAuthTcs = null;
+        });
+
+        await Dispatcher.InvokeAsync(() =>
+        {
+            if (MainTabControl is not null && AccessTab is not null)
+                MainTabControl.SelectedItem = AccessTab;
+
+            LogAuth($"Download in pausa — recupero sessione ({ex.Kind}): {ex.Message}");
+            _lastDownloadProgressStatus = "In pausa — completa Accesso/2FA…";
+            if (DownloadStatusText is not null)
+                DownloadStatusText.Text = _lastDownloadProgressStatus;
+
+            if (ex.Kind == SessionReloginKind.Requires2Fa && ex.PartialSession is not null)
+            {
+                _session = ex.PartialSession;
+                ConfigureTwoFactorUi(ex.VerificationOptions);
+                TwoFactorPanel.Visibility = Visibility.Visible;
+                MessageBox.Show(
+                    this,
+                    "Sessione scaduta durante il download. Completa la verifica a due fattori per riprendere.",
+                    "2FA richiesto",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            else
+            {
+                TwoFactorPanel.Visibility = Visibility.Collapsed;
+                MessageBox.Show(
+                    this,
+                    "Apple ha rifiutato la password in memoria o serve un nuovo accesso.\n" +
+                    "Reinserisci la password nella scheda Accesso e clicca Accedi per riprendere il download.",
+                    "Accesso richiesto",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                try { PasswordBox.Focus(); }
+                catch { /* ignore */ }
+            }
+        });
+
+        try
+        {
+            return await tcs.Task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private async Task FinishMidDownloadAuthAsync(
+        ICloudSession authenticated,
+        IProgress<string>? progress)
+    {
+        var live = _midDownloadLiveSession;
+        var tcs = _midDownloadAuthTcs;
+        if (live is null || tcs is null)
+            return;
+
+        await Orchestrator
+            .ApplyAuthenticatedSessionAsync(live, authenticated, progress)
+            .ConfigureAwait(true);
+
+        _session = live;
+        UpdateSessionUi(true);
+        TwoFactorPanel.Visibility = Visibility.Collapsed;
+
+        _midDownloadLiveSession = null;
+        _midDownloadAuthTcs = null;
+        tcs.TrySetResult(true);
+
+        LogAuth("Sessione mid-download ripristinata — ripresa download.");
+        _lastDownloadProgressStatus = "Sessione ripristinata — ripresa…";
+        if (DownloadStatusText is not null)
+            DownloadStatusText.Text = _lastDownloadProgressStatus;
+    }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
@@ -4059,11 +4173,21 @@ public partial class MainWindow : Window
 
             LoginButton.IsEnabled = false;
 
+            var recoveringMidDownload = _midDownloadAuthTcs is not null;
+
             // Nuovo login: scarta sessione 2FA/SMS parziale precedente.
-            _session = null;
-            _orchestrator = null;
-            TwoFactorPanel.Visibility = Visibility.Collapsed;
-            ApplyUiWizardStage(UiWizardStage.LoginOnly);
+            // Mid-download: conserva orchestrator/callback e la sessione live in attesa.
+            if (!recoveringMidDownload)
+            {
+                _session = null;
+                _orchestrator = null;
+                TwoFactorPanel.Visibility = Visibility.Collapsed;
+                ApplyUiWizardStage(UiWizardStage.LoginOnly);
+            }
+            else
+            {
+                TwoFactorPanel.Visibility = Visibility.Collapsed;
+            }
 
             var appleId = AppleIdTextBox.Text.Trim();
 
@@ -4083,10 +4207,15 @@ public partial class MainWindow : Window
 
             await EnsureAuthProfileAsync().ConfigureAwait(true);
 
-            _orchestrator = new ICloudBackupOrchestrator(
-                Http,
-                AnisetteProviderFactory.CreateAuth(Http),
-                _authProfile!.UseFullIphoneAuth);
+            if (!recoveringMidDownload)
+            {
+                _orchestrator = new ICloudBackupOrchestrator(
+                    Http,
+                    AnisetteProviderFactory.CreateAuth(Http),
+                    _authProfile!.UseFullIphoneAuth);
+            }
+
+            WireOrchestratorCallbacks(Orchestrator);
 
             var progress = new Progress<string>(msg => Dispatcher.Invoke(() => LogAuth(msg)));
 
@@ -4096,7 +4225,16 @@ public partial class MainWindow : Window
 
             {
 
-                _session = await Orchestrator.CompleteSignInAsync(appleId, password, null, null, progress);
+                var authenticated = await Orchestrator.CompleteSignInAsync(
+                    appleId, password, null, null, progress);
+
+                if (recoveringMidDownload)
+                {
+                    await FinishMidDownloadAuthAsync(authenticated, progress).ConfigureAwait(true);
+                    return;
+                }
+
+                _session = authenticated;
 
                 UpdateSessionUi(true);
 
@@ -4110,6 +4248,12 @@ public partial class MainWindow : Window
             catch (CloudKitBootstrapException ex)
 
             {
+
+                if (recoveringMidDownload)
+                {
+                    await FinishMidDownloadAuthAsync(ex.Session, progress).ConfigureAwait(true);
+                    return;
+                }
 
                 _session = ex.Session;
 
@@ -4198,6 +4342,8 @@ public partial class MainWindow : Window
 
 
 
+        var progress = new Progress<string>(msg => Dispatcher.Invoke(() => LogAuth(msg)));
+
         try
 
         {
@@ -4205,8 +4351,6 @@ public partial class MainWindow : Window
             Verify2FaButton.IsEnabled = false;
 
             var appleId = AppleIdTextBox.Text.Trim();
-
-            var progress = new Progress<string>(msg => Dispatcher.Invoke(() => LogAuth(msg)));
 
             if (_session is not null)
             {
@@ -4220,9 +4364,17 @@ public partial class MainWindow : Window
                 }
             }
 
-            _session = await Orchestrator.CompleteSignInAsync(
+            var authenticated = await Orchestrator.CompleteSignInAsync(
 
                 appleId, PasswordBox.Password, code, _session, progress);
+
+            if (_midDownloadAuthTcs is not null)
+            {
+                await FinishMidDownloadAuthAsync(authenticated, progress).ConfigureAwait(true);
+                return;
+            }
+
+            _session = authenticated;
 
             UpdateSessionUi(true);
 
@@ -4238,6 +4390,12 @@ public partial class MainWindow : Window
         catch (CloudKitBootstrapException ex)
 
         {
+
+            if (_midDownloadAuthTcs is not null)
+            {
+                await FinishMidDownloadAuthAsync(ex.Session, progress).ConfigureAwait(true);
+                return;
+            }
 
             _session = ex.Session;
 
@@ -5101,6 +5259,7 @@ public partial class MainWindow : Window
             IkeLogOptions.SetQuiet(QuietLogCheckBox.IsChecked == true);
             SyncPersistRunLogsFromUi();
             SyncDiskDumpFromUi();
+            WireOrchestratorCallbacks(Orchestrator);
             var maxAssets = int.TryParse(MaxAssetsTextBox.Text.Trim(), out var max) && max > 0 ? max : (int?)null;
             var manifestOnly = ManifestOnlyCheckBox.IsChecked == true;
 

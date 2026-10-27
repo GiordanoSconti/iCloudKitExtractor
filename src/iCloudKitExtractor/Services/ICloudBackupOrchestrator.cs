@@ -20,10 +20,21 @@ public sealed class ICloudBackupOrchestrator
     private readonly SemaphoreSlim _reloginGate = new(1, 1);
     /// <summary>Evita deadlock: Relogin → Bootstrap → ckAppInit 401 non richiama Relogin.</summary>
     private int _insideRelogin;
+    /// <summary>Soft refresh 401: ckAppInit reminta solo, senza Relogin (lo decide il caller).</summary>
+    private int _softRefreshOnly;
 
     /// <summary>Credenziali in RAM per re-login mid-download (mmeAuthToken scaduto → 401).</summary>
     private string? _storedAppleId;
     private string? _storedPassword;
+
+    /// <summary>
+    /// Invocato quando Relogin mid-download richiede 2FA o la password è rifiutata (-22406).
+    /// Deve completare Accesso/2FA in UI, assorbire i token nella <paramref name="liveSession"/>
+    /// (es. <see cref="ApplyAuthenticatedSessionAsync"/>) e restituire true se riprendere.
+    /// </summary>
+    public Func<ICloudSession, SessionReloginException, IProgress<string>?, CancellationToken, Task<bool>>?
+        InteractiveSessionRecovery
+    { get; set; }
 
     public ICloudBackupOrchestrator(HttpClient http, AuthAnisetteProviders anisette, bool useFullIphoneAuth = false)
     {
@@ -241,8 +252,9 @@ public sealed class ICloudBackupOrchestrator
 
     /// <summary>
     /// Refresh mid-download. Soft: Client-Time. Su 401 (<paramref name="forceRemint"/>):
-    /// re-login GrandSlam + ckAppInit (mmeAuthToken scaduto) se password in RAM;
-    /// altrimenti remint Anisette ForceFresh + ckAppInit.
+    /// 1) remint Anisette + ckAppInit (senza GrandSlam);
+    /// 2) Relogin GrandSlam se soft fallisce e password in RAM;
+    /// 3) <see cref="InteractiveSessionRecovery"/> se Relogin chiede 2FA / -22406.
     /// </summary>
     public async Task RefreshAnisetteOnlyAsync(
         ICloudSession session,
@@ -257,17 +269,56 @@ public sealed class ICloudBackupOrchestrator
             return;
         }
 
-        if (HasStoredCredentials)
+        // Soft first: remint OTP + ckAppInit con token già in sessione (no SRP).
+        try
         {
-            await ReloginIntoSessionAsync(session, log, ct).ConfigureAwait(false);
+            log?.Report("  soft refresh 401: remint Anisette + ckAppInit…");
+            Interlocked.Exchange(ref _softRefreshOnly, 1);
+            try
+            {
+                await RefreshAnisetteAsync(session, ct, forceRemint: true).ConfigureAwait(false);
+                await BootstrapCloudKitAsync(session, log, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _softRefreshOnly, 0);
+            }
+
+            log?.Report("  soft refresh 401 OK.");
             return;
         }
+        catch (Exception softEx)
+        {
+            log?.Report($"  soft refresh 401 fallito: {softEx.Message}");
+        }
 
-        log?.Report(
-            "  remint Anisette + ckAppInit (no password in RAM — " +
-            "se 401 persiste rifai Accesso)…");
-        await RefreshAnisetteAsync(session, ct, forceRemint: true).ConfigureAwait(false);
-        await BootstrapCloudKitAsync(session, log, ct).ConfigureAwait(false);
+        if (!HasStoredCredentials)
+        {
+            throw new InvalidOperationException(
+                "Refresh 401: soft fallito e password non in RAM — rifare Accesso dalla UI.");
+        }
+
+        try
+        {
+            await ReloginIntoSessionAsync(session, log, ct).ConfigureAwait(false);
+        }
+        catch (SessionReloginException reloginEx)
+            when (reloginEx.Kind is SessionReloginKind.Requires2Fa
+                or SessionReloginKind.PasswordRejected)
+        {
+            var handler = InteractiveSessionRecovery;
+            if (handler is null)
+                throw;
+
+            log?.Report($"  Relogin richiede intervento UI ({reloginEx.Kind})…");
+            var ok = await handler(session, reloginEx, log, ct).ConfigureAwait(false);
+            if (!ok)
+            {
+                throw new InvalidOperationException(
+                    "Recupero sessione mid-download annullato o fallito.",
+                    reloginEx);
+            }
+        }
     }
 
     /// <summary>
@@ -319,17 +370,23 @@ public sealed class ICloudBackupOrchestrator
             var result = await auth.SignInAsync(_storedAppleId!, _storedPassword!, ct)
                 .ConfigureAwait(false);
 
-            if (result.Requires2Fa)
+            if (result.Requires2Fa && result.Session is not null)
             {
-                throw new InvalidOperationException(
-                    "Re-login mid-download richiede 2FA — interrompi il download e " +
-                    "rifai Accesso (codice dispositivo/SMS), poi riprendi.");
+                throw new SessionReloginException(
+                    SessionReloginKind.Requires2Fa,
+                    result.Error ?? "Re-login mid-download richiede 2FA.",
+                    result.Session,
+                    result.VerificationOptions);
             }
 
             if (!result.Success || result.Session is null)
             {
-                throw new InvalidOperationException(
-                    result.Error ?? "Re-login mid-download fallito.");
+                var msg = result.Error ?? "Re-login mid-download fallito.";
+                throw new SessionReloginException(
+                    LooksLikePasswordRejected(msg)
+                        ? SessionReloginKind.PasswordRejected
+                        : SessionReloginKind.Other,
+                    msg);
             }
 
             AbsorbAuthIntoSession(session, result.Session);
@@ -344,6 +401,26 @@ public sealed class ICloudBackupOrchestrator
             _reloginGate.Release();
         }
     }
+
+    /// <summary>
+    /// Dopo Accesso/2FA interattivo mid-download: assorbe i token freschi nella sessione live
+    /// e rifà ckAppInit (PCS/Octagon invariati).
+    /// </summary>
+    public async Task ApplyAuthenticatedSessionAsync(
+        ICloudSession liveSession,
+        ICloudSession authenticated,
+        IProgress<string>? log = null,
+        CancellationToken ct = default)
+    {
+        AbsorbAuthIntoSession(liveSession, authenticated);
+        log?.Report("  sessione live aggiornata da Accesso/2FA — ckAppInit…");
+        await BootstrapCloudKitAsync(liveSession, log, ct).ConfigureAwait(false);
+        log?.Report("  sessione CloudKit rinnovata (UI).");
+    }
+
+    private static bool LooksLikePasswordRejected(string message) =>
+        message.Contains("-22406", StringComparison.Ordinal)
+        || message.Contains("incorrect", StringComparison.OrdinalIgnoreCase);
 
     private void RememberCredentials(string appleId, string password)
     {
@@ -477,8 +554,11 @@ public sealed class ICloudBackupOrchestrator
 
             if (status == 401 && attempt == 0)
             {
+                // Soft refresh / Relogin interno: solo remint (il caller gestisce Relogin/UI).
                 // Non richiamare Relogin da dentro Relogin (gate → deadlock).
-                if (HasStoredCredentials && Volatile.Read(ref _insideRelogin) == 0)
+                if (HasStoredCredentials
+                    && Volatile.Read(ref _insideRelogin) == 0
+                    && Volatile.Read(ref _softRefreshOnly) == 0)
                 {
                     log?.Report(
                         $"ckAppInit({containerId}) HTTP 401 — re-login GrandSlam e retry…");
@@ -921,6 +1001,34 @@ public sealed class TwoFactorRequiredException : Exception
         string message,
         PhoneVerificationOptions? verificationOptions = null) : base(message)
     {
+        PartialSession = partialSession;
+        VerificationOptions = verificationOptions;
+    }
+}
+
+public enum SessionReloginKind
+{
+    Requires2Fa,
+    PasswordRejected,
+    Other
+}
+
+/// <summary>Esito tipizzato di <see cref="ICloudBackupOrchestrator.ReloginIntoSessionAsync"/>.</summary>
+public sealed class SessionReloginException : Exception
+{
+    public SessionReloginKind Kind { get; }
+    public ICloudSession? PartialSession { get; }
+    public PhoneVerificationOptions? VerificationOptions { get; }
+
+    public SessionReloginException(
+        SessionReloginKind kind,
+        string message,
+        ICloudSession? partialSession = null,
+        PhoneVerificationOptions? verificationOptions = null,
+        Exception? inner = null)
+        : base(message, inner)
+    {
+        Kind = kind;
         PartialSession = partialSession;
         VerificationOptions = verificationOptions;
     }
