@@ -9077,33 +9077,15 @@ public sealed class BackupDownloadService
         foreach (var asset in need)
         {
             var rid = asset.RecordIdSuffix!;
-            string? seed = null;
-            string? enName = null;
-            if (enBySuffix.TryGetValue(rid, out enName)
-                && !CloudKitMmcsIds.IsUuidRecordName(enName))
-            {
-                seed = enName;
-                fromEn++;
-            }
-            else if (TryExtractRidToken(rid) is { } tok
-                     && enBySuffix.TryGetValue("tok:" + tok, out enName)
-                     && !CloudKitMmcsIds.IsUuidRecordName(enName))
-            {
-                seed = enName;
-                fromEn++;
-            }
-
-            var type = CloudKitMmcsIds.ResolveAssetType(enName, asset.SizeBytes, rid);
+            var type = CloudKitMmcsIds.ResolveAssetType(null, asset.SizeBytes, rid);
+            var seed = ResolvePrivilegedBatchSeedForFlistAsset(
+                devicePrefix4, rid, asset.SizeBytes, enBySuffix, type, out var usedEn);
             if (seed is null)
-            {
-                seed = CloudKitMmcsIds.ToPrivilegedBatchSeed(devicePrefix4, rid, type);
-                if (seed is not null)
-                    synthesized++;
-            }
-
-            if (seed is null || CloudKitMmcsIds.IsUuidRecordName(seed))
                 continue;
-            seed = HardenPrivilegedBatchSeed(seed, devicePrefix4, asset.SizeBytes);
+            if (usedEn)
+                fromEn++;
+            else
+                synthesized++;
             seedTypes[rid] = type;
             if (!seen.Add(seed))
                 continue;
@@ -9201,6 +9183,34 @@ public sealed class BackupDownloadService
             if (stillNeed == 0)
                 break;
 
+            // Seed della wave ancora senza auth (chunk 401 skip / EN size sbagliato):
+            // rimetti in coda, altrimenti restano sticky fino al retry finale.
+            var unfinishedWaveSeeds = new List<string>();
+            foreach (var asset in need)
+            {
+                if (HasUsableMmcsAuth(asset.MmcsAuth)
+                    || string.IsNullOrWhiteSpace(asset.RecordIdSuffix))
+                    continue;
+                var type = seedTypes.TryGetValue(asset.RecordIdSuffix, out var t) ? t : "A";
+                var s = ResolvePrivilegedBatchSeedForFlistAsset(
+                    devicePrefix4,
+                    asset.RecordIdSuffix,
+                    asset.SizeBytes,
+                    enBySuffix,
+                    type,
+                    out _);
+                if (s is not null && waveSeeds.Contains(s, StringComparer.Ordinal))
+                    unfinishedWaveSeeds.Add(s);
+            }
+
+            if (unfinishedWaveSeeds.Count > 0)
+            {
+                pendingSeeds = unfinishedWaveSeeds
+                    .Concat(pendingSeeds)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+            }
+
             // NON svuotare pendingSeeds su Anisette blocked: è lavoro incompleto, non
             // "MmcsAuth assente". Il gateway già fa 401→refresh→stessa request; qui
             // aspettiamo il cooldown e continuiamo le seed residue (flusso PB unico).
@@ -9233,12 +9243,6 @@ public sealed class BackupDownloadService
                         log?.Report($"  refresh dopo cooldown: {ex.Message}");
                     }
                 }
-
-                // Rimetti in coda anche la wave appena fallita (stesso lavoro, non un retry a valle).
-                pendingSeeds = waveSeeds
-                    .Concat(pendingSeeds)
-                    .Distinct(StringComparer.Ordinal)
-                    .ToList();
             }
 
             // H-AUTH-GAP: NON abbandonare seed residue su gained==0 — Domain grandi
@@ -9259,23 +9263,11 @@ public sealed class BackupDownloadService
                 var rid = asset.RecordIdSuffix;
                 if (string.IsNullOrWhiteSpace(rid))
                     continue;
-                string? seed = null;
-                if (enBySuffix.TryGetValue(rid, out var enName)
-                    && !CloudKitMmcsIds.IsUuidRecordName(enName))
-                    seed = enName;
-                else if (TryExtractRidToken(rid) is { } tok
-                         && enBySuffix.TryGetValue("tok:" + tok, out enName)
-                         && !CloudKitMmcsIds.IsUuidRecordName(enName))
-                    seed = enName;
-                else
-                {
-                    var type = seedTypes.TryGetValue(rid, out var t) ? t : "A";
-                    seed = CloudKitMmcsIds.ToPrivilegedBatchSeed(devicePrefix4, rid, type);
-                }
-
-                if (seed is null || CloudKitMmcsIds.IsUuidRecordName(seed))
+                var type = seedTypes.TryGetValue(rid, out var t) ? t : "A";
+                var seed = ResolvePrivilegedBatchSeedForFlistAsset(
+                    devicePrefix4, rid, asset.SizeBytes, enBySuffix, type, out _);
+                if (seed is null)
                     continue;
-                seed = HardenPrivilegedBatchSeed(seed, devicePrefix4, asset.SizeBytes);
                 if (!retrySeen.Add(seed))
                     continue;
                 retrySeeds.Add(seed);
@@ -9346,16 +9338,16 @@ public sealed class BackupDownloadService
             foreach (var asset in stillNeed)
             {
                 var rid = asset.RecordIdSuffix!;
-                if (enBySuffix.ContainsKey(rid)
-                    || (TryExtractRidToken(rid) is { } tok && enBySuffix.ContainsKey("tok:" + tok)))
+                // Già coperto da EN rid-esatto (stesso UUID); skip alternate no-op.
+                if (enBySuffix.ContainsKey(rid))
                     continue;
                 var primary = seedTypes.TryGetValue(rid, out var t) ? t : "A";
                 foreach (var alt in CloudKitMmcsIds.EnumerateAlternateTypes(primary).Take(3))
                 {
-                    var s = CloudKitMmcsIds.ToPrivilegedBatchSeed(devicePrefix4, rid, alt);
+                    var s = ResolvePrivilegedBatchSeedForFlistAsset(
+                        devicePrefix4, rid, asset.SizeBytes, enBySuffix, alt, out _);
                     if (s is null)
                         continue;
-                    s = HardenPrivilegedBatchSeed(s, devicePrefix4, asset.SizeBytes);
                     if (!altSeen.Add(s) || seeds.Contains(s, StringComparer.Ordinal))
                         continue;
                     altSeeds.Add(s);
@@ -9381,30 +9373,15 @@ public sealed class BackupDownloadService
             var gap = need.Where(static a => !HasUsableMmcsAuth(a.MmcsAuth)).Take(12).Select(asset =>
             {
                 var rid = asset.RecordIdSuffix ?? "";
-                string? seed = null;
-                var fromEn = false;
-                if (enBySuffix.TryGetValue(rid, out var enName)
-                    && !CloudKitMmcsIds.IsUuidRecordName(enName))
-                {
-                    seed = enName;
-                    fromEn = true;
-                }
-                else if (TryExtractRidToken(rid) is { } tok
-                         && enBySuffix.TryGetValue("tok:" + tok, out enName)
-                         && !CloudKitMmcsIds.IsUuidRecordName(enName))
-                {
-                    seed = enName;
-                    fromEn = true;
-                }
-                else
-                {
-                    var type = seedTypes.TryGetValue(rid, out var t) ? t : "A";
-                    seed = CloudKitMmcsIds.ToPrivilegedBatchSeed(devicePrefix4, rid, type);
-                }
-
+                var type = seedTypes.TryGetValue(rid, out var t) ? t : "A";
+                var seed = ResolvePrivilegedBatchSeedForFlistAsset(
+                    devicePrefix4, rid, asset.SizeBytes, enBySuffix, type, out var fromEn);
                 var seedShort = seed is null ? null : (seed.Length > 96 ? seed[..96] : seed);
                 var hasSize = seed is not null
                     && CloudKitMmcsIds.TryExtractSizeFromRid(seed) is not null;
+                var seedSize = seed is not null
+                    ? CloudKitMmcsIds.TryExtractSizeFromRid(seed)
+                    : null;
                 var sigHex = asset.AssetSignature is { Length: 21 } sig
                     ? Convert.ToHexString(sig).ToLowerInvariant()
                     : null;
@@ -9415,7 +9392,9 @@ public sealed class BackupDownloadService
                     ["seed"] = seedShort,
                     ["fromEn"] = fromEn,
                     ["seedHasSize"] = hasSize,
+                    ["seedSize"] = seedSize,
                     ["size"] = asset.SizeBytes,
+                    ["sizeAligned"] = seedSize is long ss && asset.SizeBytes is long fs && ss == fs,
                     ["sig8"] = sigHex is { Length: >= 8 } ? sigHex[..8] : sigHex,
                     ["inSeedsList"] = seed is not null
                         && seeds.Contains(seed, StringComparer.Ordinal),
@@ -9486,11 +9465,23 @@ public sealed class BackupDownloadService
                 && string.IsNullOrWhiteSpace(a.RecordIdSuffix);
             if (!isSigOrphan)
             {
-                if (!string.IsNullOrWhiteSpace(a.RecordIdSuffix))
-                    byRid.TryAdd(a.RecordIdSuffix, a);
-                var ridFromName = CloudKitMmcsIds.ToRecordIdSuffix(a.RecordName);
-                if (ridFromName is not null)
-                    byRid.TryAdd(ridFromName, a);
+                void PreferRid(string? key, BackupAsset candidate)
+                {
+                    if (string.IsNullOrWhiteSpace(key))
+                        return;
+                    if (!byRid.TryGetValue(key, out var cur))
+                    {
+                        byRid[key] = candidate;
+                        return;
+                    }
+
+                    // Preferisci entry con MmcsAuth usabile (harvest vuoto non deve vincere).
+                    if (!HasUsableMmcsAuth(cur.MmcsAuth) && HasUsableMmcsAuth(candidate.MmcsAuth))
+                        byRid[key] = candidate;
+                }
+
+                PreferRid(a.RecordIdSuffix, a);
+                PreferRid(CloudKitMmcsIds.ToRecordIdSuffix(a.RecordName), a);
             }
 
             // Join token (size mismatch / EN vs flist): come EnsureMmcsAuth.
@@ -9499,7 +9490,14 @@ public sealed class BackupDownloadService
                     ? TryExtractRidToken(CloudKitMmcsIds.ToRecordIdSuffix(a.RecordName) ?? a.RecordName)
                     : null);
             if (tok is { Length: >= 8 } && HasUsableMmcsAuth(a.MmcsAuth))
+            {
                 byToken.TryAdd(tok, a);
+                // +/- base64: stesso token, due forme.
+                if (tok.Contains('+', StringComparison.Ordinal))
+                    byToken.TryAdd(tok.Replace('+', '-'), a);
+                else if (tok.Contains('-', StringComparison.Ordinal))
+                    byToken.TryAdd(tok.Replace('-', '+'), a);
+            }
         }
 
         attached = 0;
@@ -9713,7 +9711,7 @@ public sealed class BackupDownloadService
     }
 
     /// <summary>
-    /// Pref4 dispositivo + <c>=:size</c> (EN stale / rid senza size → CK NOT_FOUND).
+    /// Pref4 dispositivo + <c>=:size</c> flist (overwrite: EN/newAssets size stale → NOT_FOUND).
     /// </summary>
     private static string HardenPrivilegedBatchSeed(
         string seed,
@@ -9722,8 +9720,51 @@ public sealed class BackupDownloadService
     {
         var s = CloudKitMmcsIds.RewritePrivilegedBatchPref4(seed, devicePrefix4);
         if (sizeBytes is long sz and >= 0)
-            s = CloudKitMmcsIds.EnsurePrivilegedBatchSeedSize(s, sz);
+            s = CloudKitMmcsIds.EnsurePrivilegedBatchSeedSize(s, sz, overwriteExisting: true);
         return s;
+    }
+
+    /// <summary>
+    /// Seed PrivilegedBatch per un asset flist. EN solo se rid esatto o stesso UUID+token;
+    /// mai <c>tok:</c> cross-Domain. Size sempre allineata al flist.
+    /// </summary>
+    private static string? ResolvePrivilegedBatchSeedForFlistAsset(
+        string devicePrefix4,
+        string rid,
+        long? sizeBytes,
+        IReadOnlyDictionary<string, string> enBySuffix,
+        string type,
+        out bool fromEn)
+    {
+        fromEn = false;
+        string? enName = null;
+        if (enBySuffix.TryGetValue(rid, out var byRid)
+            && !CloudKitMmcsIds.IsUuidRecordName(byRid))
+        {
+            enName = byRid;
+            fromEn = true;
+        }
+        else if (TryExtractRidToken(rid) is { } tok
+                 && enBySuffix.TryGetValue("tok:" + tok, out var byTok)
+                 && !CloudKitMmcsIds.IsUuidRecordName(byTok))
+        {
+            var flistUuid = CloudKitMmcsIds.CkRecordNameFromRid(rid);
+            var enUuid = CloudKitMmcsIds.CkRecordNameFromRid(byTok);
+            // Gap sticky: tok: collisione cross-UUID (EN 4793DD58 vs flist 109222B0).
+            if (flistUuid is not null
+                && enUuid is not null
+                && string.Equals(flistUuid, enUuid, StringComparison.OrdinalIgnoreCase))
+            {
+                enName = byTok;
+                fromEn = true;
+            }
+        }
+
+        var seed = enName
+            ?? CloudKitMmcsIds.ToPrivilegedBatchSeed(devicePrefix4, rid, type);
+        if (seed is null || CloudKitMmcsIds.IsUuidRecordName(seed))
+            return null;
+        return HardenPrivilegedBatchSeed(seed, devicePrefix4, sizeBytes);
     }
 
     /// <summary>
@@ -9879,7 +9920,8 @@ public sealed class BackupDownloadService
             if (!map.TryGetValue(rid, out var existing) || wire.Length > existing.Length)
                 map[rid] = wire;
 
-            // Token-join: uuid flist e newAssets possono differire; il token base64 no.
+            // Token-join: solo indizio; ResolvePrivilegedBatchSeedForFlistAsset
+            // richiede stesso Domain UUID (niente cross-UUID / size stale).
             var token = TryExtractRidToken(rid);
             if (token is null)
                 return;

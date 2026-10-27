@@ -134,13 +134,26 @@ public static class CloudKitMmcsIds
 
     /// <summary>
     /// Garantisce suffisso <c>=:size</c> sul seed PrivilegedBatch (CK NOT_FOUND senza size).
+    /// Con <paramref name="overwriteExisting"/> allinea la size flist quando EN/newAssets
+    /// hanno un <c>=:size</c> stale (gap join sticky: seed EN 119608 vs flist 121286).
     /// </summary>
-    public static string EnsurePrivilegedBatchSeedSize(string seed, long sizeBytes)
+    public static string EnsurePrivilegedBatchSeedSize(
+        string seed,
+        long sizeBytes,
+        bool overwriteExisting = false)
     {
         if (string.IsNullOrWhiteSpace(seed) || sizeBytes < 0)
             return seed;
-        if (TryExtractSizeFromRid(seed) is not null)
-            return seed;
+        if (TryExtractSizeFromRid(seed) is long existing)
+        {
+            if (!overwriteExisting || existing == sizeBytes)
+                return seed;
+            var stripped = StripSizeSuffixForRewrite(seed);
+            return stripped.EndsWith('=')
+                ? stripped + ":" + sizeBytes
+                : stripped + "=:" + sizeBytes;
+        }
+
         var s = seed.TrimEnd(':');
         if (s.EndsWith('='))
             return s + ":" + sizeBytes;

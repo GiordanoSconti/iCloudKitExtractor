@@ -1415,14 +1415,33 @@ public sealed class CloudKitAssetService
             if (assets.TryGetValue(seed, out var already))
             {
                 already.RecordIdSuffix ??= seedRid;
-                continue;
+                // Seed già in harvest ma senza CAog: non skippare — bind orphan sotto.
+                if (already.MmcsAuth is { Length: > 0 }
+                    && already.MmcsAuth.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 3)
+                    continue;
             }
 
             BackupAsset? match = null;
+            var seedTok = CloudKitMmcsIds.TryExtractRidToken(seedRid);
+            var seedUuid = CloudKitMmcsIds.CkRecordNameFromRid(seedRid);
             foreach (var a in usableAuths)
             {
-                if (MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, seed)
-                    || MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, seedRid))
+                var matchedEmbed = false;
+                foreach (var variant in CloudKitMmcsIds.EnumerateAssetRecordNameVariants(seed))
+                {
+                    if (MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, variant))
+                    {
+                        matchedEmbed = true;
+                        break;
+                    }
+                }
+
+                if (!matchedEmbed
+                    && (MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, seedRid)
+                        || MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, seed)))
+                    matchedEmbed = true;
+
+                if (matchedEmbed)
                 {
                     match = a;
                     break;
@@ -1436,13 +1455,20 @@ public sealed class CloudKitAssetService
                     break;
                 }
 
-                var tok = CloudKitMmcsIds.TryExtractRidToken(seedRid);
-                if (tok is { Length: >= 8 }
+                // Token match solo se stesso Domain UUID (niente cross-UUID EN collision).
+                if (seedTok is { Length: >= 8 }
                     && !a.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase)
-                    && a.RecordName.Contains(tok, StringComparison.Ordinal))
+                    && a.RecordName.Contains(seedTok, StringComparison.Ordinal))
                 {
-                    match = a;
-                    break;
+                    var aUuid = CloudKitMmcsIds.CkRecordNameFromRid(a.RecordName)
+                        ?? CloudKitMmcsIds.CkRecordNameFromRid(aRid);
+                    if (seedUuid is null
+                        || aUuid is null
+                        || string.Equals(seedUuid, aUuid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        match = a;
+                        break;
+                    }
                 }
             }
 
@@ -1459,8 +1485,21 @@ public sealed class CloudKitAssetService
                 continue;
 
             match.RecordIdSuffix = seedRid;
-            if (assets.ContainsKey(seed))
+            if (assets.TryGetValue(seed, out var existingSeed))
+            {
+                // Promuovi CAog sull'entry seed già presente (spesso senza auth).
+                if (string.IsNullOrWhiteSpace(existingSeed.MmcsAuth)
+                    && !string.IsNullOrWhiteSpace(match.MmcsAuth))
+                    existingSeed.MmcsAuth = match.MmcsAuth;
+                existingSeed.RecordIdSuffix ??= seedRid;
+                if (existingSeed.AssetSignature is not { Length: 21 }
+                    && match.AssetSignature is { Length: 21 })
+                    existingSeed.AssetSignature = match.AssetSignature;
+                if (existingSeed.RecordPayload is not { Length: > 32 }
+                    && match.RecordPayload is { Length: > 32 })
+                    existingSeed.RecordPayload = match.RecordPayload;
                 continue;
+            }
 
             if (match.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase))
             {
