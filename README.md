@@ -44,7 +44,7 @@ https://giordanosconti.github.io/iCloudKitExtractor/
 
 ![iCloudKit Extractor GitHub Pages](docs/press/assets/github-pages-home.png)
 
-## Esempi
+## Samples
 
 Screen recordings highlights (GIF). MP4 copies of the same clips live under [`video/`](video/).
 
