@@ -113,6 +113,132 @@ public static class CloudKitMmcsIds
     }
 
     /// <summary>
+    /// Token base64 in <c>uuid:token=:size</c> (tra il primo <c>:</c> dopo l'UUID e <c>=:</c>).
+    /// Accetta anche wire <c>A:pref4:…</c>.
+    /// </summary>
+    public static string? TryExtractRidToken(string? ridOrName)
+    {
+        if (string.IsNullOrWhiteSpace(ridOrName))
+            return null;
+        var rid = ToRecordIdSuffix(ridOrName.Trim()) ?? ridOrName.Trim();
+        var uuidEnd = rid.IndexOf(':');
+        if (uuidEnd <= 0 || uuidEnd >= rid.Length - 1)
+            return null;
+        var rest = rid[(uuidEnd + 1)..];
+        var sep = rest.LastIndexOf("=:", StringComparison.Ordinal);
+        if (sep <= 0)
+            return null;
+        var token = rest[..sep];
+        return token.Length > 0 ? token : null;
+    }
+
+    /// <summary>
+    /// Garantisce suffisso <c>=:size</c> sul seed PrivilegedBatch (CK NOT_FOUND senza size).
+    /// </summary>
+    public static string EnsurePrivilegedBatchSeedSize(string seed, long sizeBytes)
+    {
+        if (string.IsNullOrWhiteSpace(seed) || sizeBytes < 0)
+            return seed;
+        if (TryExtractSizeFromRid(seed) is not null)
+            return seed;
+        var s = seed.TrimEnd(':');
+        if (s.EndsWith('='))
+            return s + ":" + sizeBytes;
+        return s + "=:" + sizeBytes;
+    }
+
+    /// <summary>
+    /// Allinea <c>A:{pref4}:…</c> al prefisso dispositivo (EN stale con pref sbagliato).
+    /// </summary>
+    public static string RewritePrivilegedBatchPref4(string seed, string devicePrefix4)
+    {
+        if (string.IsNullOrWhiteSpace(seed) || string.IsNullOrWhiteSpace(devicePrefix4))
+            return seed;
+        var pref = devicePrefix4.Length >= 4
+            ? devicePrefix4[..4].ToLowerInvariant()
+            : devicePrefix4.ToLowerInvariant();
+        var wire = ToPrivilegedBatchWireName(seed) ?? seed.Trim();
+        if (!wire.StartsWith("A:", StringComparison.Ordinal) || wire.Length < 7)
+            return seed;
+        // A:xxxx:…
+        var third = wire.IndexOf(':', 2);
+        if (third != 6) // "A:" + 4 pref + ":"
+            return seed;
+        var oldPref = wire[2..6];
+        if (string.Equals(oldPref, pref, StringComparison.OrdinalIgnoreCase))
+            return wire;
+        return "A:" + pref + wire[6..];
+    }
+
+    /// <summary>
+    /// Varianti wire per lookup payload: size flist vs CK, base64 <c>+</c>/<c>-</c>.
+    /// Mai UUID nudo (collisioni Domain).
+    /// </summary>
+    public static IEnumerable<string> EnumerateAssetRecordNameVariants(
+        string recordName,
+        long? alternateSizeBytes = null)
+    {
+        if (string.IsNullOrWhiteSpace(recordName))
+            yield break;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in ExpandBase64PlusMinus(recordName.Trim()))
+        {
+            if (!seen.Add(raw))
+                continue;
+            yield return raw;
+
+            if (alternateSizeBytes is long sz and >= 0)
+            {
+                var resized = EnsurePrivilegedBatchSeedSize(
+                    StripSizeSuffixForRewrite(raw), sz);
+                if (seen.Add(resized))
+                    yield return resized;
+            }
+        }
+    }
+
+    private static string StripSizeSuffixForRewrite(string seed)
+    {
+        var sep = seed.LastIndexOf("=:", StringComparison.Ordinal);
+        if (sep <= 0)
+            return seed.TrimEnd(':');
+        // uuid:token=:size → uuid:token=
+        return seed[..(sep + 1)];
+    }
+
+    private static IEnumerable<string> ExpandBase64PlusMinus(string name)
+    {
+        yield return name;
+        if (name.Contains('+', StringComparison.Ordinal))
+            yield return name.Replace('+', '-');
+        if (name.Contains('-', StringComparison.Ordinal)
+            && name.Contains(':', StringComparison.Ordinal))
+        {
+            // Solo segmento token (tra uuid e =:) — evita di toccare UUID.
+            var rid = ToRecordIdSuffix(name) ?? name;
+            var uuidEnd = rid.IndexOf(':');
+            if (uuidEnd <= 0)
+                yield break;
+            var rest = rid[(uuidEnd + 1)..];
+            var sep = rest.LastIndexOf("=:", StringComparison.Ordinal);
+            if (sep <= 0)
+                yield break;
+            var token = rest[..sep];
+            if (!token.Contains('-', StringComparison.Ordinal))
+                yield break;
+            var flipped = token.Replace('-', '+');
+            var newRid = rid[..(uuidEnd + 1)] + flipped + rest[sep..];
+            if (ToPrivilegedBatchWireName(name) is { } wire
+                && wire.StartsWith("A:", StringComparison.Ordinal)
+                && wire.Length >= 7)
+                yield return "A:" + wire[2..6] + ":" + newRid;
+            else
+                yield return newRid;
+        }
+    }
+
+    /// <summary>
     /// Etichetta size-class (log). Wire name è sempre <c>A</c>.
     /// </summary>
     public static string ResolveAssetType(

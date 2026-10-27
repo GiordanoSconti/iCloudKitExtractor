@@ -819,7 +819,7 @@ public sealed class CloudKitAssetService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                 lineDrop + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -858,7 +858,7 @@ public sealed class CloudKitAssetService
             });
             if (IkeLogOptions.ShouldWriteAgentDiag)
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
         }
         catch { /* ignore */ }
@@ -1046,7 +1046,7 @@ public sealed class CloudKitAssetService
                                 });
                                 if (IkeLogOptions.ShouldWriteAgentDiag)
                                     IkeLogOptions.AppendAgentNdjson(
-                                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                                         line);
                             }
                             catch { /* ignore */ }
@@ -1218,7 +1218,7 @@ public sealed class CloudKitAssetService
         List<BackupAsset> harvested;
         try
         {
-            harvested = HarvestAssetsFromQueryPayload(payload);
+            harvested = HarvestAssetsFromQueryPayload(payload, chunk);
             // H-WRAP5: wrap40 vive nei record A:/F: del batch, non nella finestra UUID.
             // Indicizza sempre (anche senza IKE_FORD_OFFLINE_DUMP).
             FordOfflineDumpWriter.AbsorbWrapsFromPayload(payload);
@@ -1319,7 +1319,7 @@ public sealed class CloudKitAssetService
                 }
             }
 
-            var got = HarvestAssetsFromQueryPayload(payload);
+            var got = HarvestAssetsFromQueryPayload(payload, [seed]);
             FordOfflineDumpWriter.AbsorbWrapsFromPayload(payload);
             if (got.Count == 0)
             {
@@ -1341,7 +1341,9 @@ public sealed class CloudKitAssetService
             lastOk);
     }
 
-    private List<BackupAsset> HarvestAssetsFromQueryPayload(byte[] payload)
+    private List<BackupAsset> HarvestAssetsFromQueryPayload(
+        byte[] payload,
+        IReadOnlyList<string>? queriedSeeds = null)
     {
         var assets = new Dictionary<string, BackupAsset>(StringComparer.Ordinal);
         if (payload.Length == 0
@@ -1352,6 +1354,8 @@ public sealed class CloudKitAssetService
         {
             a.ZoneName = DefaultZone;
             a.RecordPayload ??= payload;
+            if (string.IsNullOrWhiteSpace(a.RecordIdSuffix))
+                a.RecordIdSuffix = CloudKitMmcsIds.ToRecordIdSuffix(a.RecordName);
             assets[a.RecordName] = a;
         }
 
@@ -1372,7 +1376,111 @@ public sealed class CloudKitAssetService
             };
         }
 
+        // Gap join: PB harvest spesso lascia CAog come sig:… senza rid.
+        // Rilegga i seed interrogati e promuovi RecordName/RecordIdSuffix.
+        if (queriedSeeds is { Count: > 0 })
+            BindQueriedSeedsOntoHarvest(assets, queriedSeeds);
+
         return assets.Values.ToList();
+    }
+
+    /// <summary>
+    /// Associa CAog orphan (<c>sig:…</c>) / record incompleti ai seed
+    /// <c>A:pref4:rid</c> della query, così <c>AttachFetchedAuthToFlistAssets</c>
+    /// può fare join rid-first (non solo signature).
+    /// </summary>
+    private static void BindQueriedSeedsOntoHarvest(
+        Dictionary<string, BackupAsset> assets,
+        IReadOnlyList<string> seeds)
+    {
+        if (assets.Count == 0 || seeds.Count == 0)
+            return;
+
+        var usableAuths = assets.Values
+            .Where(static a =>
+                !string.IsNullOrWhiteSpace(a.MmcsAuth)
+                && a.MmcsAuth!.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 3)
+            .ToList();
+
+        foreach (var seed in seeds)
+        {
+            if (string.IsNullOrWhiteSpace(seed)
+                || CloudKitMmcsIds.IsUuidRecordName(seed))
+                continue;
+
+            var seedRid = CloudKitMmcsIds.ToRecordIdSuffix(seed);
+            if (string.IsNullOrWhiteSpace(seedRid))
+                continue;
+
+            if (assets.TryGetValue(seed, out var already))
+            {
+                already.RecordIdSuffix ??= seedRid;
+                continue;
+            }
+
+            BackupAsset? match = null;
+            foreach (var a in usableAuths)
+            {
+                if (MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, seed)
+                    || MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, seedRid))
+                {
+                    match = a;
+                    break;
+                }
+
+                var aRid = a.RecordIdSuffix ?? CloudKitMmcsIds.ToRecordIdSuffix(a.RecordName);
+                if (aRid is not null
+                    && string.Equals(aRid, seedRid, StringComparison.Ordinal))
+                {
+                    match = a;
+                    break;
+                }
+
+                var tok = CloudKitMmcsIds.TryExtractRidToken(seedRid);
+                if (tok is { Length: >= 8 }
+                    && !a.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase)
+                    && a.RecordName.Contains(tok, StringComparison.Ordinal))
+                {
+                    match = a;
+                    break;
+                }
+            }
+
+            // Chunk a un solo seed: se resta un solo CAog orphan, bind diretto.
+            if (match is null
+                && seeds.Count == 1
+                && usableAuths.Count == 1
+                && usableAuths[0].RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase))
+            {
+                match = usableAuths[0];
+            }
+
+            if (match is null)
+                continue;
+
+            match.RecordIdSuffix = seedRid;
+            if (assets.ContainsKey(seed))
+                continue;
+
+            if (match.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase))
+            {
+                assets[seed] = new BackupAsset
+                {
+                    RecordName = seed,
+                    RecordIdSuffix = seedRid,
+                    ZoneName = match.ZoneName,
+                    MmcsAuth = match.MmcsAuth,
+                    AssetSignature = match.AssetSignature,
+                    RecordPayload = match.RecordPayload,
+                    SizeBytes = match.SizeBytes,
+                    ProtectionClass = match.ProtectionClass,
+                };
+            }
+            else
+            {
+                assets[seed] = match;
+            }
+        }
     }
 
     /// <summary> seed dello stesso Domain condividono l'UUID dopo <c>TYPE:pref4:</c>.</summary>
@@ -2491,7 +2599,7 @@ public sealed class CloudKitAssetService
                     });
                     if (IkeLogOptions.ShouldWriteAgentDiag)
                         IkeLogOptions.AppendAgentNdjson(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                             line);
                 }
                 catch { /* ignore */ }
@@ -2523,7 +2631,7 @@ public sealed class CloudKitAssetService
             });
             if (IkeLogOptions.ShouldWriteAgentDiag)
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
         }
         catch { /* ignore */ }
@@ -3427,11 +3535,14 @@ public sealed class CloudKitAssetService
         var refreshed = false;
         for (var attempt = 0; attempt < 2; attempt++)
         {
+            BackupAsset? viaQuery = null;
             try
             {
-                var viaQuery = await FetchAssetViaQueryWithTransportRetryAsync(
+                viaQuery = await FetchAssetViaQueryWithTransportRetryAsync(
                     session, recordName, log, ct).ConfigureAwait(false);
-                if (viaQuery is not null)
+                // Query spesso dà solo CAog (auth) senza contents wrap → no-ikm.
+                // Se manca RP/wrap, continua con retrieve e merge.
+                if (viaQuery is not null && HasUsableRecordMaterials(viaQuery))
                     return viaQuery;
             }
             catch (Exception ex) when (IsUnauthorizedCloudKit(ex) && !refreshed)
@@ -3452,7 +3563,9 @@ public sealed class CloudKitAssetService
                 var viaRetrieve = await FetchAssetRetrieveWithTransportRetryAsync(
                     session, recordName, log, ct).ConfigureAwait(false);
                 if (viaRetrieve is not null)
-                    return viaRetrieve;
+                    return MergeResolvedAsset(viaQuery, viaRetrieve);
+                if (viaQuery is not null)
+                    return viaQuery;
             }
             catch (Exception ex) when (IsUnauthorizedCloudKit(ex) && !refreshed)
             {
@@ -3465,12 +3578,41 @@ public sealed class CloudKitAssetService
             catch (Exception ex)
             {
                 log?.Report($"  retrieve auth {recordName}: {FormatExceptionChain(ex)}");
+                if (viaQuery is not null)
+                    return viaQuery;
             }
 
             break;
         }
 
         return null;
+    }
+
+    /// <summary>Wrap contents (FillFord) — non basta RP/batch con un "contents" alieno.</summary>
+    private static bool HasUsableRecordMaterials(BackupAsset a) =>
+        !string.IsNullOrWhiteSpace(a.AssetProtectionInfoHex)
+        || (a.RecordPayload is { Length: > 32 } rp
+            && a.AssetSignature is { Length: >= 4 } sig
+            && CloudKitAssetProto.TryResolveOwnedWrap(rp, sig, out _) is { Length: 24 or 40 });
+
+    private static BackupAsset MergeResolvedAsset(BackupAsset? query, BackupAsset retrieve)
+    {
+        if (query is null)
+            return retrieve;
+
+        if (string.IsNullOrWhiteSpace(retrieve.MmcsAuth)
+            && !string.IsNullOrWhiteSpace(query.MmcsAuth))
+            retrieve.MmcsAuth = query.MmcsAuth;
+        if (retrieve.RecordPayload is not { Length: > 32 }
+            && query.RecordPayload is { Length: > 32 })
+            retrieve.RecordPayload = query.RecordPayload;
+        if (string.IsNullOrWhiteSpace(retrieve.AssetProtectionInfoHex)
+            && !string.IsNullOrWhiteSpace(query.AssetProtectionInfoHex))
+            retrieve.AssetProtectionInfoHex = query.AssetProtectionInfoHex;
+        if (retrieve.AssetSignature is not { Length: 21 }
+            && query.AssetSignature is { Length: 21 })
+            retrieve.AssetSignature = query.AssetSignature;
+        return retrieve;
     }
 
     private async Task<BackupAsset?> FetchAssetViaQueryWithTransportRetryAsync(
@@ -3609,7 +3751,7 @@ public sealed class CloudKitAssetService
                 });
                 if (IkeLogOptions.ShouldWriteAgentDiag)
                     IkeLogOptions.AppendAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line);
             }
             catch { /* ignore */ }
@@ -3637,7 +3779,7 @@ public sealed class CloudKitAssetService
                 });
                 if (IkeLogOptions.ShouldWriteAgentDiag)
                     IkeLogOptions.AppendAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line);
             }
             catch { /* ignore */ }
@@ -3676,7 +3818,7 @@ public sealed class CloudKitAssetService
                 });
                 if (IkeLogOptions.ShouldWriteAgentDiag)
                     IkeLogOptions.AppendAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line);
             }
             catch { /* ignore */ }
@@ -3769,7 +3911,7 @@ public sealed class CloudKitAssetService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                         JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "9a5651",
@@ -3815,6 +3957,13 @@ public sealed class CloudKitAssetService
             var window = ExtractRecordWindow(payload, candidate);
             if (window is not { Length: > 32 }
                 && payload.AsSpan().IndexOf(Encoding.UTF8.GetBytes(candidate)) < 0)
+                continue;
+
+            // Mai il PrivilegedBatch intero come “window” se c’è un token rid:
+            // IndexOf("contents") sul batch → HasUsableRecordMaterials true senza wrap owned
+            // (Authy watch/tumblr, Microsoft GraphicsCache → no-ikm).
+            if (window is null
+                && CloudKitMmcsIds.TryExtractRidToken(candidate) is { Length: >= 8 })
                 continue;
 
             window ??= payload.Length <= 2_000_000 ? payload : null;
@@ -3954,6 +4103,7 @@ public sealed class CloudKitAssetService
     /// <summary>
     /// Finestra record: dal nome fino a contents completo (o max 2 MiB).
     /// Cap 16 KiB troncava package multi-Asset (Office/…) → wrap miss / no-ikm.
+    /// Preferisce il match più lungo (A:pref:rid); mai UUID nudo con token noto.
     /// </summary>
     private static byte[]? ExtractRecordWindow(byte[] payload, string recordName)
     {
@@ -3963,15 +4113,41 @@ public sealed class CloudKitAssetService
         const int MaxWindow = 2_000_000;
         var idx = -1;
         byte[]? nameBytes = null;
+        var bestLen = -1;
+        var ridTok = CloudKitMmcsIds.TryExtractRidToken(recordName);
         foreach (var cand in MmcsAuthBuilder.RecordNameLookupCandidates(recordName))
         {
+            // UUID nudo in Domain multi-asset → finestra sibling / wrap alieno.
+            if (ridTok is { Length: >= 8 }
+                && CloudKitMmcsIds.IsUuidRecordName(cand))
+                continue;
+
             var nb = Encoding.UTF8.GetBytes(cand);
             var at = IndexOfBytes(payload, nb);
             if (at < 0)
                 continue;
+            if (nb.Length < bestLen)
+                continue;
+            bestLen = nb.Length;
             idx = at;
             nameBytes = nb;
-            break;
+        }
+
+        // Fallback: token rid (univoco) se il wire A:… non è letterale nel payload.
+        if ((idx < 0 || nameBytes is null)
+            && ridTok is { Length: >= 8 })
+        {
+            var tb = Encoding.UTF8.GetBytes(ridTok);
+            var at = IndexOfBytes(payload, tb);
+            if (at >= 0)
+            {
+                // Allinea indietro a inizio record se possibile (max 256 B).
+                var start = Math.Max(0, at - 256);
+                idx = start;
+                nameBytes = tb;
+                // Preferisci start sull'occorrenza del token.
+                idx = at;
+            }
         }
 
         if (idx < 0 || nameBytes is null)
@@ -3991,10 +4167,11 @@ public sealed class CloudKitAssetService
                     {
                         ["recordName"] = recordName.Length > 64 ? recordName[..64] : recordName,
                         ["payloadLen"] = payload.Length,
+                        ["hasTok"] = ridTok is { Length: >= 8 },
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }

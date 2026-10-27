@@ -173,7 +173,18 @@ public static class MmcsAuthBuilder
         {
             var asFileId = CloudKitMmcsIds.ToMmcsFileId(recordName);
             Add(asFileId);
-            Add(CloudKitMmcsIds.CkRecordNameFromRid(recordName));
+            // A:pref4:rid con token: NON aggiungere UUID nudo —
+            // ExtractRecordWindow partiva dal primo sibling del Domain → wrap alieno
+            // cleared → no-ikm (Authy assets/mobile/<oid>/…).
+            var hasRidToken = CloudKitMmcsIds.TryExtractRidToken(recordName) is { Length: >= 8 };
+            if (!hasRidToken)
+                Add(CloudKitMmcsIds.CkRecordNameFromRid(recordName));
+            else
+            {
+                // Varianti size / base64 (+↔-) sullo stesso seed A:.
+                foreach (var alt in CloudKitMmcsIds.EnumerateAssetRecordNameVariants(recordName))
+                    Add(alt);
+            }
         }
 
         return names;

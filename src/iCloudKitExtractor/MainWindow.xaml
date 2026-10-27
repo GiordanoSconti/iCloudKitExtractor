@@ -577,6 +577,207 @@
                     </Grid>
                 </TabItem>
 
+                <!-- IMAP Posta iCloud (app-specific password, sola lettura) -->
+                <TabItem x:Name="ImapMailTab" Header="IMAP Posta" IsEnabled="True">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,8"
+                                           Text="iCloud Mail via IMAP (sola lettura)"/>
+                                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,10"
+                                           TextWrapping="Wrap"
+                                           Text="Serve una password per le app (non il token IKE e non la password Apple Account). Host tipico: imap.mail.me.com:993."/>
+                                <TextBlock Margin="0,0,0,12">
+                                    <Hyperlink NavigateUri="https://account.apple.com/account/manage/section/security"
+                                               RequestNavigate="ImapAppPasswordLink_RequestNavigate">
+                                        Apri impostazioni password per le app (account.apple.com)
+                                    </Hyperlink>
+                                    <Run Text="  ·  "/>
+                                    <Hyperlink NavigateUri="https://support.apple.com/102654"
+                                               RequestNavigate="ImapAppPasswordLink_RequestNavigate">
+                                        Guida Apple
+                                    </Hyperlink>
+                                </TextBlock>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="160"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Utente"
+                                               VerticalAlignment="Center" Margin="0,0,12,8"/>
+                                    <TextBox x:Name="ImapUserTextBox" Grid.Row="0" Grid.Column="1"
+                                             Margin="0,0,12,8"
+                                             ToolTip="Di solito l’indirizzo @icloud.com completo"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Host"
+                                               VerticalAlignment="Center" Margin="0,0,12,8"/>
+                                    <TextBox x:Name="ImapHostTextBox" Grid.Row="0" Grid.Column="3"
+                                             Text="imap.mail.me.com" Margin="0,0,0,8"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Password app"
+                                               VerticalAlignment="Center" Margin="0,0,12,8"/>
+                                    <PasswordBox x:Name="ImapAppPasswordBox" Grid.Row="1" Grid.Column="1"
+                                                 Grid.ColumnSpan="3" Margin="0,0,0,8"
+                                                 ToolTip="Password per le app generata su account.apple.com"/>
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4"
+                                                Orientation="Horizontal">
+                                        <Button x:Name="ImapConnectButton"
+                                                Content="Connetti"
+                                                Style="{StaticResource PrimaryButtonStyle}"
+                                                MinWidth="110" Margin="0,0,10,0"
+                                                Click="ImapConnectButton_Click"/>
+                                        <Button x:Name="ImapDisconnectButton"
+                                                Content="Disconnetti"
+                                                Style="{StaticResource GhostButtonStyle}"
+                                                MinWidth="110" Margin="0,0,10,0"
+                                                IsEnabled="False"
+                                                Click="ImapDisconnectButton_Click"/>
+                                        <Button x:Name="ImapRefreshButton"
+                                                Content="Aggiorna cartelle"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                MinWidth="130" Margin="0,0,10,0"
+                                                IsEnabled="False"
+                                                Click="ImapRefreshFoldersButton_Click"/>
+                                        <Button x:Name="ImapExportSelectedButton"
+                                                Content="Esporta selezionato"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                MinWidth="140" Margin="0,0,8,0"
+                                                IsEnabled="False"
+                                                ToolTip="Esporta il messaggio selezionato in .eml"
+                                                Click="ImapExportSelectedButton_Click"/>
+                                        <Button x:Name="ImapExportFolderButton"
+                                                Content="Esporta cartella"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                MinWidth="130" Margin="0,0,8,0"
+                                                IsEnabled="False"
+                                                ToolTip="Esporta tutti i messaggi della cartella corrente in .eml"
+                                                Click="ImapExportFolderButton_Click"/>
+                                        <Button x:Name="ImapExportAllButton"
+                                                Content="Esporta tutto"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                MinWidth="120" Margin="0,0,10,0"
+                                                IsEnabled="False"
+                                                ToolTip="Esporta tutte le cartelle IMAP in .eml"
+                                                Click="ImapExportAllButton_Click"/>
+                                        <TextBlock x:Name="ImapMailStatusText"
+                                                   Style="{StaticResource HintTextStyle}"
+                                                   VerticalAlignment="Center"
+                                                   Text="Non connesso."/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Grid Grid.Row="1" Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="1.2*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource SectionCardStyle}" Padding="8" Margin="0,0,8,0">
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock DockPanel.Dock="Top" Text="Cartelle"
+                                               Style="{StaticResource SectionLabelStyle}"
+                                               Margin="0,0,0,6"/>
+                                    <ListBox x:Name="ImapFoldersListBox"
+                                             SelectionChanged="ImapFoldersListBox_SelectionChanged"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}"
+                                    Padding="8" Margin="0,0,8,0">
+                                <DockPanel LastChildFill="True">
+                                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                        <TextBlock x:Name="ImapMessagesHeaderText"
+                                                   Text="Messaggi (ultimi 100)"
+                                                   Style="{StaticResource SectionLabelStyle}"
+                                                   Margin="0,0,0,6"/>
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="118"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="118"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Dal"
+                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <DatePicker x:Name="ImapFilterFromDate"
+                                                        Grid.Column="1"
+                                                        Margin="0,0,10,0"
+                                                        ToolTip="Data inviata (inclusa) — lascia vuoto per nessun limite"/>
+                                            <TextBlock Grid.Column="2" Text="Al"
+                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <DatePicker x:Name="ImapFilterToDate"
+                                                        Grid.Column="3"
+                                                        ToolTip="Data inviata (inclusa) — lascia vuoto per nessun limite"/>
+                                        </Grid>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Parole chiave"
+                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBox x:Name="ImapFilterKeywordsTextBox"
+                                                     Grid.Column="1"
+                                                     VerticalContentAlignment="Center"
+                                                     IsEnabled="False"
+                                                     ToolTip="Token separati da spazio (AND) su oggetto, mittente e corpo"/>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
+                                                <Button x:Name="ImapFilterApplyButton"
+                                                        Content="Applica"
+                                                        Style="{StaticResource SecondaryButtonStyle}"
+                                                        MinWidth="80" Margin="0,0,6,0"
+                                                        IsEnabled="False"
+                                                        Click="ImapFilterApplyButton_Click"/>
+                                                <Button x:Name="ImapFilterClearButton"
+                                                        Content="Azzera"
+                                                        Style="{StaticResource GhostButtonStyle}"
+                                                        MinWidth="70"
+                                                        IsEnabled="False"
+                                                        Click="ImapFilterClearButton_Click"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                    <DataGrid x:Name="ImapMessagesGrid"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              SelectionMode="Single"
+                                              CanUserAddRows="False"
+                                              HeadersVisibility="Column"
+                                              GridLinesVisibility="Horizontal"
+                                              SelectionChanged="ImapMessagesGrid_SelectionChanged">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Data" Binding="{Binding DateLabel}" Width="130"/>
+                                            <DataGridTextColumn Header="Da" Binding="{Binding From}" Width="160"/>
+                                            <DataGridTextColumn Header="Oggetto" Binding="{Binding Subject}" Width="*"/>
+                                            <DataGridTextColumn Header="All." Binding="{Binding AttachLabel}" Width="40"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </DockPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{StaticResource LogSectionCardStyle}">
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock DockPanel.Dock="Top" Text="Messaggio"
+                                               Style="{StaticResource SectionLabelStyle}"
+                                               Margin="0,0,0,4"/>
+                                    <WebBrowser x:Name="ImapMessageBrowser"
+                                                Navigating="ImapMessageBrowser_Navigating"/>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+
                 <!-- iCloud Files -->
                 <TabItem x:Name="ICloudFilesTab" Header="iCloud Files (Work in progress)" IsEnabled="False">
                     <Grid>
@@ -784,206 +985,6 @@
                                             <DataGridTextColumn Header="Chiavi" Binding="{Binding KeysLabel}" Width="70"/>
                                         </DataGrid.Columns>
                                     </DataGrid>
-                                </DockPanel>
-                            </Border>
-                        </Grid>
-                    </Grid>
-                </TabItem>
-
-                <!-- IMAP Posta iCloud (app-specific password, sola lettura) -->
-                <TabItem x:Name="ImapMailTab" Header="IMAP Posta (Work in progress)" IsEnabled="True">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <Border Style="{StaticResource SectionCardStyle}">
-                            <StackPanel>
-                                <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,8"
-                                           Text="iCloud Mail via IMAP (sola lettura)"/>
-                                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,10"
-                                           TextWrapping="Wrap"
-                                           Text="Serve una password per le app (non il token IKE e non la password Apple Account). Host tipico: imap.mail.me.com:993."/>
-                                <TextBlock Margin="0,0,0,12">
-                                    <Hyperlink NavigateUri="https://account.apple.com/account/manage/section/security"
-                                               RequestNavigate="ImapAppPasswordLink_RequestNavigate">
-                                        Apri impostazioni password per le app (account.apple.com)
-                                    </Hyperlink>
-                                    <Run Text="  ·  "/>
-                                    <Hyperlink NavigateUri="https://support.apple.com/102654"
-                                               RequestNavigate="ImapAppPasswordLink_RequestNavigate">
-                                        Guida Apple
-                                    </Hyperlink>
-                                </TextBlock>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="160"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Utente"
-                                               VerticalAlignment="Center" Margin="0,0,12,8"/>
-                                    <TextBox x:Name="ImapUserTextBox" Grid.Row="0" Grid.Column="1"
-                                             Margin="0,0,12,8"
-                                             ToolTip="Di solito l’indirizzo @icloud.com completo"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Host"
-                                               VerticalAlignment="Center" Margin="0,0,12,8"/>
-                                    <TextBox x:Name="ImapHostTextBox" Grid.Row="0" Grid.Column="3"
-                                             Text="imap.mail.me.com" Margin="0,0,0,8"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Password app"
-                                               VerticalAlignment="Center" Margin="0,0,12,8"/>
-                                    <PasswordBox x:Name="ImapAppPasswordBox" Grid.Row="1" Grid.Column="1"
-                                                 Grid.ColumnSpan="3" Margin="0,0,0,8"
-                                                 ToolTip="Password per le app generata su account.apple.com"/>
-                                    <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4"
-                                                Orientation="Horizontal">
-                                        <Button x:Name="ImapConnectButton"
-                                                Content="Connetti"
-                                                Style="{StaticResource PrimaryButtonStyle}"
-                                                MinWidth="110" Margin="0,0,10,0"
-                                                Click="ImapConnectButton_Click"/>
-                                        <Button x:Name="ImapDisconnectButton"
-                                                Content="Disconnetti"
-                                                Style="{StaticResource GhostButtonStyle}"
-                                                MinWidth="110" Margin="0,0,10,0"
-                                                IsEnabled="False"
-                                                Click="ImapDisconnectButton_Click"/>
-                                        <Button x:Name="ImapRefreshButton"
-                                                Content="Aggiorna cartelle"
-                                                Style="{StaticResource SecondaryButtonStyle}"
-                                                MinWidth="130" Margin="0,0,10,0"
-                                                IsEnabled="False"
-                                                Click="ImapRefreshFoldersButton_Click"/>
-                                        <Button x:Name="ImapExportSelectedButton"
-                                                Content="Esporta selezionato"
-                                                Style="{StaticResource SecondaryButtonStyle}"
-                                                MinWidth="140" Margin="0,0,8,0"
-                                                IsEnabled="False"
-                                                ToolTip="Esporta il messaggio selezionato in .eml"
-                                                Click="ImapExportSelectedButton_Click"/>
-                                        <Button x:Name="ImapExportFolderButton"
-                                                Content="Esporta cartella"
-                                                Style="{StaticResource SecondaryButtonStyle}"
-                                                MinWidth="130" Margin="0,0,8,0"
-                                                IsEnabled="False"
-                                                ToolTip="Esporta tutti i messaggi della cartella corrente in .eml"
-                                                Click="ImapExportFolderButton_Click"/>
-                                        <Button x:Name="ImapExportAllButton"
-                                                Content="Esporta tutto"
-                                                Style="{StaticResource SecondaryButtonStyle}"
-                                                MinWidth="120" Margin="0,0,10,0"
-                                                IsEnabled="False"
-                                                ToolTip="Esporta tutte le cartelle IMAP in .eml"
-                                                Click="ImapExportAllButton_Click"/>
-                                        <TextBlock x:Name="ImapMailStatusText"
-                                                   Style="{StaticResource HintTextStyle}"
-                                                   VerticalAlignment="Center"
-                                                   Text="Non connesso."/>
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                        <Grid Grid.Row="1" Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="220"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="1.2*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Style="{StaticResource SectionCardStyle}" Padding="8" Margin="0,0,8,0">
-                                <DockPanel LastChildFill="True">
-                                    <TextBlock DockPanel.Dock="Top" Text="Cartelle"
-                                               Style="{StaticResource SectionLabelStyle}"
-                                               Margin="0,0,0,6"/>
-                                    <ListBox x:Name="ImapFoldersListBox"
-                                             SelectionChanged="ImapFoldersListBox_SelectionChanged"/>
-                                </DockPanel>
-                            </Border>
-                            <Border Grid.Column="1" Style="{StaticResource SectionCardStyle}"
-                                    Padding="8" Margin="0,0,8,0">
-                                <DockPanel LastChildFill="True">
-                                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                        <TextBlock x:Name="ImapMessagesHeaderText"
-                                                   Text="Messaggi (ultimi 100)"
-                                                   Style="{StaticResource SectionLabelStyle}"
-                                                   Margin="0,0,0,6"/>
-                                        <Grid Margin="0,0,0,4">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="118"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="118"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="Dal"
-                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                            <DatePicker x:Name="ImapFilterFromDate"
-                                                        Grid.Column="1"
-                                                        Margin="0,0,10,0"
-                                                        ToolTip="Data inviata (inclusa) — lascia vuoto per nessun limite"/>
-                                            <TextBlock Grid.Column="2" Text="Al"
-                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                            <DatePicker x:Name="ImapFilterToDate"
-                                                        Grid.Column="3"
-                                                        ToolTip="Data inviata (inclusa) — lascia vuoto per nessun limite"/>
-                                        </Grid>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="Parole chiave"
-                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                            <TextBox x:Name="ImapFilterKeywordsTextBox"
-                                                     Grid.Column="1"
-                                                     VerticalContentAlignment="Center"
-                                                     IsEnabled="False"
-                                                     ToolTip="Token separati da spazio (AND) su oggetto, mittente e corpo"/>
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
-                                                <Button x:Name="ImapFilterApplyButton"
-                                                        Content="Applica"
-                                                        Style="{StaticResource SecondaryButtonStyle}"
-                                                        MinWidth="80" Margin="0,0,6,0"
-                                                        IsEnabled="False"
-                                                        Click="ImapFilterApplyButton_Click"/>
-                                                <Button x:Name="ImapFilterClearButton"
-                                                        Content="Azzera"
-                                                        Style="{StaticResource GhostButtonStyle}"
-                                                        MinWidth="70"
-                                                        IsEnabled="False"
-                                                        Click="ImapFilterClearButton_Click"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-                                    <DataGrid x:Name="ImapMessagesGrid"
-                                              AutoGenerateColumns="False"
-                                              IsReadOnly="True"
-                                              SelectionMode="Single"
-                                              CanUserAddRows="False"
-                                              HeadersVisibility="Column"
-                                              GridLinesVisibility="Horizontal"
-                                              SelectionChanged="ImapMessagesGrid_SelectionChanged">
-                                        <DataGrid.Columns>
-                                            <DataGridTextColumn Header="Data" Binding="{Binding DateLabel}" Width="130"/>
-                                            <DataGridTextColumn Header="Da" Binding="{Binding From}" Width="160"/>
-                                            <DataGridTextColumn Header="Oggetto" Binding="{Binding Subject}" Width="*"/>
-                                            <DataGridTextColumn Header="All." Binding="{Binding AttachLabel}" Width="40"/>
-                                        </DataGrid.Columns>
-                                    </DataGrid>
-                                </DockPanel>
-                            </Border>
-                            <Border Grid.Column="2" Style="{StaticResource LogSectionCardStyle}">
-                                <DockPanel LastChildFill="True">
-                                    <TextBlock DockPanel.Dock="Top" Text="Messaggio"
-                                               Style="{StaticResource SectionLabelStyle}"
-                                               Margin="0,0,0,4"/>
-                                    <WebBrowser x:Name="ImapMessageBrowser"
-                                                Navigating="ImapMessageBrowser_Navigating"/>
                                 </DockPanel>
                             </Border>
                         </Grid>

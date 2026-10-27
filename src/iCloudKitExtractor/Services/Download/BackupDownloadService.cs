@@ -267,7 +267,7 @@ public sealed class BackupDownloadService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -329,7 +329,7 @@ public sealed class BackupDownloadService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -834,7 +834,7 @@ public sealed class BackupDownloadService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                         JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "9a5651",
@@ -919,7 +919,7 @@ public sealed class BackupDownloadService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                         JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "9a5651",
@@ -1121,7 +1121,7 @@ public sealed class BackupDownloadService
                             },
                         });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                             line + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -1159,7 +1159,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -1303,7 +1303,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     IkeLogOptions.AppendAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line);
                 }
                 catch { /* ignore */ }
@@ -1358,7 +1358,7 @@ public sealed class BackupDownloadService
                                 },
                             });
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                                 line + Environment.NewLine);
                         }
                         catch { /* ignore */ }
@@ -1393,7 +1393,7 @@ public sealed class BackupDownloadService
                                 },
                             });
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                                 line + Environment.NewLine);
                         }
                         catch { /* ignore */ }
@@ -1438,7 +1438,7 @@ public sealed class BackupDownloadService
                                 },
                             });
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                                 line + Environment.NewLine);
                         }
                         catch { /* ignore */ }
@@ -1471,7 +1471,7 @@ public sealed class BackupDownloadService
                         if (sample.Count > 0)
                         {
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                                 JsonSerializer.Serialize(new Dictionary<string, object?>
                                 {
                                     ["sessionId"] = "03cce7",
@@ -1527,7 +1527,7 @@ public sealed class BackupDownloadService
                         var cloneN = slice.Count(static a => a.ContentFromExistingSignature);
                         var originN = slice.Count - cloneN;
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                             JsonSerializer.Serialize(new Dictionary<string, object?>
                             {
                                 ["sessionId"] = "9a5651",
@@ -1609,7 +1609,7 @@ public sealed class BackupDownloadService
                                     },
                                 });
                                 File.AppendAllText(
-                                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                                     line + Environment.NewLine);
                             }
                             catch { /* ignore */ }
@@ -1652,7 +1652,7 @@ public sealed class BackupDownloadService
                                 },
                             });
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                                 line + Environment.NewLine);
                         }
                         catch { /* ignore */ }
@@ -1685,7 +1685,7 @@ public sealed class BackupDownloadService
                         try
                         {
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                                 JsonSerializer.Serialize(new Dictionary<string, object?>
                                 {
                                     ["sessionId"] = "9a5651",
@@ -1754,7 +1754,7 @@ public sealed class BackupDownloadService
                     try
                     {
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                             JsonSerializer.Serialize(new Dictionary<string, object?>
                             {
                                 ["sessionId"] = "7dabb5",
@@ -1831,7 +1831,7 @@ public sealed class BackupDownloadService
                                 };
                             }).ToArray();
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                                 JsonSerializer.Serialize(new Dictionary<string, object?>
                                 {
                                     ["sessionId"] = "7dabb5",
@@ -1926,7 +1926,7 @@ public sealed class BackupDownloadService
                         try
                         {
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                                 JsonSerializer.Serialize(new Dictionary<string, object?>
                                 {
                                     ["sessionId"] = "9a5651",
@@ -2010,7 +2010,7 @@ public sealed class BackupDownloadService
                             try
                             {
                                 File.AppendAllText(
-                                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                                     JsonSerializer.Serialize(new Dictionary<string, object?>
                                     {
                                         ["sessionId"] = "b3df71",
@@ -2302,7 +2302,7 @@ public sealed class BackupDownloadService
                             try
                             {
                                 File.AppendAllText(
-                                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                                     JsonSerializer.Serialize(new Dictionary<string, object?>
                                     {
                                         ["sessionId"] = "9a5651",
@@ -2351,7 +2351,7 @@ public sealed class BackupDownloadService
                             try
                             {
                                 File.AppendAllText(
-                                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                                     JsonSerializer.Serialize(new Dictionary<string, object?>
                                     {
                                         ["sessionId"] = "9a5651",
@@ -2425,7 +2425,7 @@ public sealed class BackupDownloadService
                             ["data"] = payload,
                         });
                         IkeLogOptions.AppendAgentNdjson(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                             line);
                         var line2 = JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
@@ -2438,7 +2438,7 @@ public sealed class BackupDownloadService
                             ["data"] = payload,
                         });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                             line2 + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -2952,7 +2952,7 @@ public sealed class BackupDownloadService
                     ["data"] = gapPayload,
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -2970,10 +2970,10 @@ public sealed class BackupDownloadService
                     ["data"] = gapPayload,
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\AIAgent\debug-4ff690.log",
                     line4 + Environment.NewLine);
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-4ff690.log",
                     line4 + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -2997,7 +2997,7 @@ public sealed class BackupDownloadService
                     ["data"] = gapPayload,
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -3057,7 +3057,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -3233,7 +3233,7 @@ public sealed class BackupDownloadService
                             ["data"] = new { where, path, dl, dec, fail, q },
                         });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\AIAgent\debug-4ff690.log",
                             rej + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -3296,7 +3296,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\AIAgent\debug-4ff690.log",
                         ok + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -3433,7 +3433,7 @@ public sealed class BackupDownloadService
                 },
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch { /* ignore */ }
@@ -3473,13 +3473,13 @@ public sealed class BackupDownloadService
             {
                 // Perf: append diretto ma raro (pochi eventi/batch).
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line + Environment.NewLine);
             }
             else
             {
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
         }
@@ -3521,7 +3521,7 @@ public sealed class BackupDownloadService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
         }
         catch
@@ -3666,7 +3666,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -3720,7 +3720,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     IkeLogOptions.AppendAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line);
                 }
             }
@@ -3783,7 +3783,7 @@ public sealed class BackupDownloadService
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "7dabb5",
@@ -4148,7 +4148,7 @@ public sealed class BackupDownloadService
                     try
                     {
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                             JsonSerializer.Serialize(new Dictionary<string, object?>
                             {
                                 ["sessionId"] = "03cce7",
@@ -4242,7 +4242,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -4287,7 +4287,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -4338,7 +4338,7 @@ public sealed class BackupDownloadService
                                     },
                                 });
                                 File.AppendAllText(
-                                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                                     line + Environment.NewLine);
                             }
                             catch { /* ignore */ }
@@ -4365,7 +4365,7 @@ public sealed class BackupDownloadService
                                     },
                                 });
                                 File.AppendAllText(
-                                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                                     line + Environment.NewLine);
                             }
                             catch { /* ignore */ }
@@ -4412,6 +4412,30 @@ public sealed class BackupDownloadService
         if (asset.AssetUnwrappedKey is { Length: 16 or 32 })
             return;
 
+        // Ultimo tentativo offline: wrap owned per signature nei dump CK del workdir.
+        if (string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex)
+            && !string.IsNullOrWhiteSpace(workDirectory)
+            && asset.AssetSignature is { Length: >= 4 } sigDump
+            && FordOfflineDumpWriter.TryFindOwnedWrapInCk(workDirectory, sigDump, out _)
+                is { Length: 24 or 40 } dumpWrap)
+        {
+            asset.AssetProtectionInfoHex = Convert.ToHexString(dumpWrap);
+            AssetMaterialPipeline.FillFordIkmFromContents(
+                asset,
+                (a, wrap) =>
+                {
+                    if (wrap is not { Length: 24 or 40 })
+                        return null;
+                    a.AssetProtectionInfoHex = Convert.ToHexString(wrap);
+                    a.AssetUnwrappedKey = null;
+                    a.AssetUnwrappedKeyWrapHex = null;
+                    _ = TryResolveMmcsKek(session, a, log);
+                    return a.AssetUnwrappedKey is { Length: 16 or 32 } live ? live : null;
+                });
+            if (asset.AssetUnwrappedKey is { Length: 16 or 32 })
+                return;
+        }
+
         if (string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex))
             return;
 
@@ -4453,7 +4477,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -4511,7 +4535,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -4579,7 +4603,7 @@ public sealed class BackupDownloadService
             try
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "03cce7",
@@ -4860,7 +4884,7 @@ public sealed class BackupDownloadService
         if (!IkeLogOptions.ShouldWriteAgentDiag)
             return;
         IkeLogOptions.AppendAgentNdjson(
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
             jsonLine);
     }
 
@@ -4872,7 +4896,7 @@ public sealed class BackupDownloadService
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 jsonLine + Environment.NewLine);
         }
         catch
@@ -4889,7 +4913,7 @@ public sealed class BackupDownloadService
         try
         {
             var logPath = Path.Combine(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"));
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log");
             var line = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
             {
                 ["sessionId"] = "ab5168",
@@ -5187,7 +5211,7 @@ public sealed class BackupDownloadService
                     try
                     {
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                             line + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -5817,7 +5841,7 @@ public sealed class BackupDownloadService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -5871,7 +5895,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -5923,7 +5947,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -5935,7 +5959,9 @@ public sealed class BackupDownloadService
 
         // Seed wire PrivilegedBatch/retrieve: A:pref4:rid. UUID nudo → NOT_FOUND
         // e ParseAssetRecord (pre-fix) saltava i candidati non-KA/MA.
-        var fetchName = ResolveOwnedBackupAssetFetchName(asset);
+        // Size flist ≠ size nel recordName (=:10676 vs sum 11264) → prova varianti.
+        var fetchNames = ResolveOwnedBackupAssetFetchNames(asset);
+        var fetchName = fetchNames.Count > 0 ? fetchNames[0] : asset.RecordName;
         // #region agent log
         try
         {
@@ -5944,7 +5970,7 @@ public sealed class BackupDownloadService
                 ["sessionId"] = "03cce7",
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 ["hypothesisId"] = "H-SEED",
-                ["runId"] = "owned-ba-seed-v2",
+                ["runId"] = "owned-ba-seed-v3",
                 ["location"] = "BackupDownloadService.EnsureAssetRecordPayloadAsync",
                 ["message"] = "owned_ba_fetch_name",
                 ["data"] = new Dictionary<string, object?>
@@ -5952,14 +5978,16 @@ public sealed class BackupDownloadService
                     ["path"] = asset.RelativePath ?? asset.RecordName,
                     ["recordName"] = asset.RecordName,
                     ["fetchName"] = fetchName.Length > 96 ? fetchName[..96] : fetchName,
+                    ["fetchVariants"] = fetchNames.Count,
                     ["fetchIsUuid"] = CloudKitMmcsIds.IsUuidRecordName(fetchName),
                     ["hasRid"] = !string.IsNullOrWhiteSpace(asset.RecordIdSuffix),
                     ["hasPref4"] = !string.IsNullOrWhiteSpace(_activeDevicePrefix4),
                     ["hadOwnedRp"] = haveOwnedRp,
+                    ["size"] = asset.SizeBytes,
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -5967,8 +5995,22 @@ public sealed class BackupDownloadService
 
         try
         {
-            var fetched = await _assets.TryResolveAssetAuthAsync(session, fetchName, log, ct)
-                .ConfigureAwait(false);
+            BackupAsset? fetched = null;
+            foreach (var tryName in fetchNames)
+            {
+                fetched = await _assets.TryResolveAssetAuthAsync(session, tryName, log, ct)
+                    .ConfigureAwait(false);
+                if (fetched is null)
+                    continue;
+                // Preferisci hit con wrap/RP contents.
+                if (!string.IsNullOrWhiteSpace(fetched.AssetProtectionInfoHex)
+                    || fetched.RecordPayload is { Length: > 32 })
+                {
+                    fetchName = tryName;
+                    break;
+                }
+            }
+
             if (fetched is null)
             {
                 // #region agent log
@@ -5979,7 +6021,7 @@ public sealed class BackupDownloadService
                         ["sessionId"] = "03cce7",
                         ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         ["hypothesisId"] = "H-BA1",
-                        ["runId"] = "owned-ba-seed-v2",
+                        ["runId"] = "owned-ba-seed-v3",
                         ["location"] = "BackupDownloadService.EnsureAssetRecordPayloadAsync",
                         ["message"] = "owned_backupasset_fetch_miss",
                         ["data"] = new Dictionary<string, object?>
@@ -5987,11 +6029,12 @@ public sealed class BackupDownloadService
                             ["path"] = asset.RelativePath ?? asset.RecordName,
                             ["recordName"] = asset.RecordName,
                             ["fetchName"] = fetchName.Length > 96 ? fetchName[..96] : fetchName,
+                            ["fetchVariants"] = fetchNames.Count,
                             ["hadOwnedRp"] = haveOwnedRp,
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -6071,7 +6114,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -6089,11 +6132,34 @@ public sealed class BackupDownloadService
     /// Nome CK per retrieve owned BackupAsset: <c>A:{pref4}:{rid}</c>.
     /// UUID flist da solo → PrivilegedBatch NOT_FOUND.
     /// </summary>
-    private string ResolveOwnedBackupAssetFetchName(BackupAsset asset)
+    private string ResolveOwnedBackupAssetFetchName(BackupAsset asset) =>
+        ResolveOwnedBackupAssetFetchNames(asset)[0];
+
+    /// <summary>
+    /// Candidati fetch: recordName, size flist, varianti base64.
+    /// Evita UUID nudo (Domain Authy multi-asset → no-ikm).
+    /// </summary>
+    private List<string> ResolveOwnedBackupAssetFetchNames(BackupAsset asset)
     {
+        var list = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        void Add(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name) || CloudKitMmcsIds.IsUuidRecordName(name))
+                return;
+            if (!seen.Add(name))
+                return;
+            list.Add(name);
+        }
+
         if (!CloudKitMmcsIds.IsUuidRecordName(asset.RecordName)
             && CloudKitMmcsIds.IsAssetRecordName(asset.RecordName))
-            return asset.RecordName;
+        {
+            foreach (var v in CloudKitMmcsIds.EnumerateAssetRecordNameVariants(
+                         asset.RecordName, asset.SizeBytes))
+                Add(v);
+        }
 
         var rid = asset.RecordIdSuffix;
         if (string.IsNullOrWhiteSpace(rid)
@@ -6104,9 +6170,16 @@ public sealed class BackupDownloadService
         if (!string.IsNullOrWhiteSpace(rid)
             && !string.IsNullOrWhiteSpace(_activeDevicePrefix4)
             && CloudKitMmcsIds.ToPrivilegedBatchSeed(_activeDevicePrefix4, rid) is { } seed)
-            return seed;
+        {
+            foreach (var v in CloudKitMmcsIds.EnumerateAssetRecordNameVariants(seed, asset.SizeBytes))
+                Add(v);
+        }
 
-        return asset.RecordName;
+        if (list.Count == 0)
+            Add(asset.RecordName);
+        if (list.Count == 0)
+            list.Add(asset.RecordName);
+        return list;
     }
 
     /// <summary>
@@ -6119,6 +6192,44 @@ public sealed class BackupDownloadService
         IProgress<string>? log,
         CancellationToken ct)
     {
+        await EnsureAssetRecordPayloadAsync(session, asset, log, ct).ConfigureAwait(false);
+        await Task.Run(() => EnsureAssetWrapAndIkm(session, asset, workDirectory, log), ct)
+            .ConfigureAwait(false);
+
+        // Query aveva restituito batch/RP senza wrap owned → clear e re-fetch varianti size.
+        if (asset.AssetUnwrappedKey is { Length: 16 or 32 }
+            || !string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex))
+            return;
+        if (!IsCloudKitAssetRecordName(asset.RecordName)
+            && string.IsNullOrWhiteSpace(asset.RecordIdSuffix))
+            return;
+
+        asset.RecordPayload = null;
+        asset.AssetProtectionInfoHex = null;
+        asset.AssetUnwrappedKey = null;
+        asset.AssetUnwrappedKeyWrapHex = null;
+        asset.CkFileAsset = null;
+        // #region agent log
+        try
+        {
+            AgentNdjsonAlways(JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["sessionId"] = "7dabb5",
+                ["runId"] = "wrap-refetch-v1",
+                ["hypothesisId"] = "H-NO-WRAP",
+                ["location"] = "BackupDownloadService.EnsureAssetWrapAndIkmAsync",
+                ["message"] = "force_refetch_after_no_wrap",
+                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ["data"] = new
+                {
+                    path = asset.RelativePath ?? asset.RecordName,
+                    record = asset.RecordName,
+                    size = asset.SizeBytes,
+                },
+            }));
+        }
+        catch { /* ignore */ }
+        // #endregion
         await EnsureAssetRecordPayloadAsync(session, asset, log, ct).ConfigureAwait(false);
         await Task.Run(() => EnsureAssetWrapAndIkm(session, asset, workDirectory, log), ct)
             .ConfigureAwait(false);
@@ -6331,7 +6442,7 @@ public sealed class BackupDownloadService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "03cce7",
@@ -6548,7 +6659,7 @@ public sealed class BackupDownloadService
                         });
                         AgentNdjsonAlways(auditLine);
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                             auditLine + Environment.NewLine);
                     }
                 }
@@ -6920,7 +7031,7 @@ public sealed class BackupDownloadService
             try
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "03cce7",
@@ -7528,7 +7639,7 @@ public sealed class BackupDownloadService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -7612,7 +7723,7 @@ public sealed class BackupDownloadService
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",
@@ -7777,7 +7888,7 @@ public sealed class BackupDownloadService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -8008,7 +8119,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -8101,7 +8212,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -8235,7 +8346,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -8277,7 +8388,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -8347,7 +8458,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -8418,7 +8529,7 @@ public sealed class BackupDownloadService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -8992,6 +9103,7 @@ public sealed class BackupDownloadService
 
             if (seed is null || CloudKitMmcsIds.IsUuidRecordName(seed))
                 continue;
+            seed = HardenPrivilegedBatchSeed(seed, devicePrefix4, asset.SizeBytes);
             seedTypes[rid] = type;
             if (!seen.Add(seed))
                 continue;
@@ -9080,7 +9192,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -9163,6 +9275,7 @@ public sealed class BackupDownloadService
 
                 if (seed is null || CloudKitMmcsIds.IsUuidRecordName(seed))
                     continue;
+                seed = HardenPrivilegedBatchSeed(seed, devicePrefix4, asset.SizeBytes);
                 if (!retrySeen.Add(seed))
                     continue;
                 retrySeeds.Add(seed);
@@ -9193,7 +9306,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -9240,7 +9353,10 @@ public sealed class BackupDownloadService
                 foreach (var alt in CloudKitMmcsIds.EnumerateAlternateTypes(primary).Take(3))
                 {
                     var s = CloudKitMmcsIds.ToPrivilegedBatchSeed(devicePrefix4, rid, alt);
-                    if (s is null || !altSeen.Add(s) || seeds.Contains(s, StringComparer.Ordinal))
+                    if (s is null)
+                        continue;
+                    s = HardenPrivilegedBatchSeed(s, devicePrefix4, asset.SizeBytes);
+                    if (!altSeen.Add(s) || seeds.Contains(s, StringComparer.Ordinal))
                         continue;
                     altSeeds.Add(s);
                 }
@@ -9325,7 +9441,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                     line + Environment.NewLine);
             }
         }
@@ -9357,24 +9473,39 @@ public sealed class BackupDownloadService
         }
 
         var byRid = new Dictionary<string, BackupAsset>(StringComparer.Ordinal);
+        var byToken = new Dictionary<string, BackupAsset>(StringComparer.Ordinal);
         foreach (var a in fetched)
         {
-            // Ignora harvest sig:-only come parent (niente rid → niente bind wrap).
-            if (a.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase))
-                continue;
             if (string.IsNullOrWhiteSpace(a.RecordIdSuffix)
+                && !a.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase)
                 && CloudKitMmcsIds.ToRecordIdSuffix(a.RecordName) is { } derived)
                 a.RecordIdSuffix = derived;
-            if (!string.IsNullOrWhiteSpace(a.RecordIdSuffix))
-                byRid.TryAdd(a.RecordIdSuffix, a);
-            var ridFromName = CloudKitMmcsIds.ToRecordIdSuffix(a.RecordName);
-            if (ridFromName is not null)
-                byRid.TryAdd(ridFromName, a);
+
+            // Parent wrap: solo record con rid reale (non orphan sig: senza bind).
+            var isSigOrphan = a.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(a.RecordIdSuffix);
+            if (!isSigOrphan)
+            {
+                if (!string.IsNullOrWhiteSpace(a.RecordIdSuffix))
+                    byRid.TryAdd(a.RecordIdSuffix, a);
+                var ridFromName = CloudKitMmcsIds.ToRecordIdSuffix(a.RecordName);
+                if (ridFromName is not null)
+                    byRid.TryAdd(ridFromName, a);
+            }
+
+            // Join token (size mismatch / EN vs flist): come EnsureMmcsAuth.
+            var tok = TryExtractRidToken(a.RecordIdSuffix)
+                ?? (!a.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase)
+                    ? TryExtractRidToken(CloudKitMmcsIds.ToRecordIdSuffix(a.RecordName) ?? a.RecordName)
+                    : null);
+            if (tok is { Length: >= 8 } && HasUsableMmcsAuth(a.MmcsAuth))
+                byToken.TryAdd(tok, a);
         }
 
         attached = 0;
         var parentBound = 0;
         var authFromRid = 0;
+        var authFromTok = 0;
         var authFromSig = 0;
         var ridMiss = 0;
         foreach (var asset in need)
@@ -9386,6 +9517,15 @@ public sealed class BackupDownloadService
                 && CloudKitMmcsIds.ToRecordIdSuffix(asset.RecordName) is { } assetRid)
                 byRid.TryGetValue(assetRid, out ck);
 
+            var wantTok = TryExtractRidToken(asset.RecordIdSuffix)
+                ?? TryExtractRidToken(CloudKitMmcsIds.ToRecordIdSuffix(asset.RecordName));
+            BackupAsset? tokHit = null;
+            if (wantTok is { Length: >= 8 })
+                byToken.TryGetValue(wantTok, out tokHit);
+
+            if (ck is null && tokHit is not null)
+                ck = tokHit;
+
             if (ck is null)
                 ridMiss++;
 
@@ -9395,7 +9535,23 @@ public sealed class BackupDownloadService
                 if (ck is not null && HasUsableMmcsAuth(ck.MmcsAuth))
                 {
                     auth = ck.MmcsAuth;
-                    authFromRid++;
+                    if (tokHit is not null && ReferenceEquals(ck, tokHit)
+                        && (string.IsNullOrWhiteSpace(asset.RecordIdSuffix)
+                            || !byRid.ContainsKey(asset.RecordIdSuffix)))
+                        authFromTok++;
+                    else
+                        authFromRid++;
+                }
+                else if (tokHit is not null && HasUsableMmcsAuth(tokHit.MmcsAuth))
+                {
+                    auth = tokHit.MmcsAuth;
+                    authFromTok++;
+                }
+                else if (!string.IsNullOrWhiteSpace(asset.RecordIdSuffix)
+                         && TryMatchAuthByRecordEmbed(asset.RecordIdSuffix, fetched) is { } embedAuth)
+                {
+                    auth = embedAuth;
+                    authFromTok++;
                 }
                 else if (asset.AssetSignature is { Length: 21 })
                 {
@@ -9417,8 +9573,10 @@ public sealed class BackupDownloadService
                     asset.MmcsAuth = auth;
             }
 
-            // Parent Record+wrap solo da rid (anche senza MmcsAuth).
-            if (ck is not null && BindPrepareFilesParentRecord(asset, ck))
+            // Parent Record+wrap solo da rid (mai da orphan sig:).
+            if (ck is not null
+                && !ck.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase)
+                && BindPrepareFilesParentRecord(asset, ck))
                 parentBound++;
 
             if (HasUsableMmcsAuth(asset.MmcsAuth))
@@ -9429,7 +9587,7 @@ public sealed class BackupDownloadService
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",
@@ -9444,10 +9602,12 @@ public sealed class BackupDownloadService
                         ["fetched"] = fetched.Count,
                         ["authAttached"] = attached,
                         ["authFromRid"] = authFromRid,
+                        ["authFromTok"] = authFromTok,
                         ["authFromSig"] = authFromSig,
                         ["parentBound"] = parentBound,
                         ["ridMiss"] = ridMiss,
                         ["byRidN"] = byRid.Count,
+                        ["byTokenN"] = byToken.Count,
                     },
                 }) + Environment.NewLine);
 
@@ -9467,6 +9627,8 @@ public sealed class BackupDownloadService
                         if (!string.IsNullOrWhiteSpace(rid)
                             && byRid.TryGetValue(rid, out ck))
                             ridHit = true;
+                        var tok = TryExtractRidToken(rid);
+                        var tokHit = tok is { Length: >= 8 } && byToken.ContainsKey(tok);
                         var ckHasAuth = ck is not null && HasUsableMmcsAuth(ck.MmcsAuth);
                         var sigInMap = false;
                         string? sig4 = null;
@@ -9486,14 +9648,16 @@ public sealed class BackupDownloadService
                         }
 
                         string why;
-                        if (!ridHit && !sigInMap)
+                        if (!ridHit && !tokHit && !sigInMap)
                             why = "not_in_fetched_rid_or_sig";
                         else if (ridHit && !ckHasAuth && !sigInMap)
                             why = "rid_hit_empty_auth";
-                        else if (!ridHit && sigInMap)
+                        else if (!ridHit && !tokHit && sigInMap)
                             why = "sig_map_hit_attach_failed";
                         else if (ridHit && ckHasAuth)
                             why = "rid_had_auth_not_copied";
+                        else if (tokHit)
+                            why = "tok_hit_attach_failed";
                         else
                             why = "join_miss_other";
 
@@ -9502,6 +9666,7 @@ public sealed class BackupDownloadService
                             ["path"] = asset.RelativePath ?? asset.RecordName,
                             ["why"] = why,
                             ["ridHit"] = ridHit,
+                            ["tokHit"] = tokHit,
                             ["ckHasAuth"] = ckHasAuth,
                             ["sigInMap"] = sigInMap,
                             ["sig4"] = sig4,
@@ -9515,7 +9680,7 @@ public sealed class BackupDownloadService
                     .GroupBy(static m => (string)(m["why"] ?? "?"))
                     .ToDictionary(static g => g.Key, static g => g.Count());
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                     JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "b3df71",
@@ -9531,9 +9696,11 @@ public sealed class BackupDownloadService
                             ["authAttached"] = attached,
                             ["gap"] = need.Count - attached,
                             ["authFromRid"] = authFromRid,
+                            ["authFromTok"] = authFromTok,
                             ["authFromSig"] = authFromSig,
                             ["ridMiss"] = ridMiss,
                             ["byRidN"] = byRid.Count,
+                            ["byTokenN"] = byToken.Count,
                             ["bySigN"] = bySig.Count,
                             ["whyCounts"] = whyCounts,
                             ["sample"] = missSample,
@@ -9543,6 +9710,47 @@ public sealed class BackupDownloadService
         }
         catch { /* ignore */ }
         // #endregion
+    }
+
+    /// <summary>
+    /// Pref4 dispositivo + <c>=:size</c> (EN stale / rid senza size → CK NOT_FOUND).
+    /// </summary>
+    private static string HardenPrivilegedBatchSeed(
+        string seed,
+        string devicePrefix4,
+        long? sizeBytes)
+    {
+        var s = CloudKitMmcsIds.RewritePrivilegedBatchPref4(seed, devicePrefix4);
+        if (sizeBytes is long sz and >= 0)
+            s = CloudKitMmcsIds.EnsurePrivilegedBatchSeedSize(s, sz);
+        return s;
+    }
+
+    /// <summary>
+    /// CAog embed del rid/token (PB orphan <c>sig:</c> senza RecordName A:).
+    /// </summary>
+    private static string? TryMatchAuthByRecordEmbed(
+        string ridOrName,
+        IReadOnlyList<BackupAsset> fetched)
+    {
+        if (string.IsNullOrWhiteSpace(ridOrName))
+            return null;
+        var rid = CloudKitMmcsIds.ToRecordIdSuffix(ridOrName) ?? ridOrName.Trim();
+        foreach (var a in fetched)
+        {
+            if (!HasUsableMmcsAuth(a.MmcsAuth))
+                continue;
+            if (MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, rid)
+                || MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, ridOrName))
+                return a.MmcsAuth;
+            if (!a.RecordName.StartsWith("sig:", StringComparison.OrdinalIgnoreCase)
+                && MmcsAuthBuilder.AuthMatchesRecord(a.MmcsAuth!, a.RecordName)
+                && TryExtractRidToken(rid) is { Length: >= 8 } tok
+                && a.RecordName.Contains(tok, StringComparison.Ordinal))
+                return a.MmcsAuth;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -9846,7 +10054,7 @@ public sealed class BackupDownloadService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -10016,7 +10224,7 @@ public sealed class BackupDownloadService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                         JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "b3df71",
@@ -10200,7 +10408,7 @@ public sealed class BackupDownloadService
                 }
             }
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "7dabb5",
@@ -10254,7 +10462,7 @@ public sealed class BackupDownloadService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "7dabb5",
@@ -10315,7 +10523,7 @@ public sealed class BackupDownloadService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "7dabb5",
@@ -10350,7 +10558,7 @@ public sealed class BackupDownloadService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "7dabb5",
@@ -10386,7 +10594,7 @@ public sealed class BackupDownloadService
             try
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "03cce7",
@@ -10444,7 +10652,7 @@ public sealed class BackupDownloadService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                         JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "b3df71",
@@ -10492,7 +10700,7 @@ public sealed class BackupDownloadService
             try
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                     JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "9a5651",
@@ -10557,7 +10765,7 @@ public sealed class BackupDownloadService
                 var dataHosts = plan.Containers.Count(static c => c.Count != 0);
                 var descs = UbChunkBuilder.ExtractAuthFordDescriptors(authBody);
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "7dabb5",
@@ -10656,7 +10864,7 @@ public sealed class BackupDownloadService
             }
 
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",
@@ -10821,7 +11029,7 @@ public sealed class BackupDownloadService
                     if (pick is "fallbackIndex" or "fallback0" || !partHasSig || files.Count != batch.Count)
                     {
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                             JsonSerializer.Serialize(new Dictionary<string, object?>
                             {
                                 ["sessionId"] = "7dabb5",
@@ -10935,7 +11143,7 @@ public sealed class BackupDownloadService
                         try
                         {
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                                 JsonSerializer.Serialize(new Dictionary<string, object?>
                                 {
                                     ["sessionId"] = "b3df71",
@@ -10980,7 +11188,7 @@ public sealed class BackupDownloadService
                     try
                     {
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                             JsonSerializer.Serialize(new Dictionary<string, object?>
                             {
                                 ["sessionId"] = "9a5651",
@@ -11135,7 +11343,7 @@ public sealed class BackupDownloadService
                             },
                         });
                         IkeLogOptions.AppendAgentNdjson(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                             line);
                     }
                     catch
@@ -11360,7 +11568,7 @@ public sealed class BackupDownloadService
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "9a5651",
@@ -11829,7 +12037,7 @@ public sealed class BackupDownloadService
             try
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "03cce7",
@@ -11998,7 +12206,7 @@ public sealed class BackupDownloadService
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "03cce7",
@@ -12040,7 +12248,7 @@ public sealed class BackupDownloadService
                             },
                         });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                             line + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -12075,7 +12283,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -12219,7 +12427,7 @@ public sealed class BackupDownloadService
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -12382,7 +12590,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -12512,7 +12720,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     IkeLogOptions.AppendAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line);
                 }
                 catch { /* ignore */ }
@@ -12567,7 +12775,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -12606,7 +12814,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -12764,7 +12972,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\AIAgent\debug-4ff690.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -12902,7 +13110,7 @@ public sealed class BackupDownloadService
                         },
                     });
                     IkeLogOptions.AppendAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line);
                 }
                 catch { /* ignore */ }
@@ -13045,7 +13253,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -13095,7 +13303,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -13214,7 +13422,7 @@ public sealed class BackupDownloadService
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line + Environment.NewLine);
             }
         }
@@ -13638,21 +13846,8 @@ public sealed class BackupDownloadService
     /// <summary>
     /// Token base64 in <c>uuid:token=:size</c> (tra il primo <c>:</c> dopo l'UUID e <c>=:</c>).
     /// </summary>
-    private static string? TryExtractRidToken(string? rid)
-    {
-        if (string.IsNullOrWhiteSpace(rid))
-            return null;
-        var s = rid.Trim();
-        var uuidEnd = s.IndexOf(':');
-        if (uuidEnd <= 0 || uuidEnd >= s.Length - 1)
-            return null;
-        var rest = s[(uuidEnd + 1)..];
-        var sep = rest.LastIndexOf("=:", StringComparison.Ordinal);
-        if (sep <= 0)
-            return null;
-        var token = rest[..sep];
-        return token.Length > 0 ? token : null;
-    }
+    private static string? TryExtractRidToken(string? rid) =>
+        CloudKitMmcsIds.TryExtractRidToken(rid);
 
     private static bool HasUsableMmcsAuth(string? mmcsAuth) =>
         !string.IsNullOrWhiteSpace(mmcsAuth)
@@ -13775,7 +13970,7 @@ public sealed class BackupDownloadService
                 var isFlRecord = asset.RecordName.StartsWith("FL:", StringComparison.Ordinal);
                 MmcsAuthBuilder.TrySplitMmcsAuth(asset.MmcsAuth, out var ckSig, out _, out _);
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "7dabb5",
@@ -13819,7 +14014,7 @@ public sealed class BackupDownloadService
         {
             var isFlRecord = asset.RecordName.StartsWith("FL:", StringComparison.Ordinal);
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "7dabb5",
@@ -14053,13 +14248,13 @@ public sealed class BackupDownloadService
             if (critical)
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line + Environment.NewLine);
             }
             else
             {
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
                 var diagOn = string.Equals(
                     Environment.GetEnvironmentVariable("IKE_AGENT_DIAG"),
@@ -14069,7 +14264,7 @@ public sealed class BackupDownloadService
                 {
                     payload["sessionId"] = "ab5168";
                     IkeLogOptions.AppendAgentNdjson(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-ab5168.log",
                         JsonSerializer.Serialize(payload));
                 }
             }
@@ -14107,7 +14302,7 @@ public sealed class BackupDownloadService
                 ["wrapN"] = n,
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
@@ -14165,7 +14360,7 @@ public sealed class BackupDownloadService
                 },
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
@@ -14199,7 +14394,7 @@ public sealed class BackupDownloadService
                 ["failN"] = n,
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
