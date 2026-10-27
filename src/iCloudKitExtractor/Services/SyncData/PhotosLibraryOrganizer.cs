@@ -88,7 +88,8 @@ public static class PhotosLibraryOrganizer
             ct.ThrowIfCancellationRequested();
             try
             {
-                var plainPath = LocatePlainFile(photosDir, sfoglia, hiddenDir, deletedDir, favDir, entry);
+                var plainPath = LocatePlainFile(
+                    photosDir, sfoglia, hiddenDir, deletedDir, favDir, entry, cache);
                 if (plainPath is null)
                     continue;
 
@@ -99,7 +100,9 @@ public static class PhotosLibraryOrganizer
                 var display = cache.ResolveDisplayFileName(entry.RecordName, ext, entry.MmcsAuth);
                 if (string.IsNullOrWhiteSpace(display))
                     display = entry.Token + ext;
-                display = EnsureUniqueFileName(sfoglia, display, usedNames);
+                // Allinea estensione al contenuto reale (binding filename a volte sbaglia .png↔.heic).
+                display = AlignExtensionToMagic(plainPath, display);
+                display = EnsureUniqueFileName(sfoglia, display, usedNames, ownedPath: plainPath);
 
                 var dest = Path.Combine(sfoglia, display);
                 var beforeName = Path.GetFileName(plainPath);
@@ -221,13 +224,40 @@ public static class PhotosLibraryOrganizer
         string hiddenDir,
         string deletedDir,
         string favDir,
-        PhotosMediaMetaCache.MediaEntry entry)
+        PhotosMediaMetaCache.MediaEntry entry,
+        PhotosMediaMetaCache cache)
     {
         if (!string.IsNullOrWhiteSpace(entry.PlainRelativePath))
         {
             var fromRel = Path.Combine(photosDir, entry.PlainRelativePath);
             if (File.Exists(fromRel) && IsMediaPlain(fromRel))
                 return fromRel;
+        }
+
+        // Già rinominato in un run precedente: cerca il display name da filenameEnc.
+        var displayGuess = cache.ResolveDisplayFileName(entry.RecordName, ".bin", entry.MmcsAuth);
+        if (!string.IsNullOrWhiteSpace(displayGuess))
+        {
+            foreach (var dir in new[] { sfoglia, hiddenDir, deletedDir, favDir })
+            {
+                if (!Directory.Exists(dir))
+                    continue;
+                var candidate = Path.Combine(dir, displayGuess);
+                if (File.Exists(candidate) && IsMediaPlain(candidate))
+                    return candidate;
+                // Live: IMG_0001.MOV vs IMG_0001_Live.MOV
+                if (entry.IsLive || entry.RecordName.EndsWith("_Live", StringComparison.OrdinalIgnoreCase))
+                {
+                    var stem = Path.GetFileNameWithoutExtension(displayGuess);
+                    var ext = Path.GetExtension(displayGuess);
+                    if (!stem.EndsWith("_Live", StringComparison.OrdinalIgnoreCase))
+                    {
+                        candidate = Path.Combine(dir, stem + "_Live" + ext);
+                        if (File.Exists(candidate) && IsMediaPlain(candidate))
+                            return candidate;
+                    }
+                }
+            }
         }
 
         foreach (var dir in new[] { sfoglia, hiddenDir, deletedDir, favDir })
@@ -411,25 +441,94 @@ public static class PhotosLibraryOrganizer
         return name is null ? null : Path.GetExtension(name);
     }
 
+    /// <summary>
+    /// Se il file è già al path target (re-organize), non forzare _2/_3.
+    /// </summary>
     private static string EnsureUniqueFileName(
         string directory,
         string fileName,
-        HashSet<string> used)
+        HashSet<string> used,
+        string? ownedPath = null)
     {
         var safe = SanitizeFileName(fileName);
-        if (used.Add(safe) && !File.Exists(Path.Combine(directory, safe)))
+        var dest = Path.Combine(directory, safe);
+        var ownsDest = ownedPath is not null
+                       && string.Equals(ownedPath, dest, StringComparison.OrdinalIgnoreCase);
+        if (ownsDest)
+        {
+            used.Add(safe);
+            return safe;
+        }
+
+        if (used.Add(safe) && !File.Exists(dest))
             return safe;
 
+        used.Remove(safe);
         var stem = Path.GetFileNameWithoutExtension(safe);
         var ext = Path.GetExtension(safe);
         for (var i = 2; i < 10_000; i++)
         {
             var candidate = $"{stem}_{i}{ext}";
-            if (used.Add(candidate) && !File.Exists(Path.Combine(directory, candidate)))
+            var candidatePath = Path.Combine(directory, candidate);
+            if (ownedPath is not null
+                && string.Equals(ownedPath, candidatePath, StringComparison.OrdinalIgnoreCase))
+            {
+                used.Add(candidate);
+                return candidate;
+            }
+
+            if (used.Add(candidate) && !File.Exists(candidatePath))
                 return candidate;
         }
 
         return $"{stem}_{Guid.NewGuid():N}{ext}";
+    }
+
+    /// <summary>
+    /// Corregge l'estensione del display name in base al magic del plaintext MMCS.
+    /// </summary>
+    private static string AlignExtensionToMagic(string plainPath, string displayName)
+    {
+        var magicExt = GuessExtensionFromMagic(plainPath);
+        if (magicExt is null)
+            return displayName;
+        var currentExt = Path.GetExtension(displayName);
+        if (currentExt.Equals(magicExt, StringComparison.OrdinalIgnoreCase))
+            return displayName;
+        return Path.GetFileNameWithoutExtension(displayName) + magicExt;
+    }
+
+    private static string? GuessExtensionFromMagic(string path)
+    {
+        try
+        {
+            using var fs = File.OpenRead(path);
+            Span<byte> b = stackalloc byte[16];
+            var n = fs.Read(b);
+            if (n >= 3 && b[0] == 0xFF && b[1] == 0xD8)
+                return ".jpg";
+            if (n >= 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47)
+                return ".png";
+            if (n >= 12 && b[4] == (byte)'f' && b[5] == (byte)'t' && b[6] == (byte)'y' && b[7] == (byte)'p')
+            {
+                var brand = Encoding.ASCII.GetString(b.Slice(8, 4));
+                if (brand.Contains("heic", StringComparison.OrdinalIgnoreCase)
+                    || brand.Contains("mif1", StringComparison.OrdinalIgnoreCase)
+                    || brand.Contains("msf1", StringComparison.OrdinalIgnoreCase)
+                    || brand.Contains("heix", StringComparison.OrdinalIgnoreCase)
+                    || brand.Contains("hevc", StringComparison.OrdinalIgnoreCase))
+                    return ".heic";
+                if (brand.Contains("qt", StringComparison.OrdinalIgnoreCase))
+                    return ".mov";
+                return ".mp4";
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        return null;
     }
 
     private static string SanitizeFileName(string name)

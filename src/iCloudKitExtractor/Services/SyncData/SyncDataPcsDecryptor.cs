@@ -39,6 +39,17 @@ public static class SyncDataPcsDecryptor
 
         var preferred = PreferredFieldsForContainer(containerHint);
         var fields = CloudKitEncryptedFieldScanner.Scan(recordSyncPayload, preferred);
+        // Photos/Notes/…: ignora type=20 anonimi e campi SyncData generici fuori lista —
+        // altrimenti CPL multi-MB tenta migliaia di ciphertext inutili (lento sui fail).
+        if (preferred is not null)
+        {
+            var allow = new HashSet<string>(preferred, StringComparer.Ordinal);
+            var before = fields.Count;
+            fields = fields.Where(f => allow.Contains(f.FieldName)).ToList();
+            if (before != fields.Count)
+                log?.Report($"  PCS: filtra campi {before}→{fields.Count} (preferred container)");
+        }
+
         if (fields.Count == 0)
             return new DecryptSummary(0, 0, 0, "nessun campo type=20");
 
@@ -64,7 +75,7 @@ public static class SyncDataPcsDecryptor
         {
             log?.Report(
                 $"  PCS: payload grande ({recordSyncPayload.Length:N0} B) — " +
-                "PI~400 + light indexed (no iterative/brute)…");
+                "PI 200–900 + light indexed (no iterative/brute)…");
             fromRecords = UnwrapLargeRecordPayload(recordSyncPayload, poolKeys);
         }
         else
@@ -78,11 +89,12 @@ public static class SyncDataPcsDecryptor
             poolKeys = PcsProtectionZone.MergeKeys(poolKeys, fromRecords);
         }
 
-        // Evita O(campi × migliaia di master spuri) sul decrypt type=20.
-        if (recordSyncPayload.Length >= largePayloadBytes && zones.Count > 128)
+        // Cap alto: i PI ~535 ADP sono uno-per-asset; 128 tagliava i DecryptKey utili
+        // a filenameEnc. Il percorso locale (finestra 48 KB) resta il preferito.
+        if (recordSyncPayload.Length >= largePayloadBytes && zones.Count > 2048)
         {
             var before = zones.Count;
-            zones = CapZonesForFieldDecrypt(zones, max: 128);
+            zones = CapZonesForFieldDecrypt(zones, max: 2048);
             log?.Report($"  PCS: cap zoneKeys {before}→{zones.Count} per decrypt campi");
         }
 
@@ -268,8 +280,8 @@ public static class SyncDataPcsDecryptor
         PcsSessionSeedKeys.CollectForSyncData(session, log);
 
     /// <summary>
-    /// Unwrap su query CPL multi-MB: solo PI 380–430 B (master utili) + light
-    /// indexed-only. Niente DER full-page né ECDH brute su ogni 0xFF.
+    /// Unwrap su query CPL multi-MB: tutti i PI record 200–900 B (Photos ADP:
+    /// ~400 e ~535) + light indexed-only. Niente DER full-page né ECDH brute.
     /// </summary>
     private static List<ProtectionZoneKeys> UnwrapLargeRecordPayload(
         byte[] payload,
@@ -290,7 +302,7 @@ public static class SyncDataPcsDecryptor
 
         foreach (var der in PcsProtectionZone.TryExtractAllRecordProtectionInfoDer(payload))
         {
-            if (der.Length is < 380 or > 430)
+            if (der.Length is < 200 or > 900)
                 continue;
             AddRange(PcsProtectionZone.TryUnwrapAll(
                 der, poolKeys, includeLight: false, includeDer: true));
@@ -308,9 +320,10 @@ public static class SyncDataPcsDecryptor
         if (zones.Count <= max)
             return zones;
 
-        // Preferisci zone con nested / tag (PI zona o MasterKeySet), poi le altre.
+        // Preferisci PI con nested ProtectionObject (tipico ~535 ADP) e nested EC.
         return zones
-            .OrderByDescending(static z => z.NestedPrivateKeys.Count)
+            .OrderByDescending(static z => z.NestedProtectionObject?.Length ?? 0)
+            .ThenByDescending(static z => z.NestedPrivateKeys.Count)
             .ThenByDescending(static z => z.ProtectionInfoTag is null ? 0 : 1)
             .ThenByDescending(static z => z.MasterKey.Length)
             .Take(max)
@@ -375,19 +388,23 @@ public static class SyncDataPcsDecryptor
                 return plain;
         }
 
-        // 2) PI locale nella finestra record (record ProtectionInfo Manatee).
-        var localZones = BuildLocalZones(zones, poolKeys, recordSyncPayload, fieldOffset);
-        foreach (var zone in localZones)
+        // 2) PI locale nella finestra record (48 KB). Su payload grandi con già
+        // centinaia di zone globali il grind locale sui fail è troppo costoso.
+        if (zones.Count < 64 || recordSyncPayload.Length < 200_000)
         {
-            if (zones.Contains(zone))
-                continue;
-            var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
-            if (plain is { Length: > 0 })
-                return plain;
+            var localZones = BuildLocalZones(zones, poolKeys, recordSyncPayload, fieldOffset);
+            foreach (var zone in localZones)
+            {
+                if (zones.Contains(zone))
+                    continue;
+                var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
+                if (plain is { Length: > 0 })
+                    return plain;
+            }
         }
 
-        // 3) PI light nel ciphertext.
-        if (ciphertext.Length >= 32)
+        // 3) PI light nel ciphertext (solo se poche zone globali).
+        if (ciphertext.Length >= 32 && zones.Count < 64)
         {
             var embedded = PcsProtectionZone.TryUnwrapAll(ciphertext, poolKeys);
             foreach (var zone in embedded)
@@ -443,15 +460,28 @@ public static class SyncDataPcsDecryptor
             return local;
 
         var keys = new List<PcsCompactPrivateKey>(poolKeys);
-        foreach (var der in PcsProtectionZone.TryExtractProtectionInfoCandidates(window.AsSpan()))
+        // Preferisci candidati record-sized (200–900); include ~535 ADP.
+        foreach (var der in PcsProtectionZone.TryExtractAllRecordProtectionInfoDer(window))
         {
-            if (der.Length is < 64 or > 1200)
-                continue;
             var zone = PcsProtectionZone.TryUnwrap(der, keys);
             if (zone is null)
                 continue;
             local.Insert(0, zone);
             keys = PcsProtectionZone.MergeKeys(keys, [zone]);
+        }
+
+        if (local.Count == globalZones.Count)
+        {
+            foreach (var der in PcsProtectionZone.TryExtractProtectionInfoCandidates(window.AsSpan()))
+            {
+                if (der.Length is < 64 or > 1200)
+                    continue;
+                var zone = PcsProtectionZone.TryUnwrap(der, keys);
+                if (zone is null)
+                    continue;
+                local.Insert(0, zone);
+                keys = PcsProtectionZone.MergeKeys(keys, [zone]);
+            }
         }
 
         return local;
@@ -461,10 +491,13 @@ public static class SyncDataPcsDecryptor
     {
         if (payload is not { Length: > 64 })
             return [];
-        // BeaconStore records sono più grandi (PI + molti campi): finestra ampia.
-        var start = Math.Max(0, fieldOffset - 2048);
-        var len = Math.Min(payload.Length - start, 8192);
-        return payload.AsSpan(start, len).ToArray();
+        // Photos CPL: PI del CPLMaster spesso >8 KB prima di filenameEnc/resOriginalRes
+        // (stesso lookback di CplPhotosRecordParser). BeaconStore analogo.
+        const int lookback = 48 * 1024;
+        const int lookahead = 4 * 1024;
+        var start = Math.Max(0, fieldOffset - lookback);
+        var end = Math.Min(payload.Length, fieldOffset + lookahead);
+        return payload.AsSpan(start, end - start).ToArray();
     }
 
     private static string[] AadCandidates(

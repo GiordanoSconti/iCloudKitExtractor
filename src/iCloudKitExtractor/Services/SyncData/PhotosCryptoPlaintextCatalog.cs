@@ -117,6 +117,23 @@ public static class PhotosCryptoPlaintextCatalog
         if (!Directory.Exists(plainDir))
             return 0;
 
+        // 1) Preferisci field_records (record_name da offset campo): il wire-order
+        //    per indice sbaglia ~25% su CPL multi-resource / Live.
+        var bound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ok = LoadFieldRecords(cryptoDir, pageBin, "filenameEnc", (uuid, text) =>
+        {
+            if (string.IsNullOrWhiteSpace(uuid) || string.IsNullOrWhiteSpace(text))
+                return;
+            var trimmed = text.Trim();
+            cache.UpsertRecord(uuid, r => r.Filename = trimmed);
+            if (wireToAuth.TryGetValue(uuid, out var auth))
+                cache.UpsertRecordByAuth(auth, r => r.Filename = trimmed);
+            bound.Add(uuid);
+        }, log);
+        if (ok > 0)
+            log?.Report($"    {Path.GetFileName(cryptoDir)}/filenameEnc: {ok} (field_records)");
+
+        // 2) Wire-order solo per master ancora senza Filename.
         var decompressed = CplPhotosRecordParser.MaybeDecompress(payload);
         var masters = CplPhotosRecordParser.ParseMasterWireNamesByResourceOrder(decompressed);
         var texts = Directory.GetFiles(plainDir, "*.txt")
@@ -125,35 +142,25 @@ public static class PhotosCryptoPlaintextCatalog
             .Where(static t => !string.IsNullOrWhiteSpace(t))
             .ToList();
 
-        var ok = 0;
+        var filled = 0;
         var n = Math.Min(masters.Count, texts.Count);
         for (var i = 0; i < n; i++)
         {
             var wire = masters[i];
+            if (bound.Contains(wire))
+                continue;
             var text = texts[i];
-            cache.UpsertRecord(wire, r => r.Filename = text);
+            cache.UpsertRecord(wire, r => r.Filename ??= text);
             if (wireToAuth.TryGetValue(wire, out var auth))
-                cache.UpsertRecordByAuth(auth, r => r.Filename = text);
-            ok++;
+                cache.UpsertRecordByAuth(auth, r => r.Filename ??= text);
+            filled++;
         }
 
-        if (ok > 0)
-            log?.Report($"    {Path.GetFileName(cryptoDir)}/filenameEnc: {ok} (wire-order)");
+        if (filled > 0)
+            log?.Report(
+                $"    {Path.GetFileName(cryptoDir)}/filenameEnc: +{filled} (wire-order gap)");
 
-        // Fallback: field_records / offset binding per eventuali gap.
-        if (ok < texts.Count)
-        {
-            ok += LoadFieldRecords(cryptoDir, pageBin, "filenameEnc", (uuid, text) =>
-            {
-                if (string.IsNullOrWhiteSpace(uuid))
-                    return;
-                cache.UpsertRecord(uuid, r => r.Filename ??= text.Trim());
-                if (wireToAuth.TryGetValue(uuid, out var auth))
-                    cache.UpsertRecordByAuth(auth, r => r.Filename ??= text.Trim());
-            }, log);
-        }
-
-        return ok;
+        return ok + filled;
     }
 
     private static int LoadAllPlaintextFields(

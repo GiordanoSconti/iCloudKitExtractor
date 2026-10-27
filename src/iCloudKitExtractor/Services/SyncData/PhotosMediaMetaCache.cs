@@ -502,7 +502,8 @@ public sealed class PhotosMediaMetaCache
 
         foreach (var der in PcsProtectionZone.TryExtractAllRecordProtectionInfoDer(page))
         {
-            if (der.Length is < 380 or > 430)
+            // ADP Photos: PI ~400 (wrap MasterKey) e ~535 (DecryptKey campi + nested wrap-ref).
+            if (der.Length is < 200 or > 900)
                 continue;
             AddRange(PcsProtectionZone.TryUnwrapAll(
                 der, pool, includeLight: false, includeDer: true));

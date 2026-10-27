@@ -509,11 +509,65 @@ public sealed class PhotosCloudSyncService
                 session, outDir, containerId, log);
             if (dec.DecryptedCount > 0)
                 log?.Report($"  → crypto/: {dec.Message}");
-                    }
+        }
         catch (Exception ex)
         {
             log?.Report($"  PCS decrypt skip: {ex.Message}");
-                    }
+        }
+    }
+
+    /// <summary>True se crypto/ ha plaintext filenameEnc o originalFilenameEnc.</summary>
+    private static bool PhotosCryptoHasFilenamePlaintext(string photosCloudDir)
+    {
+        var crypto = Path.Combine(photosCloudDir, "crypto");
+        if (!Directory.Exists(crypto))
+            return false;
+        foreach (var name in new[] { "filenameEnc", "originalFilenameEnc" })
+        {
+            foreach (var dir in Directory.EnumerateDirectories(
+                         crypto, name, SearchOption.AllDirectories))
+            {
+                if (Directory.EnumerateFiles(dir).Any())
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Heuristica: Sfoglia ancora piena di token MMCS (es. Aa…_2.heic) → serve rename.
+    /// </summary>
+    private static bool SfogliaLooksTokenNamed(string photosDir)
+    {
+        var sfoglia = Path.Combine(photosDir, "Sfoglia");
+        if (!Directory.Exists(sfoglia))
+            return false;
+        var media = Directory.EnumerateFiles(sfoglia)
+            .Where(static p =>
+            {
+                var e = Path.GetExtension(p);
+                return e is ".heic" or ".jpg" or ".jpeg" or ".png" or ".mov" or ".mp4"
+                    or ".HEIC" or ".JPG" or ".JPEG" or ".PNG" or ".MOV" or ".MP4";
+            })
+            .Where(static p => !Path.GetFileName(p).StartsWith("_probe", StringComparison.Ordinal))
+            .Take(40)
+            .ToList();
+        if (media.Count == 0)
+            return false;
+        var tokenLike = 0;
+        foreach (var path in media)
+        {
+            var stem = Path.GetFileNameWithoutExtension(path);
+            // Token MMCS tipico: base64url ~22+ char che inizia con "Aa" / "AQ" / simile.
+            if (stem.Length >= 20
+                && stem.StartsWith('A')
+                && stem.All(static c =>
+                    char.IsLetterOrDigit(c) || c is '_' or '-' or '+'))
+                tokenLike++;
+        }
+
+        return tokenLike >= media.Count * 2 / 3;
     }
 
 
@@ -911,15 +965,19 @@ public sealed class PhotosCloudSyncService
         var albumsPayloadPath = Path.Combine(photosCloudDir, "query_cplalbum.bin");
         var relationsPath = Path.Combine(photosCloudDir, "query_cplcontainerrelation.bin");
 
-        // Sessione già completa (es. 134146 dopo Organize): non rientrare in BRM/organize.
+        // Sessione già completa solo se Album/DB esistono E i nomi file non sono
+        // ancora token MMCS (manca crypto filenameEnc → serve re-dump + organize).
         var albumDir = Path.Combine(photosDir, "Album");
         var photosDb = Path.Combine(photosDir, "Photos.db");
+        var cryptoReady = PhotosCryptoHasFilenamePlaintext(photosCloudDir);
         if (Directory.Exists(albumDir)
             && Directory.EnumerateFileSystemEntries(albumDir).Any()
-            && File.Exists(photosDb))
+            && File.Exists(photosDb)
+            && cryptoReady
+            && !SfogliaLooksTokenNamed(photosDir))
         {
             log?.Report(
-                "  Photos: libreria già completa (Album/ + Photos.db) — skip decrypt/organize/BRM");
+                "  Photos: libreria già completa (Album/ + Photos.db + nomi) — skip decrypt/organize/BRM");
             return (0, 0, 0);
         }
 
@@ -964,16 +1022,22 @@ public sealed class PhotosCloudSyncService
             session, photosCloudDir, httpRunDir, log, progress, ct);
 
 
-        // crypto/ serve ai nomi album; se già c'è (run precedente) non rifare il dump PCS.
+        // crypto/ deve avere filenameEnc (non solo albumNameEnc). Se manca, re-dump.
         var cryptoDir = Path.Combine(photosCloudDir, "crypto");
-        if (!Directory.Exists(cryptoDir)
-            || !Directory.EnumerateFileSystemEntries(cryptoDir).Any())
+        if (!PhotosCryptoHasFilenamePlaintext(photosCloudDir))
         {
+            if (Directory.Exists(cryptoDir)
+                && Directory.EnumerateFileSystemEntries(cryptoDir).Any())
+            {
+                log?.Report(
+                    "  crypto/ incompleto (manca filenameEnc) — re-dump PCS metadati…");
+            }
+
             TryDumpPhotosCrypto(session, photosCloudDir, "com.apple.photos.cloud", log, progress);
         }
         else
         {
-            log?.Report("  crypto/ già presente — skip dump PCS");
+            log?.Report("  crypto/ già presente (filenameEnc ok) — skip dump PCS");
         }
 
         // Organize SUBITO dopo MMCS (prima di BuildRecordMetadata, che su 4 pagine
