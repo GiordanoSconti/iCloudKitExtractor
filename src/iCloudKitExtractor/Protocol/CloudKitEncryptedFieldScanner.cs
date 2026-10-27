@@ -42,6 +42,7 @@ public static class CloudKitEncryptedFieldScanner
         "mediaMetaDataEnc",
         "filenameEnc",
         "originalFilenameEnc",
+        "locationEnc",
         // generici / keychain-ish
         "encryptedData",
         "EncryptedData",

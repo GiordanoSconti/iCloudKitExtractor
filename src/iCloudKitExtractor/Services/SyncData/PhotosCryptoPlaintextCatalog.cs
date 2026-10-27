@@ -186,25 +186,43 @@ public static class PhotosCryptoPlaintextCatalog
             if (fieldName.Equals("filenameEnc", StringComparison.Ordinal))
                 continue;
 
+            // Come filenameEnc: field_records prima (record_name da offset).
+            // Wire-order per indice scambia metadati su CPL multi-resource / Live.
+            var boundKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var fromRecords = LoadFieldRecords(cryptoDir, pageBin, fieldName, (recordKey, text) =>
+            {
+                ApplyPlaintextValue(recordKey, fieldName, text, cache, wireToAuth, assetToMasterWire);
+                if (!string.IsNullOrWhiteSpace(recordKey))
+                    boundKeys.Add(recordKey);
+            }, log);
+            total += fromRecords;
+            if (fromRecords > 0)
+                log?.Report($"    {Path.GetFileName(cryptoDir)}/{fieldName}: {fromRecords} (field_records)");
+
             var texts = ReadOrderedPlaintextValues(fieldDir);
-            if (texts.Count == 0)
+            if (texts.Count == 0 || masters.Count == 0)
                 continue;
 
-            if (texts.Count > masters.Count && texts.Count <= masters.Count * 2 && masters.Count > 0)
+            if (texts.Count > masters.Count && texts.Count <= masters.Count * 2)
                 texts = texts.Take(masters.Count).ToList();
 
-            if (texts.Count == masters.Count && masters.Count > 0)
+            var filled = 0;
+            var n = Math.Min(masters.Count, texts.Count);
+            for (var i = 0; i < n; i++)
             {
-                for (var i = 0; i < masters.Count; i++)
-                    ApplyPlaintextValue(masters[i], fieldName, texts[i], cache, wireToAuth, assetToMasterWire);
-                total += texts.Count;
-                log?.Report($"    {Path.GetFileName(cryptoDir)}/{fieldName}: {texts.Count} (wire-order)");
-                continue;
+                var wire = masters[i];
+                if (boundKeys.Contains(wire))
+                    continue;
+                ApplyPlaintextValue(wire, fieldName, texts[i], cache, wireToAuth, assetToMasterWire);
+                filled++;
             }
 
-            var bound = LoadFieldRecords(cryptoDir, pageBin, fieldName, (recordKey, text) =>
-                ApplyPlaintextValue(recordKey, fieldName, text, cache, wireToAuth, assetToMasterWire), log);
-            total += bound;
+            if (filled > 0)
+            {
+                total += filled;
+                log?.Report(
+                    $"    {Path.GetFileName(cryptoDir)}/{fieldName}: +{filled} (wire-order gap)");
+            }
         }
 
         return total;

@@ -88,7 +88,7 @@ public sealed class LibraryCatalog
                         Sha256 = r.IsDBNull(12) ? null : r.GetString(12),
                         IsVideo = IsVideoExt(ext)
                     };
-                    item.AbsolutePath = ResolveExisting(root, item.RelativePath, fileName);
+                    item.AbsolutePath = ResolveExisting(root, item.RelativePath, fileName, token);
                     TouchFileInfo(item);
                     media.Add(item);
                     byToken[token] = item;
@@ -110,6 +110,9 @@ public sealed class LibraryCatalog
                     ApplyMetadata(item, field, raw);
                 }
             }
+
+            // mediaMetaDataEnc CloudKit a volte è sul record sbagliato: EXIF/QuickTime del file vince.
+            EnrichGpsFromFiles(media);
 
             if (TableExists(conn, "Albums"))
             {
@@ -274,26 +277,74 @@ public sealed class LibraryCatalog
 
         if (field.Equals("locationEnc", StringComparison.OrdinalIgnoreCase) && decoded is Dictionary<string, object?> loc)
         {
-            item.Latitude = BplistDecoder.TryDouble(loc.GetValueOrDefault("lat"));
-            item.Longitude = BplistDecoder.TryDouble(loc.GetValueOrDefault("lon"));
+            ApplyLatLon(item,
+                BplistDecoder.TryDouble(loc.GetValueOrDefault("lat")),
+                BplistDecoder.TryDouble(loc.GetValueOrDefault("lon")));
             item.TakenAt ??= BplistDecoder.TryDate(loc.GetValueOrDefault("timestamp"));
-            if (item.Latitude is { } la)
-                item.Metadata["lat"] = la.ToString("0.######");
-            if (item.Longitude is { } lo)
-                item.Metadata["lon"] = lo.ToString("0.######");
         }
 
         if (field.Equals("lastViewedDateEnc", StringComparison.OrdinalIgnoreCase))
             item.TakenAt ??= BplistDecoder.TryDate(decoded);
 
-        if (decoded is Dictionary<string, object?> dict
-            && dict.TryGetValue("{Exif}", out var exifObj)
-            && exifObj is Dictionary<string, object?> exif)
+        if (decoded is Dictionary<string, object?> dict)
         {
-            item.TakenAt ??= BplistDecoder.TryDate(exif.GetValueOrDefault("DateTimeOriginal"))
-                             ?? ParseExifDate(exif.GetValueOrDefault("DateTimeOriginal"));
+            if (dict.TryGetValue("{Exif}", out var exifObj)
+                && exifObj is Dictionary<string, object?> exif)
+            {
+                item.TakenAt ??= BplistDecoder.TryDate(exif.GetValueOrDefault("DateTimeOriginal"))
+                                 ?? ParseExifDate(exif.GetValueOrDefault("DateTimeOriginal"));
+            }
+
+            // CPL mediaMetaDataEnc embeds ImageIO {GPS}; può essere sul record sbagliato —
+            // EnrichGpsFromFiles sovrascrive con EXIF del file quando disponibile.
+            if ((dict.TryGetValue("{GPS}", out var gpsObj) || dict.TryGetValue("GPS", out gpsObj))
+                && gpsObj is Dictionary<string, object?> gps)
+            {
+                var lat = BplistDecoder.TryDouble(gps.GetValueOrDefault("Latitude"));
+                var lon = BplistDecoder.TryDouble(gps.GetValueOrDefault("Longitude"));
+                if (lat is { } la && lon is { } lo)
+                {
+                    if (IsSouthOrWest(gps.GetValueOrDefault("LatitudeRef")))
+                        la = -la;
+                    if (IsSouthOrWest(gps.GetValueOrDefault("LongitudeRef")))
+                        lo = -lo;
+                    ApplyLatLon(item, la, lo);
+                }
+            }
         }
     }
+
+    private static void EnrichGpsFromFiles(List<MediaItem> media)
+    {
+        Parallel.ForEach(
+            media.Where(static m => m.FileExists && !string.IsNullOrWhiteSpace(m.AbsolutePath)),
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8) },
+            item =>
+            {
+                if (!ExifMetadataReader.TryReadGps(item.AbsolutePath, out var lat, out var lon))
+                    return;
+                item.Latitude = lat;
+                item.Longitude = lon;
+                item.Metadata["lat"] = lat.ToString("0.######");
+                item.Metadata["lon"] = lon.ToString("0.######");
+                item.Metadata["gpsSource"] = "file";
+            });
+    }
+
+    private static void ApplyLatLon(MediaItem item, double? lat, double? lon)
+    {
+        if (lat is null || lon is null)
+            return;
+        item.Latitude = lat;
+        item.Longitude = lon;
+        item.Metadata["lat"] = lat.Value.ToString("0.######");
+        item.Metadata["lon"] = lon.Value.ToString("0.######");
+    }
+
+    private static bool IsSouthOrWest(object? refValue) =>
+        refValue is string s
+        && s.Length > 0
+        && (s[0] is 'S' or 's' or 'W' or 'w');
 
     private static DateTime? ParseExifDate(object? value)
     {
@@ -372,8 +423,33 @@ public sealed class LibraryCatalog
             Count = count
         };
 
-    private static string ResolveExisting(string root, string relative, string fileName)
+    private static string ResolveExisting(
+        string root, string relative, string fileName, string? token = null)
     {
+        // Token-named orphan wins: dopo collisioni filenameEnc Organize può lasciare
+        // {token}.* in Sfoglia mentre relative_path punta al display name di un altro.
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            foreach (var sub in new[] { "Sfoglia", "Eliminate", "Nascoste", "Preferiti" })
+            {
+                var dir = Path.Combine(root, sub);
+                if (!Directory.Exists(dir))
+                    continue;
+                try
+                {
+                    foreach (var path in Directory.EnumerateFiles(dir, token + ".*"))
+                    {
+                        if (IsMediaFile(path))
+                            return path;
+                    }
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(relative))
         {
             var p = Path.Combine(root, relative);

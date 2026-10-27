@@ -55,6 +55,8 @@ public static class SyncDataPcsDecryptor
 
         var poolKeys = new List<PcsCompactPrivateKey>(seedKeys);
         var zones = new List<ProtectionZoneKeys>();
+        // DecryptKey/MasterKey → wire record name (CPLMaster del PI che ha prodotto la zona).
+        var keyToRecord = new Dictionary<string, string>(StringComparer.Ordinal);
 
         log?.Report($"  PCS: {fields.Count} ciphertext type=20 — unwrap zone…");
         if (zonesPayload is { Length: > 32 })
@@ -76,11 +78,12 @@ public static class SyncDataPcsDecryptor
             log?.Report(
                 $"  PCS: payload grande ({recordSyncPayload.Length:N0} B) — " +
                 "PI 200–900 + light indexed (no iterative/brute)…");
-            fromRecords = UnwrapLargeRecordPayload(recordSyncPayload, poolKeys);
+            fromRecords = UnwrapLargeRecordPayload(recordSyncPayload, poolKeys, keyToRecord);
         }
         else
         {
             fromRecords = PcsProtectionZone.TryUnwrapAllIterative(recordSyncPayload, poolKeys);
+            IndexZonesByNearbyMaster(recordSyncPayload, fromRecords, keyToRecord);
         }
 
         if (fromRecords.Count > 0)
@@ -161,9 +164,12 @@ public static class SyncDataPcsDecryptor
                 }
 
                 var zoneHint = ZoneHintForContainer(containerHint);
-                var recordName = ResolveRecordName(
-                    recordSyncPayload, field.Offset, fieldName) ?? "";
-                var plain = TryDecryptCipher(
+                var nearName = ResolveRecordName(
+                    recordSyncPayload, field.Offset, fieldName);
+                // Con keyToRecord già popolato dal full-PI scan (payload grandi),
+                // salta unwrap PI locale per-campo (48+12 KB × N DER × seed) —
+                // era ~1 campo/s e rendeva il re-decrypt multi-ora.
+                var (plain, openZone) = TryDecryptCipher(
                     field.Ciphertext,
                     fieldName,
                     zones,
@@ -171,13 +177,30 @@ public static class SyncDataPcsDecryptor
                     recordSyncPayload,
                     field.Offset,
                     zoneHint,
-                    recordName);
+                    nearName,
+                    skipLocalPi: keyToRecord.Count >= 16,
+                    keyToRecord: keyToRecord);
                 if (plain is not { Length: > 0 })
                 {
                     failInGroup++;
                     failed++;
                     continue;
                 }
+
+                // Associazione CloudKit: il record è quello del PI la cui chiave apre
+                // il ciphertext — non il CPLMaster “più vicino” (sbaglia ~25% su CPL).
+                var recordName = TryRecordNameForZone(keyToRecord, openZone);
+                if (string.IsNullOrWhiteSpace(recordName)
+                    && openZone is not null
+                    && !string.IsNullOrWhiteSpace(nearName))
+                {
+                    // Zona aperta dal PI locale ma non ancora indicizzata (light-only):
+                    // registra per i campi successivi dello stesso master.
+                    RememberZoneRecord(keyToRecord, openZone, nearName);
+                    recordName = nearName;
+                }
+
+                recordName ??= nearName ?? "";
 
                 okInGroup++;
                 decrypted++;
@@ -282,35 +305,150 @@ public static class SyncDataPcsDecryptor
     /// <summary>
     /// Unwrap su query CPL multi-MB: tutti i PI record 200–900 B (Photos ADP:
     /// ~400 e ~535) + light indexed-only. Niente DER full-page né ECDH brute.
+    /// Popola <paramref name="keyToRecord"/> con DecryptKey/MasterKey → CPLMaster.
     /// </summary>
     private static List<ProtectionZoneKeys> UnwrapLargeRecordPayload(
         byte[] payload,
-        IReadOnlyList<PcsCompactPrivateKey> poolKeys)
+        IReadOnlyList<PcsCompactPrivateKey> poolKeys,
+        Dictionary<string, string>? keyToRecord = null)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var list = new List<ProtectionZoneKeys>();
 
-        void AddRange(IEnumerable<ProtectionZoneKeys> zones)
+        void AddZone(ProtectionZoneKeys z, string? recordName)
         {
+            if (!seen.Add(Convert.ToHexString(z.MasterKey)))
+            {
+                if (keyToRecord is not null && !string.IsNullOrWhiteSpace(recordName))
+                    RememberZoneRecord(keyToRecord, z, recordName);
+                return;
+            }
+
+            list.Add(z);
+            if (keyToRecord is not null && !string.IsNullOrWhiteSpace(recordName))
+                RememberZoneRecord(keyToRecord, z, recordName);
+        }
+
+        // Scansione TLV con offset: serve per associare ogni PI al CPLMaster proprietario.
+        for (var i = 0; i + 4 < payload.Length; i++)
+        {
+            if (payload[i] != 0x61)
+                continue;
+            if (!TrySliceAppl1(payload, i, out var der) || der.Length is < 200 or > 900)
+                continue;
+
+            var recordName = FindCplMasterNameBefore(payload, i);
+            foreach (var z in PcsProtectionZone.TryUnwrapAll(
+                         der, poolKeys, includeLight: false, includeDer: true))
+                AddZone(z, recordName);
+        }
+
+        foreach (var z in PcsProtectionLight.TryUnwrapAll(
+                     payload, poolKeys, bruteForceUnknownPub: false))
+            AddZone(z, recordName: null);
+
+        return list;
+    }
+
+    private static void IndexZonesByNearbyMaster(
+        byte[] payload,
+        IReadOnlyList<ProtectionZoneKeys> zones,
+        Dictionary<string, string> keyToRecord)
+    {
+        var known = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var z in zones)
+            known.Add(Convert.ToHexString(z.MasterKey));
+
+        for (var i = 0; i + 4 < payload.Length; i++)
+        {
+            if (payload[i] != 0x61)
+                continue;
+            if (!TrySliceAppl1(payload, i, out var der) || der.Length is < 200 or > 900)
+                continue;
+            var recordName = FindCplMasterNameBefore(payload, i);
+            if (string.IsNullOrWhiteSpace(recordName))
+                continue;
+
+            // Le zone sono già in `zones`: se il MasterKey del PI matcha, registra il record.
+            // Re-unwrap richiederebbe i seed; confrontiamo fingerprint del DER già visto
+            // tramite MasterKey dopo unwrap light dal ciphertext del PI stesso.
             foreach (var z in zones)
             {
-                if (!seen.Add(Convert.ToHexString(z.MasterKey)))
+                if (!known.Contains(Convert.ToHexString(z.MasterKey)))
                     continue;
-                list.Add(z);
+                // Heuristica: se il Public matched compare nel DER, è questo PI.
+                if (z.MasterPublicMatched is { Length: > 0 }
+                    && IndexOf(der, z.MasterPublicMatched) >= 0)
+                    RememberZoneRecord(keyToRecord, z, recordName);
             }
         }
+    }
 
-        foreach (var der in PcsProtectionZone.TryExtractAllRecordProtectionInfoDer(payload))
+    private static void RememberZoneRecord(
+        Dictionary<string, string> keyToRecord,
+        ProtectionZoneKeys zone,
+        string recordName)
+    {
+        keyToRecord[Convert.ToHexString(zone.DecryptKey)] = recordName;
+        keyToRecord[Convert.ToHexString(zone.MasterKey)] = recordName;
+    }
+
+    private static string? TryRecordNameForZone(
+        IReadOnlyDictionary<string, string> keyToRecord,
+        ProtectionZoneKeys? zone)
+    {
+        if (zone is null || keyToRecord.Count == 0)
+            return null;
+        if (keyToRecord.TryGetValue(Convert.ToHexString(zone.DecryptKey), out var byDec))
+            return byDec;
+        if (keyToRecord.TryGetValue(Convert.ToHexString(zone.MasterKey), out var byMaster))
+            return byMaster;
+        return null;
+    }
+
+    private static bool ZoneMapsToRecord(
+        IReadOnlyDictionary<string, string> keyToRecord,
+        ProtectionZoneKeys zone,
+        string recordName) =>
+        (keyToRecord.TryGetValue(Convert.ToHexString(zone.DecryptKey), out var a)
+         && string.Equals(a, recordName, StringComparison.Ordinal))
+        || (keyToRecord.TryGetValue(Convert.ToHexString(zone.MasterKey), out var b)
+            && string.Equals(b, recordName, StringComparison.Ordinal));
+
+    private static string? FindCplMasterNameBefore(byte[] payload, int before)
+    {
+        if (before <= 0)
+            return null;
+        var lookback = Math.Min(before, 12_000);
+        var start = before - lookback;
+        var span = payload.AsSpan(start, lookback);
+        var rel = span.LastIndexOf("CPLMaster"u8);
+        if (rel < 0)
+            return null;
+        return CplPhotosRecordParser.TryExtractWireRecordNameBefore(
+                   payload, start + rel, "CPLMaster"u8)
+               ?? CplPhotosRecordParser.TryFindNearestUuidBefore(payload, start + rel, 256);
+    }
+
+    private static bool TrySliceAppl1(byte[] data, int offset, out byte[] der)
+    {
+        der = [];
+        try
         {
-            if (der.Length is < 200 or > 900)
-                continue;
-            AddRange(PcsProtectionZone.TryUnwrapAll(
-                der, poolKeys, includeLight: false, includeDer: true));
+            if (offset < 0 || offset >= data.Length || data[offset] != 0x61)
+                return false;
+            // Delegato all'estrattore esistente sulla finestra locale.
+            var window = data.AsSpan(offset, Math.Min(data.Length - offset, 1200));
+            var all = PcsProtectionZone.TryExtractAllRecordProtectionInfoDer(window);
+            if (all.Count == 0)
+                return false;
+            der = all[0];
+            return true;
         }
-
-        AddRange(PcsProtectionLight.TryUnwrapAll(
-            payload, poolKeys, bruteForceUnknownPub: false));
-        return list;
+        catch
+        {
+            return false;
+        }
     }
 
     private static List<ProtectionZoneKeys> CapZonesForFieldDecrypt(
@@ -367,7 +505,7 @@ public static class SyncDataPcsDecryptor
         return -1;
     }
 
-    private static byte[]? TryDecryptCipher(
+    private static (byte[]? Plain, ProtectionZoneKeys? Zone) TryDecryptCipher(
         byte[] ciphertext,
         string fieldName,
         List<ProtectionZoneKeys> zones,
@@ -375,32 +513,50 @@ public static class SyncDataPcsDecryptor
         byte[] recordSyncPayload,
         int fieldOffset,
         string? zoneName = null,
-        string? recordName = null)
+        string? recordName = null,
+        bool skipLocalPi = false,
+        IReadOnlyDictionary<string, string>? keyToRecord = null)
     {
         recordName ??= ResolveRecordName(recordSyncPayload, fieldOffset, fieldName);
         var aadCandidates = AadCandidates(fieldName, zoneName, recordName);
 
-        // 1) Zone già unwrapped (veloce) — percorso tipico Sync Data / Manatee.
-        foreach (var zone in zones)
+        // 1) PI locale: finestra che include anche il PI *dopo* i campi cifrati
+        //    (su CPL mediaMeta sta prima del ProtectionInfo dello stesso master).
+        //    Skip su payload grandi già indicizzati (key→record): costo proibitivo.
+        if (!skipLocalPi)
         {
-            var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
-            if (plain is { Length: > 0 })
-                return plain;
-        }
-
-        // 2) PI locale nella finestra record (48 KB). Su payload grandi con già
-        // centinaia di zone globali il grind locale sui fail è troppo costoso.
-        if (zones.Count < 64 || recordSyncPayload.Length < 200_000)
-        {
-            var localZones = BuildLocalZones(zones, poolKeys, recordSyncPayload, fieldOffset);
+            var localZones = BuildLocalZones([], poolKeys, recordSyncPayload, fieldOffset);
             foreach (var zone in localZones)
             {
-                if (zones.Contains(zone))
+                var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
+                if (plain is { Length: > 0 })
+                    return (plain, zone);
+            }
+        }
+
+        // 2) Zone già unwrapped globali — Notes / Sync Data classico / CPL large.
+        //    Prova prima le zone già mappate sul nearName (1–2 hit tipici).
+        if (keyToRecord is { Count: > 0 } && !string.IsNullOrWhiteSpace(recordName))
+        {
+            foreach (var zone in zones)
+            {
+                if (!ZoneMapsToRecord(keyToRecord, zone, recordName))
                     continue;
                 var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
                 if (plain is { Length: > 0 })
-                    return plain;
+                    return (plain, zone);
             }
+        }
+
+        foreach (var zone in zones)
+        {
+            if (keyToRecord is { Count: > 0 }
+                && !string.IsNullOrWhiteSpace(recordName)
+                && ZoneMapsToRecord(keyToRecord, zone, recordName))
+                continue; // già provata sopra
+            var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
+            if (plain is { Length: > 0 })
+                return (plain, zone);
         }
 
         // 3) PI light nel ciphertext (solo se poche zone globali).
@@ -411,11 +567,11 @@ public static class SyncDataPcsDecryptor
             {
                 var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
                 if (plain is { Length: > 0 })
-                    return plain;
+                    return (plain, zone);
             }
         }
 
-        return null;
+        return (null, null);
     }
 
     private static byte[]? TryDecryptWithZone(
@@ -491,10 +647,10 @@ public static class SyncDataPcsDecryptor
     {
         if (payload is not { Length: > 64 })
             return [];
-        // Photos CPL: PI del CPLMaster spesso >8 KB prima di filenameEnc/resOriginalRes
-        // (stesso lookback di CplPhotosRecordParser). BeaconStore analogo.
+        // Photos CPL: PI del master spesso *dopo* mediaMetaDataEnc/filenameEnc
+        // (stesso record). Serve lookahead ampio oltre al lookback classico.
         const int lookback = 48 * 1024;
-        const int lookahead = 4 * 1024;
+        const int lookahead = 12 * 1024;
         var start = Math.Max(0, fieldOffset - lookback);
         var end = Math.Min(payload.Length, fieldOffset + lookahead);
         return payload.AsSpan(start, end - start).ToArray();
@@ -706,7 +862,8 @@ public static class SyncDataPcsDecryptor
             return
             [
                 "albumNameEnc", "importedByBundleIdentifierEnc", "importedByDisplayNameEnc",
-                "mediaMetaDataEnc", "filenameEnc", "originalFilenameEnc"
+                "mediaMetaDataEnc", "filenameEnc", "originalFilenameEnc",
+                "locationEnc"
             ];
         }
 

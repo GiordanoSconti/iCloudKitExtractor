@@ -460,6 +460,10 @@ public static class CplPhotosRecordParser
 
     /// <summary>
     /// UUID record CPL per un campo cifrato: master per metadati asset, album record per albumNameEnc.
+    /// Su Photos, <c>mediaMetaDataEnc</c> spesso precede il ProtectionInfo dello stesso master:
+    /// il CPLMaster “più vicino indietro” può essere il record precedente — preferisci il
+    /// master immediatamente prima del primo <c>CPLMaster</c>/<c>appl[1]</c> dopo il campo
+    /// entro 12 KB, altrimenti il nearest-before classico.
     /// </summary>
     public static string? TryFindUuidForEncryptedField(
         byte[] payload,
@@ -470,17 +474,30 @@ public static class CplPhotosRecordParser
             return FindUuidBeforeMarker(payload, fieldOffset, "CPLAlbum"u8, 16_384)
                    ?? TryFindNearestUuidBefore(payload, fieldOffset, 16_384);
 
-        // filenameEnc / bundle / app → record master (wire base64 prima di CPLMaster).
-        var masterAt = IndexOfAscii(payload, "CPLMaster"u8, Math.Max(0, fieldOffset - 8_192));
-        if (masterAt >= 0 && masterAt < fieldOffset)
+        // Tutti i campi master (mediaMeta/location/filename/…): proprietario =
+        // wire name dell’*ultimo* CPLMaster prima del campo. Il ramo “forward
+        // master” sbagliava di uno (prendeva il record *successivo*).
+        // keyToRecord (chiave che apre il ciphertext) resta la fonte primaria
+        // in SyncDataPcsDecryptor; questo è il fallback / AAD hint.
+        var lookback = fieldName is "mediaMetaDataEnc" or "locationEnc" or "albumNameEnc"
+            ? 12_288
+            : 8_192;
+        var lookStart = Math.Max(0, fieldOffset - lookback);
+        if (fieldOffset > lookStart)
         {
-            var wire = TryExtractWireRecordNameBefore(payload, masterAt, "CPLMaster"u8);
-            if (!string.IsNullOrWhiteSpace(wire))
-                return wire;
+            var span = payload.AsSpan(lookStart, fieldOffset - lookStart);
+            var rel = span.LastIndexOf("CPLMaster"u8);
+            if (rel >= 0)
+            {
+                var masterAt = lookStart + rel;
+                var wire = TryExtractWireRecordNameBefore(payload, masterAt, "CPLMaster"u8);
+                if (!string.IsNullOrWhiteSpace(wire))
+                    return wire;
+            }
         }
 
-        return FindUuidBeforeMarker(payload, fieldOffset, "CPLMaster"u8, 8_192)
-               ?? TryFindNearestUuidBefore(payload, fieldOffset, 8_192);
+        return FindUuidBeforeMarker(payload, fieldOffset, "CPLMaster"u8, lookback)
+               ?? TryFindNearestUuidBefore(payload, fieldOffset, lookback);
     }
 
     private static int CountAscii(byte[] data, ReadOnlySpan<byte> needle)

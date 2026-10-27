@@ -65,12 +65,21 @@ public static class PhotosLibraryOrganizer
         var hiddenUsed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var deletedUsed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var favUsed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var claimedSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var renamed = 0;
         var albumCopies = 0;
         var dbMedia = 0;
         var dbMetadata = 0;
         var dbHashed = 0;
+        var bindSkip = 0;
         var entries = cache.Entries;
+
+        // mediaMetaDataEnc spesso agganciato al master sbagliato: riallinea al GPS/data EXIF del file.
+        PhotosMediaMetaReconciler.RebindByFileExif(
+            cache,
+            entries,
+            entry => LocatePlainFile(photosDir, sfoglia, hiddenDir, deletedDir, favDir, entry, cache),
+            log);
 
         await using var db = await PhotosCatalogSqlite.OpenAsync(photosDir, ct);
         await db.ClearAsync(ct);
@@ -92,6 +101,31 @@ public static class PhotosLibraryOrganizer
                     photosDir, sfoglia, hiddenDir, deletedDir, favDir, entry, cache);
                 if (plainPath is null)
                     continue;
+
+                // Evita che due record con lo stesso filenameEnc si leghino allo stesso file.
+                var plainFull = Path.GetFullPath(plainPath);
+                if (!claimedSources.Add(plainFull))
+                {
+                    var tokenOnly = LocatePlainFileByToken(
+                        sfoglia, hiddenDir, deletedDir, favDir, entry);
+                    if (tokenOnly is null)
+                    {
+                        bindSkip++;
+                        log?.Report(
+                            $"  organize bind-skip {entry.Token}: file già usato da altro record " +
+                            $"({Path.GetFileName(plainPath)})");
+                        continue;
+                    }
+
+                    plainFull = Path.GetFullPath(tokenOnly);
+                    if (!claimedSources.Add(plainFull))
+                    {
+                        bindSkip++;
+                        continue;
+                    }
+
+                    plainPath = tokenOnly;
+                }
 
                 var ext = Path.GetExtension(plainPath);
                 if (string.IsNullOrWhiteSpace(ext) || ext.Equals(".bin", StringComparison.OrdinalIgnoreCase))
@@ -189,7 +223,9 @@ public static class PhotosLibraryOrganizer
 
         log?.Report(
             $"  Libreria: rinominati={renamed}, speciali={specialRenamed}, copie album={albumCopies}, " +
-            $"media DB={dbMedia}/{entries.Count}, sha256={dbHashed}, metadati={dbMetadata} → Photos.db");
+            $"media DB={dbMedia}/{entries.Count}, sha256={dbHashed}, metadati={dbMetadata}" +
+            (bindSkip > 0 ? $", bind-skip={bindSkip}" : "") +
+            " → Photos.db");
         return renamed + specialRenamed;
     }
 
@@ -227,6 +263,15 @@ public static class PhotosLibraryOrganizer
         PhotosMediaMetaCache.MediaEntry entry,
         PhotosMediaMetaCache cache)
     {
+        // 1) Identità forte: file ancora nominato col token MMCS / record sanitizzato.
+        //    Prima del display name: due CPL con lo stesso filenameEnc altrimenti
+        //    si legano entrambi al primo file già rinominato (metadati scambiati).
+        var byToken = LocatePlainFileByToken(sfoglia, hiddenDir, deletedDir, favDir, entry);
+        if (byToken is not null)
+            return byToken;
+
+        // 2) Path salvato per QUESTO token in un organize precedente.
+        //    claimedSources a monte evita che due entry riusino lo stesso path.
         if (!string.IsNullOrWhiteSpace(entry.PlainRelativePath))
         {
             var fromRel = Path.Combine(photosDir, entry.PlainRelativePath);
@@ -234,32 +279,34 @@ public static class PhotosLibraryOrganizer
                 return fromRel;
         }
 
-        // Già rinominato in un run precedente: cerca il display name da filenameEnc.
+        // 3) Display name solo con prova di ownership (sidecar .mmcsauth.txt).
         var displayGuess = cache.ResolveDisplayFileName(entry.RecordName, ".bin", entry.MmcsAuth);
-        if (!string.IsNullOrWhiteSpace(displayGuess))
+        if (!string.IsNullOrWhiteSpace(displayGuess) && !string.IsNullOrWhiteSpace(entry.MmcsAuth))
         {
             foreach (var dir in new[] { sfoglia, hiddenDir, deletedDir, favDir })
             {
                 if (!Directory.Exists(dir))
                     continue;
-                var candidate = Path.Combine(dir, displayGuess);
-                if (File.Exists(candidate) && IsMediaPlain(candidate))
-                    return candidate;
-                // Live: IMG_0001.MOV vs IMG_0001_Live.MOV
-                if (entry.IsLive || entry.RecordName.EndsWith("_Live", StringComparison.OrdinalIgnoreCase))
+                foreach (var candidate in EnumerateDisplayCandidates(dir, displayGuess, entry))
                 {
-                    var stem = Path.GetFileNameWithoutExtension(displayGuess);
-                    var ext = Path.GetExtension(displayGuess);
-                    if (!stem.EndsWith("_Live", StringComparison.OrdinalIgnoreCase))
-                    {
-                        candidate = Path.Combine(dir, stem + "_Live" + ext);
-                        if (File.Exists(candidate) && IsMediaPlain(candidate))
-                            return candidate;
-                    }
+                    if (!IsMediaPlain(candidate))
+                        continue;
+                    if (MmcsAuthSidecarMatches(candidate, entry.MmcsAuth))
+                        return candidate;
                 }
             }
         }
 
+        return null;
+    }
+
+    private static string? LocatePlainFileByToken(
+        string sfoglia,
+        string hiddenDir,
+        string deletedDir,
+        string favDir,
+        PhotosMediaMetaCache.MediaEntry entry)
+    {
         foreach (var dir in new[] { sfoglia, hiddenDir, deletedDir, favDir })
         {
             var found = LocatePlainFileInDir(dir, entry);
@@ -268,6 +315,44 @@ public static class PhotosLibraryOrganizer
         }
 
         return null;
+    }
+
+    private static IEnumerable<string> EnumerateDisplayCandidates(
+        string dir, string displayGuess, PhotosMediaMetaCache.MediaEntry entry)
+    {
+        var primary = Path.Combine(dir, displayGuess);
+        if (File.Exists(primary))
+            yield return primary;
+
+        if (!(entry.IsLive || entry.RecordName.EndsWith("_Live", StringComparison.OrdinalIgnoreCase)))
+            yield break;
+
+        var stem = Path.GetFileNameWithoutExtension(displayGuess);
+        var ext = Path.GetExtension(displayGuess);
+        if (stem.EndsWith("_Live", StringComparison.OrdinalIgnoreCase))
+            yield break;
+
+        var live = Path.Combine(dir, stem + "_Live" + ext);
+        if (File.Exists(live))
+            yield return live;
+    }
+
+    private static bool MmcsAuthSidecarMatches(string mediaPath, string mmcsAuth)
+    {
+        var dir = Path.GetDirectoryName(mediaPath) ?? "";
+        var stem = Path.GetFileNameWithoutExtension(mediaPath);
+        var authSidecar = Path.Combine(dir, stem + ".mmcsauth.txt");
+        if (!File.Exists(authSidecar))
+            return false;
+        try
+        {
+            return File.ReadAllText(authSidecar).Trim()
+                .Equals(mmcsAuth, StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string? LocatePlainFileInDir(

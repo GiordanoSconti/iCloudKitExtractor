@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using PhotosViewer.Models;
 using PhotosViewer.Services;
@@ -10,13 +11,27 @@ namespace PhotosViewer;
 
 public partial class WorldMapView : UserControl
 {
-    private const int CardW = 96;
-    private const int CardH = 112;
-    private const int ThumbDecode = 96;
-    private const int MaxConcurrentThumbs = 6;
+    private const int CardW = 88;
+    private const int CardH = 100;
+    private const int ThumbDecode = 72;
+    private const int MaxConcurrentThumbs = 4;
+    private const int MaxThumbCards = 36;
+    private const int ClusterCellPx = 72;
+    private const double CullMargin = 80;
+    private const int ZoomCardsFrom = 14;
+
+    private static readonly SolidColorBrush AccentBrush = Freeze(Color.FromRgb(0x00, 0x71, 0xE3));
+    private static readonly SolidColorBrush AccentSoftBrush = Freeze(Color.FromArgb(0xEE, 0x00, 0x71, 0xE3));
+    private static readonly SolidColorBrush WhiteBrush = Brushes.White;
+    private static readonly SolidColorBrush CardBg = Brushes.White;
+    private static readonly SolidColorBrush CardBorder = Freeze(Color.FromRgb(0xD2, 0xD2, 0xD7));
+    private static readonly SolidColorBrush CardBorderSel = AccentBrush;
+    private static readonly SolidColorBrush NameFg = Freeze(Color.FromRgb(0x1D, 0x1D, 0x1F));
+    private static readonly SolidColorBrush ThumbBg = Freeze(Color.FromRgb(0xF5, 0xF5, 0xF7));
+    private static readonly SolidColorBrush DotStroke = Freeze(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF));
 
     private IReadOnlyList<MediaItem> _items = [];
-    private readonly List<PinVisual> _pins = [];
+    private readonly List<MarkerVisual> _markers = [];
     private CancellationTokenSource? _thumbCts;
     private MediaItem? _selected;
     private DateTime _lastPinClick;
@@ -29,6 +44,8 @@ public partial class WorldMapView : UserControl
     private double _dragCenterLat;
     private double _dragCenterLon;
     private bool _viewInitialized;
+    private bool _dirtyDuringDrag;
+    private DispatcherTimer? _settleTimer;
 
     public event Action<MediaItem>? ItemSelected;
 
@@ -38,7 +55,20 @@ public partial class WorldMapView : UserControl
         _map = new SlippyMapLayer(TileCanvas);
         AttributionText.Text = SlippyMapLayer.Attribution;
         SizeChanged += (_, _) => OnViewportChanged(resetView: false);
-        Unloaded += (_, _) => _thumbCts?.Cancel();
+        Unloaded += (_, _) =>
+        {
+            _thumbCts?.Cancel();
+            _settleTimer?.Stop();
+        };
+        _settleTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(120)
+        };
+        _settleTimer.Tick += (_, _) =>
+        {
+            _settleTimer.Stop();
+            ApplyView(fullRebuild: true);
+        };
     }
 
     public void SetItems(IReadOnlyList<MediaItem> items)
@@ -55,8 +85,8 @@ public partial class WorldMapView : UserControl
     public void ClearSelection()
     {
         _selected = null;
-        foreach (var pin in _pins)
-            pin.SetSelected(false);
+        foreach (var m in _markers)
+            m.SetSelected(false);
     }
 
     private void OnViewportChanged(bool resetView)
@@ -69,52 +99,182 @@ public partial class WorldMapView : UserControl
             var geo = _items.Select(static m => (m.Latitude!.Value, m.Longitude!.Value)).ToList();
             _map.FitBounds(geo, ActualWidth, ActualHeight);
             _viewInitialized = true;
-        }
-        else
-        {
-            _map.SetView(_map.Zoom, _map.CenterLat, _map.CenterLon, ActualWidth, ActualHeight);
+            ApplyView(fullRebuild: true);
+            return;
         }
 
-        ApplyView();
+        _map.SetView(_map.Zoom, _map.CenterLat, _map.CenterLon, ActualWidth, ActualHeight);
+        ScheduleSettle();
     }
 
-    private void ApplyView()
+    private void ScheduleSettle()
+    {
+        if (_settleTimer is null)
+            return;
+        _settleTimer.Stop();
+        _settleTimer.Start();
+    }
+
+    private void ApplyView(bool fullRebuild)
     {
         if (_map is null)
             return;
 
-        _map.RefreshTiles();
-        RebuildPins();
+        if (fullRebuild)
+        {
+            _map.RefreshTiles();
+            RebuildMarkers();
+        }
+        else
+        {
+            _map.RepositionTiles();
+            // marker positions stay correct relative to map center only after Rebuild;
+            // during drag we use canvas TranslateTransform instead.
+        }
+
         StatusHint.Text = _items.Count == 0
             ? ""
-            : $"{_items.Count} punti · zoom {_map.Zoom} · trascina per spostare";
+            : $"{_items.Count} geolocalizzati · {_markers.Count} sulla mappa · z{_map.Zoom}";
     }
 
-    private void RebuildPins()
+    private void RebuildMarkers()
     {
         _layoutVersion++;
         var version = _layoutVersion;
         PinsCanvas.Children.Clear();
-        _pins.Clear();
+        PinsCanvas.RenderTransform = null;
+        TileCanvas.RenderTransform = null;
+        _markers.Clear();
         _thumbCts?.Cancel();
         _thumbCts = new CancellationTokenSource();
 
         if (_map is null || _items.Count == 0)
             return;
 
-        foreach (var item in _items)
+        var clusters = BuildClusters();
+        var thumbBudget = MaxThumbCards;
+
+        foreach (var cluster in clusters)
         {
-            var pt = _map.LatLonToScreen(item.Latitude!.Value, item.Longitude!.Value);
-            var pin = BuildPin(item);
-            Canvas.SetLeft(pin.Root, pt.X - CardW / 2.0);
-            Canvas.SetTop(pin.Root, pt.Y - CardH / 2.0);
-            PinsCanvas.Children.Add(pin.Root);
-            _pins.Add(pin);
-            if (_selected is not null && ReferenceEquals(_selected, item))
-                pin.SetSelected(true);
+            FrameworkElement root;
+            MarkerVisual visual;
+
+            if (cluster.Items.Count == 1)
+            {
+                var item = cluster.Items[0];
+                var showCard = _map.Zoom >= ZoomCardsFrom && thumbBudget > 0;
+                if (showCard)
+                    thumbBudget--;
+
+                root = showCard ? BuildCard(item) : BuildDot(item);
+                visual = new MarkerVisual(item, root, isCluster: false, cluster.Items);
+            }
+            else
+            {
+                root = BuildClusterBubble(cluster.Items.Count, cluster.Items);
+                visual = new MarkerVisual(cluster.Items[0], root, isCluster: true, cluster.Items);
+            }
+
+            Canvas.SetLeft(root, cluster.Screen.X - root.Width / 2.0);
+            Canvas.SetTop(root, cluster.Screen.Y - root.Height / 2.0);
+            PinsCanvas.Children.Add(root);
+            _markers.Add(visual);
+
+            if (_selected is not null
+                && !visual.IsCluster
+                && ReferenceEquals(_selected, visual.Item))
+                visual.SetSelected(true);
+
+            WireMarkerInput(visual);
         }
 
         _ = PumpThumbnailsAsync(version, _thumbCts.Token);
+    }
+
+    private List<Cluster> BuildClusters()
+    {
+        var result = new List<Cluster>();
+        if (_map is null)
+            return result;
+
+        var w = ActualWidth;
+        var h = ActualHeight;
+        var cell = Math.Max(40, ClusterCellPx - Math.Max(0, _map.Zoom - 10) * 4);
+        var buckets = new Dictionary<(int, int), Cluster>();
+
+        foreach (var item in _items)
+        {
+            var pt = _map.LatLonToScreen(item.Latitude!.Value, item.Longitude!.Value);
+            if (pt.X < -CullMargin || pt.Y < -CullMargin || pt.X > w + CullMargin || pt.Y > h + CullMargin)
+                continue;
+
+            // Zoom alto: niente cluster, un marker per punto (ancora cullati).
+            if (_map.Zoom >= ZoomCardsFrom)
+            {
+                result.Add(new Cluster(pt, [item]));
+                continue;
+            }
+
+            var cx = (int)Math.Floor(pt.X / cell);
+            var cy = (int)Math.Floor(pt.Y / cell);
+            if (!buckets.TryGetValue((cx, cy), out var cluster))
+            {
+                cluster = new Cluster(pt, []);
+                buckets[(cx, cy)] = cluster;
+            }
+
+            cluster.Items.Add(item);
+            // baricentro progressivo
+            var n = cluster.Items.Count;
+            cluster.Screen = new Point(
+                (cluster.Screen.X * (n - 1) + pt.X) / n,
+                (cluster.Screen.Y * (n - 1) + pt.Y) / n);
+        }
+
+        if (_map.Zoom < ZoomCardsFrom)
+            result.AddRange(buckets.Values);
+
+        return result;
+    }
+
+    private void WireMarkerInput(MarkerVisual visual)
+    {
+        visual.Root.MouseLeftButtonDown += (_, ev) =>
+        {
+            ev.Handled = true;
+            if (visual.IsCluster)
+            {
+                ZoomIntoCluster(visual.Members);
+                return;
+            }
+
+            var item = visual.Item;
+            var now = DateTime.UtcNow;
+            if (_lastPinClickItem == item && (now - _lastPinClick).TotalMilliseconds < 350)
+            {
+                MediaFileOpener.TryOpen(MediaPreviewHelper.GetInlineVideoPath(item) ?? item.AbsolutePath);
+                return;
+            }
+
+            _selected = item;
+            foreach (var m in _markers)
+                m.SetSelected(!m.IsCluster && ReferenceEquals(m.Item, item));
+            ItemSelected?.Invoke(item);
+            _lastPinClick = now;
+            _lastPinClickItem = item;
+        };
+    }
+
+    private void ZoomIntoCluster(IReadOnlyList<MediaItem> members)
+    {
+        if (_map is null || members.Count == 0)
+            return;
+
+        var geo = members.Select(static m => (m.Latitude!.Value, m.Longitude!.Value)).ToList();
+        _map.FitBounds(geo, ActualWidth, ActualHeight);
+        if (_map.Zoom < ZoomCardsFrom)
+            _map.ZoomAt(Math.Min(ZoomCardsFrom, _map.Zoom + 2), ActualWidth / 2.0, ActualHeight / 2.0);
+        ApplyView(fullRebuild: true);
     }
 
     private void MapHost_OnMouseWheel(object sender, MouseWheelEventArgs e)
@@ -125,7 +285,7 @@ public partial class WorldMapView : UserControl
         var pos = e.GetPosition(MapHost);
         var delta = e.Delta > 0 ? 1 : -1;
         _map.ZoomAt(_map.Zoom + delta, pos.X, pos.Y);
-        ApplyView();
+        ApplyView(fullRebuild: true);
         e.Handled = true;
     }
 
@@ -133,16 +293,32 @@ public partial class WorldMapView : UserControl
     {
         if (_map is null || _items.Count == 0 || e.ChangedButton != MouseButton.Left)
             return;
-        if (e.OriginalSource is FrameworkElement { Tag: MediaItem })
+        if (e.OriginalSource is FrameworkElement fe && fe.DataContext is MarkerVisual)
+            return;
+        // ignore clicks on markers (they handle MouseLeftButtonDown)
+        if (FindMarkerRoot(e.OriginalSource as DependencyObject) is not null)
             return;
 
         _dragging = true;
+        _dirtyDuringDrag = false;
         _dragStart = e.GetPosition(MapHost);
         _dragCenterLat = _map.CenterLat;
         _dragCenterLon = _map.CenterLon;
         MapHost.CaptureMouse();
         MapHost.Cursor = Cursors.SizeAll;
         e.Handled = true;
+    }
+
+    private static FrameworkElement? FindMarkerRoot(DependencyObject? src)
+    {
+        while (src is not null)
+        {
+            if (src is FrameworkElement { Tag: MediaItem or IReadOnlyList<MediaItem> } fe)
+                return fe;
+            src = VisualTreeHelper.GetParent(src);
+        }
+
+        return null;
     }
 
     private void MapHost_OnMouseMove(object sender, MouseEventArgs e)
@@ -153,27 +329,41 @@ public partial class WorldMapView : UserControl
         var p = e.GetPosition(MapHost);
         var dx = p.X - _dragStart.X;
         var dy = p.Y - _dragStart.Y;
+
         _map.SetView(_map.Zoom, _dragCenterLat, _dragCenterLon, ActualWidth, ActualHeight);
         _map.PanByPixels(dx, dy);
-        ApplyView();
+
+        // Pan fluido: trasla i canvas già disegnati, niente rebuild / fetch.
+        var tt = new TranslateTransform(dx, dy);
+        TileCanvas.RenderTransform = tt;
+        PinsCanvas.RenderTransform = tt;
+        _dirtyDuringDrag = true;
     }
 
-    private void MapHost_OnMouseUp(object sender, MouseButtonEventArgs e)
+    private void EndDrag()
     {
         if (!_dragging)
             return;
         _dragging = false;
         MapHost.ReleaseMouseCapture();
         MapHost.Cursor = Cursors.Arrow;
+        TileCanvas.RenderTransform = null;
+        PinsCanvas.RenderTransform = null;
+
+        if (_dirtyDuringDrag && _map is not null)
+        {
+            // Centro già aggiornato durante il drag: rebuild markers + tile settle.
+            ApplyView(fullRebuild: true);
+            _dirtyDuringDrag = false;
+        }
     }
+
+    private void MapHost_OnMouseUp(object sender, MouseButtonEventArgs e) => EndDrag();
 
     private void MapHost_OnMouseLeave(object sender, MouseEventArgs e)
     {
-        if (!_dragging)
-            return;
-        _dragging = false;
-        MapHost.ReleaseMouseCapture();
-        MapHost.Cursor = Cursors.Arrow;
+        if (_dragging)
+            EndDrag();
     }
 
     private void ZoomInBtn_OnClick(object sender, RoutedEventArgs e)
@@ -181,7 +371,7 @@ public partial class WorldMapView : UserControl
         if (_map is null)
             return;
         _map.ZoomAt(_map.Zoom + 1, ActualWidth / 2.0, ActualHeight / 2.0);
-        ApplyView();
+        ApplyView(fullRebuild: true);
     }
 
     private void ZoomOutBtn_OnClick(object sender, RoutedEventArgs e)
@@ -189,34 +379,41 @@ public partial class WorldMapView : UserControl
         if (_map is null)
             return;
         _map.ZoomAt(_map.Zoom - 1, ActualWidth / 2.0, ActualHeight / 2.0);
-        ApplyView();
+        ApplyView(fullRebuild: true);
     }
 
     private async Task PumpThumbnailsAsync(int version, CancellationToken ct)
     {
         try
         {
+            var cards = _markers
+                .Where(static m => !m.IsCluster && m.Image is not null)
+                .Take(MaxThumbCards)
+                .ToList();
+            if (cards.Count == 0)
+                return;
+
             using var gate = new SemaphoreSlim(MaxConcurrentThumbs);
-            var tasks = _pins.Select(async pin =>
+            var tasks = cards.Select(async marker =>
             {
                 await gate.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
-                    if (version != _layoutVersion || ct.IsCancellationRequested)
+                    if (version != _layoutVersion || ct.IsCancellationRequested || marker.Image is null)
                         return;
 
-                    // Per video/Live: AbsolutePath = still (HEIC) oppure file video → Shell first frame.
-                    var src = await ThumbnailLoader.LoadAsync(pin.Item.AbsolutePath, ThumbDecode, ct)
+                    var src = await ThumbnailLoader.LoadAsync(marker.Item.AbsolutePath, ThumbDecode, ct)
                         .ConfigureAwait(false);
                     if (src is null || version != _layoutVersion || ct.IsCancellationRequested)
                         return;
 
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        if (version != _layoutVersion)
+                        if (version != _layoutVersion || marker.Image is null)
                             return;
-                        pin.Image.Source = src;
-                        pin.Placeholder.Visibility = Visibility.Collapsed;
+                        marker.Image.Source = src;
+                        if (marker.Placeholder is not null)
+                            marker.Placeholder.Visibility = Visibility.Collapsed;
                     });
                 }
                 catch (OperationCanceledException)
@@ -237,19 +434,61 @@ public partial class WorldMapView : UserControl
         }
     }
 
-    private void StopAllPinVideos()
+    private FrameworkElement BuildDot(MediaItem item)
     {
-        foreach (var pin in _pins)
-            pin.StopVideo();
+        const double size = 14;
+        var ellipse = new Ellipse
+        {
+            Width = size,
+            Height = size,
+            Fill = AccentBrush,
+            Stroke = DotStroke,
+            StrokeThickness = 2,
+            Cursor = Cursors.Hand,
+            Tag = item,
+            ToolTip = $"{item.FileName}\n{item.Latitude:0.######}, {item.Longitude:0.######}"
+        };
+        return ellipse;
     }
 
-    private PinVisual BuildPin(MediaItem item)
+    private FrameworkElement BuildClusterBubble(int count, IReadOnlyList<MediaItem> members)
+    {
+        var size = count >= 100 ? 44 : count >= 20 ? 38 : 32;
+        var grid = new Grid
+        {
+            Width = size,
+            Height = size,
+            Cursor = Cursors.Hand,
+            Tag = members
+        };
+        grid.Children.Add(new Ellipse
+        {
+            Fill = AccentSoftBrush,
+            Stroke = WhiteBrush,
+            StrokeThickness = 2,
+            IsHitTestVisible = false
+        });
+        grid.Children.Add(new TextBlock
+        {
+            Text = count >= 1000 ? $"{count / 1000.0:0.#}k" : count.ToString(),
+            FontSize = count >= 100 ? 11 : 12,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = WhiteBrush,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false
+        });
+        grid.ToolTip = $"{count} elementi — clic per avvicinare";
+        return grid;
+    }
+
+    private FrameworkElement BuildCard(MediaItem item)
     {
         var videoPath = MediaPreviewHelper.GetInlineVideoPath(item);
         var image = new Image
         {
-            Width = 80,
-            Height = 64,
+            Width = 72,
+            Height = 56,
             Stretch = Stretch.UniformToFill,
             SnapsToDevicePixels = true
         };
@@ -257,47 +496,30 @@ public partial class WorldMapView : UserControl
         var placeholder = new TextBlock
         {
             Text = videoPath is not null ? "▶" : "●",
-            FontSize = 18,
+            FontSize = 16,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0x71, 0xE3))
-        };
-
-        var playOverlay = new Border
-        {
-            Background = new SolidColorBrush(Color.FromArgb(0x88, 0x00, 0x00, 0x00)),
-            Visibility = videoPath is not null ? Visibility.Visible : Visibility.Collapsed,
-            IsHitTestVisible = false,
-            Child = new TextBlock
-            {
-                Text = "▶",
-                FontSize = 22,
-                Foreground = Brushes.White,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            }
+            Foreground = AccentBrush
         };
 
         var thumbHost = new Grid
         {
-            Width = 80,
-            Height = 64,
-            Background = new SolidColorBrush(Color.FromRgb(0xF5, 0xF5, 0xF7)),
-            Cursor = videoPath is not null ? Cursors.Hand : Cursors.Arrow
+            Width = 72,
+            Height = 56,
+            Background = ThumbBg
         };
         thumbHost.Children.Add(placeholder);
         thumbHost.Children.Add(image);
-        thumbHost.Children.Add(playOverlay);
 
         var name = new TextBlock
         {
             Text = item.FileName,
-            FontSize = 10,
-            Margin = new Thickness(4, 4, 4, 4),
+            FontSize = 9,
+            Margin = new Thickness(2, 3, 2, 0),
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextAlignment = TextAlignment.Center,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x1D, 0x1D, 0x1F)),
-            MaxWidth = 88
+            Foreground = NameFg,
+            MaxWidth = 80
         };
 
         var stack = new StackPanel();
@@ -308,140 +530,84 @@ public partial class WorldMapView : UserControl
         {
             Width = CardW,
             Height = CardH,
-            CornerRadius = new CornerRadius(10),
+            CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0xD2, 0xD2, 0xD7)),
-            Background = Brushes.White,
-            Padding = new Thickness(6, 6, 6, 4),
+            BorderBrush = CardBorder,
+            Background = CardBg,
+            Padding = new Thickness(6, 6, 6, 3),
             Child = stack,
             Cursor = Cursors.Hand,
             Tag = item,
-            ToolTip = videoPath is not null
-                ? $"{item.FileName}\n{item.Latitude:0.######}, {item.Longitude:0.######}\nClic anteprima per riprodurre · doppio clic per aprire"
-                : $"{item.FileName}\n{item.Latitude:0.######}, {item.Longitude:0.######}\nDoppio clic per aprire",
-            Effect = new System.Windows.Media.Effects.DropShadowEffect
-            {
-                BlurRadius = 12,
-                ShadowDepth = 1,
-                Opacity = 0.18,
-                Direction = 270,
-                Color = Colors.Black
-            }
+            ToolTip = $"{item.FileName}\n{item.Latitude:0.######}, {item.Longitude:0.######}"
         };
 
-        var pin = new PinVisual(item, border, image, placeholder, thumbHost, playOverlay, videoPath);
-
-        thumbHost.MouseLeftButtonDown += (_, ev) =>
-        {
-            if (videoPath is null)
-                return;
-            ev.Handled = true;
-            StopAllPinVideos();
-            pin.PlayVideo();
-        };
-
-        border.MouseLeftButtonUp += (_, ev) =>
-        {
-            ev.Handled = true;
-            var now = DateTime.UtcNow;
-            if (_lastPinClickItem == item && (now - _lastPinClick).TotalMilliseconds < 350)
-            {
-                StopAllPinVideos();
-                MediaFileOpener.TryOpen(videoPath ?? item.AbsolutePath);
-                return;
-            }
-
-            StopAllPinVideos();
-            _selected = item;
-            foreach (var p in _pins)
-                p.SetSelected(ReferenceEquals(p.Item, item));
-            ItemSelected?.Invoke(item);
-            _lastPinClick = now;
-            _lastPinClickItem = item;
-        };
-        border.MouseLeftButtonDown += (_, ev) => ev.Handled = true;
-        return pin;
+        // stash image/placeholder on Tag via MarkerVisual lookup after
+        border.SetValue(FrameworkElement.TagProperty, item);
+        border.Uid = "card";
+        // Keep refs via attached storage on border NameScope-free: use DataContext
+        border.DataContext = new CardParts(image, placeholder, videoPath);
+        return border;
     }
 
-    private sealed class PinVisual
+    private static SolidColorBrush Freeze(Color c)
+    {
+        var b = new SolidColorBrush(c);
+        b.Freeze();
+        return b;
+    }
+
+    private sealed class Cluster
+    {
+        public Point Screen;
+        public List<MediaItem> Items { get; }
+
+        public Cluster(Point screen, List<MediaItem> items)
+        {
+            Screen = screen;
+            Items = items;
+        }
+    }
+
+    private sealed record CardParts(Image Image, TextBlock Placeholder, string? VideoPath);
+
+    private sealed class MarkerVisual
     {
         public MediaItem Item { get; }
-        public Border Root { get; }
-        public Image Image { get; }
-        public TextBlock Placeholder { get; }
-        public string? VideoPath { get; }
-        private readonly Grid _thumbHost;
-        private readonly Border _playOverlay;
-        private MediaElement? _video;
+        public FrameworkElement Root { get; }
+        public bool IsCluster { get; }
+        public IReadOnlyList<MediaItem> Members { get; }
+        public Image? Image { get; }
+        public TextBlock? Placeholder { get; }
 
-        public PinVisual(
-            MediaItem item, Border root, Image image, TextBlock placeholder,
-            Grid thumbHost, Border playOverlay, string? videoPath)
+        public MarkerVisual(
+            MediaItem item, FrameworkElement root, bool isCluster, IReadOnlyList<MediaItem> members)
         {
             Item = item;
             Root = root;
-            Image = image;
-            Placeholder = placeholder;
-            _thumbHost = thumbHost;
-            _playOverlay = playOverlay;
-            VideoPath = videoPath;
-        }
-
-        public void PlayVideo()
-        {
-            if (VideoPath is null)
-                return;
-
-            _video ??= new MediaElement
+            IsCluster = isCluster;
+            Members = members;
+            if (root.DataContext is CardParts parts)
             {
-                Width = 80,
-                Height = 64,
-                Stretch = Stretch.UniformToFill,
-                LoadedBehavior = MediaState.Manual,
-                UnloadedBehavior = MediaState.Stop,
-                Source = new Uri(VideoPath)
-            };
-            _video.MediaEnded += (_, _) => StopVideo();
-
-            if (!_thumbHost.Children.Contains(_video))
-                _thumbHost.Children.Add(_video);
-
-            Image.Visibility = Visibility.Collapsed;
-            Placeholder.Visibility = Visibility.Collapsed;
-            _playOverlay.Visibility = Visibility.Collapsed;
-            _video.Visibility = Visibility.Visible;
-            _video.Position = TimeSpan.Zero;
-            _video.Play();
-        }
-
-        public void StopVideo()
-        {
-            if (_video is not null)
-            {
-                _video.Stop();
-                _video.Visibility = Visibility.Collapsed;
+                Image = parts.Image;
+                Placeholder = parts.Placeholder;
             }
-
-            Image.Visibility = Visibility.Visible;
-            if (Image.Source is null)
-                Placeholder.Visibility = Visibility.Visible;
-            if (VideoPath is not null)
-                _playOverlay.Visibility = Visibility.Visible;
         }
 
         public void SetSelected(bool selected)
         {
-            Root.BorderThickness = new Thickness(selected ? 2 : 1);
-            Root.BorderBrush = new SolidColorBrush(
-                selected ? Color.FromRgb(0x00, 0x71, 0xE3) : Color.FromRgb(0xD2, 0xD2, 0xD7));
-            Root.Effect = new System.Windows.Media.Effects.DropShadowEffect
+            if (Root is Border border)
             {
-                BlurRadius = selected ? 16 : 12,
-                ShadowDepth = 1,
-                Opacity = selected ? 0.28 : 0.18,
-                Direction = 270,
-                Color = selected ? Color.FromRgb(0x00, 0x71, 0xE3) : Colors.Black
-            };
+                border.BorderThickness = new Thickness(selected ? 2 : 1);
+                border.BorderBrush = selected ? CardBorderSel : CardBorder;
+                return;
+            }
+
+            if (Root is Ellipse ellipse)
+            {
+                ellipse.StrokeThickness = selected ? 3 : 2;
+                ellipse.Width = selected ? 16 : 14;
+                ellipse.Height = selected ? 16 : 14;
+            }
         }
     }
 }

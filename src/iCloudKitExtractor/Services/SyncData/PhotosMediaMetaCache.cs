@@ -325,6 +325,18 @@ public sealed class PhotosMediaMetaCache
         }
     }
 
+    public bool RemoveExtraByAuth(string? mmcsAuth, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(mmcsAuth) || string.IsNullOrWhiteSpace(fieldName))
+            return false;
+        lock (_gate)
+        {
+            if (!_extraByAuth.TryGetValue(mmcsAuth, out var map))
+                return false;
+            return map.Remove(fieldName);
+        }
+    }
+
     public IReadOnlyDictionary<string, string>? GetExtraForAuth(string? mmcsAuth)
     {
         if (string.IsNullOrWhiteSpace(mmcsAuth))

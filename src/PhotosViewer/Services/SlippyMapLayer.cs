@@ -11,7 +11,7 @@ namespace PhotosViewer.Services;
 
 /// <summary>
 /// Tile layer stile Leaflet: schema XYZ {z}/{x}/{y}.png, Web Mercator, nessuna API key.
-/// Non usa CARTO (watermark "API KEY REQUIRED") né tile.openstreetmap.org (vietato alle app).
+/// Cache in-memory di BitmapImage congelati + riuso Image sul canvas tra pan.
 /// </summary>
 public sealed class SlippyMapLayer
 {
@@ -19,7 +19,7 @@ public sealed class SlippyMapLayer
     public const int MinZoom = 2;
     public const int MaxZoom = 18;
 
-    private const int MaxParallelFetches = 3;
+    private const int MaxParallelFetches = 6;
     private const int MinTileBytes = 900;
     private static readonly string[] Subdomains = ["a", "b", "c"];
     private static readonly (string Id, string UrlTemplate)[] TileProviders =
@@ -30,7 +30,8 @@ public sealed class SlippyMapLayer
     ];
 
     private static readonly HttpClient Http = CreateClient();
-    private static readonly ConcurrentDictionary<string, byte[]> MemCache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, byte[]> BytesCache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, BitmapImage> BitmapCache = new(StringComparer.Ordinal);
     private static readonly string DiskRoot = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "PhotosViewer", "maptiles-v2");
@@ -38,8 +39,10 @@ public sealed class SlippyMapLayer
     static SlippyMapLayer() => PurgeLegacyCartoCache();
 
     private readonly Canvas _host;
+    private readonly Dictionary<(int Z, int X, int Y), Image> _placed = new();
     private CancellationTokenSource? _cts;
     private int _version;
+    private int _lastPlacedZoom = int.MinValue;
 
     public SlippyMapLayer(Canvas host) => _host = host;
 
@@ -139,16 +142,38 @@ public sealed class SlippyMapLayer
         (CenterLat, CenterLon) = WorldToLatLon(newCx, newCy, Zoom);
     }
 
+    /// <summary>Riposiziona le tile già presenti senza rete (pan fluido).</summary>
+    public void RepositionTiles()
+    {
+        if (ViewW < 20 || ViewH < 20 || _placed.Count == 0 || _lastPlacedZoom != Zoom)
+            return;
+
+        var (cx, cy) = LatLonToWorld(CenterLat, CenterLon, Zoom);
+        var originX = cx - ViewW / 2.0;
+        var originY = cy - ViewH / 2.0;
+        foreach (var ((_, x, y), img) in _placed)
+        {
+            Canvas.SetLeft(img, x * TileSize - originX);
+            Canvas.SetTop(img, y * TileSize - originY);
+        }
+    }
+
     public void RefreshTiles()
     {
         _version++;
         var version = _version;
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
-        _host.Children.Clear();
 
         if (ViewW < 20 || ViewH < 20)
             return;
+
+        if (_lastPlacedZoom != Zoom)
+        {
+            _host.Children.Clear();
+            _placed.Clear();
+            _lastPlacedZoom = Zoom;
+        }
 
         _ = LoadTilesAsync(version, _cts.Token);
     }
@@ -168,16 +193,40 @@ public sealed class SlippyMapLayer
             var minTy = Math.Max(0, (int)Math.Floor(originY / TileSize) - 1);
             var maxTy = Math.Min(n - 1, (int)Math.Ceiling((originY + ViewH) / TileSize));
 
+            var needed = new HashSet<(int Z, int X, int Y)>();
+            for (var x = minTx; x <= maxTx; x++)
+            for (var y = minTy; y <= maxTy; y++)
+                needed.Add((z, x, y));
+
+            await _host.Dispatcher.InvokeAsync(() =>
+            {
+                if (version != _version)
+                    return;
+
+                foreach (var key in _placed.Keys.ToList())
+                {
+                    if (needed.Contains(key))
+                        continue;
+                    if (_placed.Remove(key, out var orphan))
+                        _host.Children.Remove(orphan);
+                }
+
+                foreach (var (tz, tx, ty) in needed)
+                {
+                    if (!_placed.TryGetValue((tz, tx, ty), out var img))
+                        continue;
+                    Canvas.SetLeft(img, tx * TileSize - originX);
+                    Canvas.SetTop(img, ty * TileSize - originY);
+                }
+            }, DispatcherPriority.Render);
+
             using var gate = new SemaphoreSlim(MaxParallelFetches);
             var tasks = new List<Task>();
-            for (var x = minTx; x <= maxTx; x++)
+            foreach (var (tz, tx, ty) in needed)
             {
-                for (var y = minTy; y <= maxTy; y++)
-                {
-                    var tx = x;
-                    var ty = y;
-                    tasks.Add(PumpOneAsync(version, originX, originY, z, tx, ty, gate, ct));
-                }
+                if (_placed.ContainsKey((tz, tx, ty)))
+                    continue;
+                tasks.Add(PumpOneAsync(version, originX, originY, tz, tx, ty, gate, ct));
             }
 
             await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -198,43 +247,31 @@ public sealed class SlippyMapLayer
             if (version != _version || ct.IsCancellationRequested)
                 return;
 
-            var bytes = await FetchTileBytesAsync(z, tx, ty, ct).ConfigureAwait(false);
-            if (bytes is null || version != _version)
+            var bmp = await GetTileBitmapAsync(z, tx, ty, ct).ConfigureAwait(false);
+            if (bmp is null || version != _version)
                 return;
 
             var left = tx * TileSize - originX;
             var top = ty * TileSize - originY;
+            var key = (z, tx, ty);
 
             await _host.Dispatcher.InvokeAsync(() =>
             {
-                if (version != _version)
+                if (version != _version || _placed.ContainsKey(key))
                     return;
-                try
+                var el = new Image
                 {
-                    var bmp = new BitmapImage();
-                    bmp.BeginInit();
-                    bmp.StreamSource = new MemoryStream(bytes);
-                    bmp.CacheOption = BitmapCacheOption.OnLoad;
-                    bmp.EndInit();
-                    bmp.Freeze();
-
-                    var el = new Image
-                    {
-                        Source = bmp,
-                        Width = TileSize,
-                        Height = TileSize,
-                        Stretch = Stretch.Fill,
-                        IsHitTestVisible = false,
-                        SnapsToDevicePixels = true
-                    };
-                    Canvas.SetLeft(el, left);
-                    Canvas.SetTop(el, top);
-                    _host.Children.Add(el);
-                }
-                catch
-                {
-                    // ignore
-                }
+                    Source = bmp,
+                    Width = TileSize,
+                    Height = TileSize,
+                    Stretch = Stretch.Fill,
+                    IsHitTestVisible = false,
+                    SnapsToDevicePixels = true
+                };
+                Canvas.SetLeft(el, left);
+                Canvas.SetTop(el, top);
+                _host.Children.Add(el);
+                _placed[key] = el;
             }, DispatcherPriority.Background);
         }
         catch (OperationCanceledException)
@@ -247,10 +284,44 @@ public sealed class SlippyMapLayer
         }
     }
 
+    private static async Task<BitmapImage?> GetTileBitmapAsync(int z, int x, int y, CancellationToken ct)
+    {
+        var key = $"{z}/{x}/{y}";
+        if (BitmapCache.TryGetValue(key, out var cached))
+            return cached;
+
+        var bytes = await FetchTileBytesAsync(z, x, y, ct).ConfigureAwait(false);
+        if (bytes is null)
+            return null;
+
+        try
+        {
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.StreamSource = new MemoryStream(bytes);
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            bmp.EndInit();
+            bmp.Freeze();
+            BitmapCache[key] = bmp;
+            if (BitmapCache.Count > 600)
+            {
+                foreach (var k in BitmapCache.Keys.Take(80).ToList())
+                    BitmapCache.TryRemove(k, out _);
+            }
+
+            return bmp;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static async Task<byte[]?> FetchTileBytesAsync(int z, int x, int y, CancellationToken ct)
     {
         var key = $"{z}/{x}/{y}";
-        if (MemCache.TryGetValue(key, out var hit) && IsValidTile(hit))
+        if (BytesCache.TryGetValue(key, out var hit) && IsValidTile(hit))
             return hit;
 
         foreach (var (providerId, template) in TileProviders)
@@ -258,7 +329,7 @@ public sealed class SlippyMapLayer
             var url = BuildTileUrl(template, z, x, y);
             var bytes = await TryFetchUrlAsync(url, providerId, z, x, y, ct).ConfigureAwait(false);
             if (bytes is not null && IsValidTile(bytes))
-                return CacheTile(key, bytes, providerId);
+                return CacheTileBytes(key, bytes);
         }
 
         return null;
@@ -278,10 +349,8 @@ public sealed class SlippyMapLayer
     {
         if (bytes.Length < MinTileBytes)
             return false;
-        // PNG signature
         if (bytes.Length < 8 || bytes[0] != 0x89 || bytes[1] != 0x50 || bytes[2] != 0x4E || bytes[3] != 0x47)
             return false;
-        // Rifiuta tile CARTO con watermark testuale (se presente)
         var ascii = System.Text.Encoding.ASCII.GetString(bytes);
         return !ascii.Contains("API KEY", StringComparison.OrdinalIgnoreCase)
                && !ascii.Contains("carto.com/basemaps", StringComparison.OrdinalIgnoreCase);
@@ -329,15 +398,11 @@ public sealed class SlippyMapLayer
             using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct)
                 .ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
-            {
                 return null;
-            }
 
             var bytes = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
             if (!IsValidTile(bytes))
-            {
                 return null;
-            }
 
             try
             {
@@ -358,13 +423,13 @@ public sealed class SlippyMapLayer
         }
     }
 
-    private static byte[] CacheTile(string key, byte[] bytes, string provider)
+    private static byte[] CacheTileBytes(string key, byte[] bytes)
     {
-        MemCache[key] = bytes;
-        if (MemCache.Count > 800)
+        BytesCache[key] = bytes;
+        if (BytesCache.Count > 800)
         {
-            foreach (var k in MemCache.Keys.Take(100).ToList())
-                MemCache.TryRemove(k, out _);
+            foreach (var k in BytesCache.Keys.Take(100).ToList())
+                BytesCache.TryRemove(k, out _);
         }
 
         return bytes;
