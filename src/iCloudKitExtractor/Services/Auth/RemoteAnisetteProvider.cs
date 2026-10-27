@@ -24,6 +24,13 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
 
     public Uri BaseUri => _baseUri;
 
+    /// <summary>
+    /// Optional license header for commercial Anisette backends.
+    /// Public builds: no-op (private tree may attach a license token).
+    /// </summary>
+    public static void ApplyLicenseHeader(HttpRequestMessage request) =>
+        _ = request;
+
     public Task<AnisetteHeaders> FetchAsync(CancellationToken ct = default) =>
         FetchAsync(null, ct);
 
