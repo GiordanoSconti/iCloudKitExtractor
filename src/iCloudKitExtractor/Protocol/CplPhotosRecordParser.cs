@@ -157,7 +157,8 @@ public static class CplPhotosRecordParser
             var window = payload.AsSpan(winStart, winEnd - winStart).ToArray();
             var fieldInWindow = fieldAt - winStart;
 
-            var mmcsAuth = TryExtractMmcsAuthNear(window, fieldName);
+            // Ancora sul field corrente (fieldInWindow), NON sul primo res* nella lookback 48 KB.
+            var mmcsAuth = TryExtractMmcsAuthNear(window, fieldName, fieldInWindow);
             if (mmcsAuth is null)
             {
                 // Fallback: cerca CAog strutturato solo nella coda dopo il field name.
@@ -306,7 +307,7 @@ public static class CplPhotosRecordParser
                 var winEnd = Math.Min(payload.Length, fieldAt + 3_000);
                 var window = payload.AsSpan(winStart, winEnd - winStart).ToArray();
                 var fieldInWindow = fieldAt - winStart;
-                var auth = TryExtractMmcsAuthNear(window, fieldName);
+                var auth = TryExtractMmcsAuthNear(window, fieldName, fieldInWindow);
                 if (auth is null)
                     auth = TryExtractMmcsAuth(window.AsSpan(fieldInWindow).ToArray());
                 if (string.IsNullOrWhiteSpace(auth))
@@ -808,13 +809,20 @@ public static class CplPhotosRecordParser
     }
 
     /// <summary>
-    /// First structured/ready MMCS auth whose CAog token appears after <paramref name="fieldName"/> in the window.
+    /// MMCS auth del resource field a <paramref name="fieldAtInWindow"/> (non del primo omonimo in finestra).
+    /// L'auth deve stare dopo quel field e prima del successivo field con lo stesso nome.
     /// </summary>
-    private static string? TryExtractMmcsAuthNear(byte[] window, ReadOnlySpan<byte> fieldName)
+    private static string? TryExtractMmcsAuthNear(
+        byte[] window,
+        ReadOnlySpan<byte> fieldName,
+        int fieldAtInWindow = -1)
     {
-        var fieldAt = IndexOfAscii(window, fieldName);
-        if (fieldAt < 0)
+        var fieldAt = fieldAtInWindow >= 0 ? fieldAtInWindow : IndexOfAscii(window, fieldName);
+        if (fieldAt < 0 || fieldAt >= window.Length)
             return null;
+
+        var nextField = IndexOfAscii(window, fieldName, fieldAt + fieldName.Length);
+        var authLimit = nextField < 0 ? window.Length : nextField;
 
         var structured = MmcsAuthBuilder.ExtractStructuredAuths(window);
         string? best = null;
@@ -825,7 +833,7 @@ public static class CplPhotosRecordParser
             if (tok is null)
                 continue;
             var at = IndexOfAscii(window, Encoding.ASCII.GetBytes(tok), fieldAt);
-            if (at < 0 || at >= bestPos)
+            if (at < 0 || at >= authLimit || at >= bestPos)
                 continue;
             bestPos = at;
             best = a.Header;
@@ -840,7 +848,7 @@ public static class CplPhotosRecordParser
             if (tok is null)
                 continue;
             var at = IndexOfAscii(window, Encoding.ASCII.GetBytes(tok), fieldAt);
-            if (at < 0 || at >= bestPos)
+            if (at < 0 || at >= authLimit || at >= bestPos)
                 continue;
             bestPos = at;
             best = header;
@@ -1024,6 +1032,7 @@ public static class CplPhotosRecordParser
             nameLen++;
         var after = nameAt + nameLen;
         var end = Math.Min(data.Length, Math.Min(to, after + 160));
+        string? fallback = null;
         for (var i = after; i + 2 < end; i++)
         {
             if (data[i] != 0x0A)
@@ -1032,16 +1041,19 @@ public static class CplPhotosRecordParser
             if (len is < 20 or > 44 || i + 2 + len > end)
                 continue;
             var s = Encoding.ASCII.GetString(data, i + 2, len);
-            if (LooksLikeCkRecordName(s))
+            // Preferisci il record CPLMaster (28 char base64 "A…"), non zone id "_85e9…".
+            if (LooksLikeWireRecordName(s))
                 return s;
+            if (fallback is null && LooksLikeCkRecordName(s) && s[0] != '_')
+                fallback = s;
         }
 
-        return null;
+        return fallback;
     }
 
     private static bool LooksLikeCkRecordName(string s)
     {
-        if (s.Length is < 20 or > 44)
+        if (s.Length is < 20 or > 44 || s[0] == '_')
             return false;
         foreach (var c in s)
         {
