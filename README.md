@@ -48,6 +48,12 @@ https://giordanosconti.github.io/iCloudKitExtractor/
 
 Screen recordings highlights (GIF). MP4 copies of the same clips live under [`video/`](video/).
 
+### Backup login → download
+
+![Backup login download](video/07-backup-login-download.gif)
+
+[Full recording (MOV, ~46 MB)](video/2026-10-28%2006-25-12.mov) · [Highlight (MP4)](video/07-backup-login-download.mp4)
+
 ### Backup dispositivi
 
 ![Backup dispositivi](video/01-backup-dispositivi.gif)

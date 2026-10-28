@@ -2,6 +2,12 @@
 
 Highlight dalle registrazioni schermo di **iCloud Backup Extractor** (per il README GitHub usa le GIF; gli MP4 sono più leggeri se preferisci linkarli da Releases).
 
+### Backup login → download
+
+![Backup login download](07-backup-login-download.gif)
+
+[Full recording (MOV)](2026-10-28%2006-25-12.mov) · [Highlight (MP4)](07-backup-login-download.mp4)
+
 ### Backup dispositivi
 
 ![Backup dispositivi](01-backup-dispositivi.gif)
