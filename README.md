@@ -74,6 +74,14 @@ Screen recordings highlights (GIF). MP4 copies of the same clips live under [`vi
 
 ![iCloud Sync Photos](video/05-icloud-sync-photos.gif)
 
+## Real Test Backup
+
+Screenshots from a real backup download run.
+
+![Real test backup 1](img/Screenshot%202026-10-28%20081754.png)
+
+![Real test backup 2](img/Screenshot%202026-10-28%20081854.png)
+
 ## Important note: Recovery Key & Octagon
 
 Recovery Key unlock uses an **Octagon** endpoint that can dump the full set of **encrypted TLKShares**. From those shares it is also possible to recover the ones associated with Recovery Key peers (SHA-384 of the public key that signs the Recovery Key). That allows verifying whether a given Recovery Key is among those present and, if it is, recovering the Manatee/PCS KeySet for CloudKit zones—including **ADP-protected backups** and **Keychain**.
