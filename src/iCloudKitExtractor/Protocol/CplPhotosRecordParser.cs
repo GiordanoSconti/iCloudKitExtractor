@@ -128,6 +128,9 @@ public static class CplPhotosRecordParser
         AppendMediaFromResourceField(
             payload, "resOriginalVidComplRes"u8, liveSuffix: true, results, seenAuth);
 
+        // isHidden / isFavorite / trashReason vivono sul CPLAsset (masterRef → CPLMaster);
+        // isDeleted può stare sul master o sull'asset. Join post-pass evita lookback falsi positivi.
+        ApplyCplAssetFlags(payload, results);
 
         return results;
     }
@@ -191,10 +194,16 @@ public static class CplPhotosRecordParser
                 recordName += "_Live";
 
 
-            var hidden = (TryReadInt64AfterName(window, IndexOfAscii(window, "hidden"u8)) ?? 0) != 0;
-            var trashed = (TryReadInt64AfterName(window, IndexOfAscii(window, "trashed"u8)) ?? 0) != 0
-                          || (TryReadInt64AfterName(window, IndexOfAscii(window, "isDeleted"u8)) ?? 0) != 0;
-            var favorite = (TryReadInt64AfterName(window, IndexOfAscii(window, "isFavorite"u8)) ?? 0) != 0;
+            // Solo flag del record corrente (ultimo marker CPL* prima della risorsa), non first-match
+            // nella lookback da 48 KB (avvelenava Nascoste/Eliminate con isDeleted di sibling).
+            var scopeStart = Math.Max(masterMarkerAt, assetMarkerAt);
+            if (scopeStart < 0)
+                scopeStart = lookStart;
+            var flagEnd = Math.Min(payload.Length, fieldAt + 500);
+            var hidden = ReadTruthyFlag(payload, scopeStart, flagEnd, "isHidden"u8);
+            var trashed = ReadTruthyFlag(payload, scopeStart, flagEnd, "isDeleted"u8)
+                          || ReadTruthyFlag(payload, scopeStart, flagEnd, "trashReason"u8);
+            var favorite = ReadTruthyFlag(payload, scopeStart, flagEnd, "isFavorite"u8);
             byte[]? wrap = null;
             if (MmcsAuthBuilder.TrySplitMmcsAuth(mmcsAuth, out var sig21, out _, out _))
                 wrap = MmcsAssetProtection.TryExtractForSignature(window, sig21);
@@ -914,6 +923,139 @@ public static class CplPhotosRecordParser
         return null;
     }
 
+    /// <summary>
+    /// Legge <c>isHidden</c>/<c>isDeleted</c>/<c>trashReason</c>/<c>isFavorite</c> sul CPLAsset
+    /// e li applica ai media del CPLMaster collegato via <c>masterRef</c>.
+    /// </summary>
+    private static void ApplyCplAssetFlags(byte[] payload, List<CplMedia> results)
+    {
+        if (results.Count == 0)
+            return;
+
+        var byMaster = new Dictionary<string, (bool Hidden, bool Trashed, bool Favorite, string? AssetName)>(
+            StringComparer.Ordinal);
+
+        var searchFrom = 0;
+        while (searchFrom < payload.Length)
+        {
+            var assetAt = IndexOfAscii(payload, "CPLAsset"u8, searchFrom);
+            if (assetAt < 0)
+                break;
+            searchFrom = assetAt + 8;
+
+            var end = Math.Min(payload.Length, assetAt + 4_000);
+            TrimRecordEnd(payload, assetAt + 8, ref end, "CPLAsset"u8);
+            TrimRecordEnd(payload, assetAt + 8, ref end, "CPLMaster"u8);
+            TrimRecordEnd(payload, assetAt + 8, ref end, "CPLAlbum"u8);
+
+            var assetName = TryExtractWireRecordNameBefore(payload, assetAt, "CPLAsset"u8)
+                            ?? FindUuidBeforeMarker(payload, assetAt, "CPLAsset"u8, 256);
+            var masterRef = TryExtractMasterRef(payload, Math.Max(0, assetAt - 200), end);
+            if (string.IsNullOrWhiteSpace(masterRef))
+                continue;
+
+            var hidden = ReadTruthyFlag(payload, assetAt, end, "isHidden"u8);
+            var trashed = ReadTruthyFlag(payload, assetAt, end, "isDeleted"u8)
+                          || ReadTruthyFlag(payload, assetAt, end, "trashReason"u8);
+            var favorite = ReadTruthyFlag(payload, assetAt, end, "isFavorite"u8);
+
+            if (byMaster.TryGetValue(masterRef, out var prev))
+            {
+                byMaster[masterRef] = (
+                    prev.Hidden | hidden,
+                    prev.Trashed | trashed,
+                    prev.Favorite | favorite,
+                    prev.AssetName ?? assetName);
+            }
+            else
+            {
+                byMaster[masterRef] = (hidden, trashed, favorite, assetName);
+            }
+        }
+
+        if (byMaster.Count == 0)
+            return;
+
+        for (var i = 0; i < results.Count; i++)
+        {
+            var m = results[i];
+            var key = m.RecordName.EndsWith("_Live", StringComparison.OrdinalIgnoreCase)
+                ? m.RecordName[..^5]
+                : m.RecordName;
+            if (!byMaster.TryGetValue(key, out var flags))
+                continue;
+
+            results[i] = m with
+            {
+                Hidden = m.Hidden | flags.Hidden,
+                Trashed = m.Trashed | flags.Trashed,
+                Favorite = m.Favorite | flags.Favorite,
+                AssetRecordName = m.AssetRecordName ?? flags.AssetName
+            };
+        }
+    }
+
+    private static void TrimRecordEnd(byte[] payload, int searchFrom, ref int end, ReadOnlySpan<byte> nextType)
+    {
+        var n = IndexOfAscii(payload, nextType, searchFrom);
+        if (n >= 0 && n < end)
+            end = n;
+    }
+
+    private static bool ReadTruthyFlag(byte[] data, int from, int to, ReadOnlySpan<byte> name)
+    {
+        if (from < 0 || to <= from || to > data.Length)
+            return false;
+        var at = LastIndexOfAscii(data.AsSpan(from, to - from), name);
+        if (at < 0)
+            return false;
+        return (TryReadInt64AfterName(data, from + at) ?? 0) != 0;
+    }
+
+    /// <summary>CloudKit reference: dopo <c>masterRef</c>, stringa protobuf <c>0A len name</c>.</summary>
+    private static string? TryExtractMasterRef(byte[] data, int from, int to)
+    {
+        var nameAt = IndexOfAscii(data, "masterRef"u8, from);
+        if (nameAt < 0 || nameAt >= to)
+            return null;
+
+        var nameLen = 0;
+        while (nameAt + nameLen < data.Length && IsIdent(data[nameAt + nameLen]))
+            nameLen++;
+        var after = nameAt + nameLen;
+        var end = Math.Min(data.Length, Math.Min(to, after + 160));
+        for (var i = after; i + 2 < end; i++)
+        {
+            if (data[i] != 0x0A)
+                continue;
+            var len = data[i + 1];
+            if (len is < 20 or > 44 || i + 2 + len > end)
+                continue;
+            var s = Encoding.ASCII.GetString(data, i + 2, len);
+            if (LooksLikeCkRecordName(s))
+                return s;
+        }
+
+        return null;
+    }
+
+    private static bool LooksLikeCkRecordName(string s)
+    {
+        if (s.Length is < 20 or > 44)
+            return false;
+        foreach (var c in s)
+        {
+            if (c is (>= 'A' and <= 'Z')
+                or (>= 'a' and <= 'z')
+                or (>= '0' and <= '9')
+                or '+' or '/' or '_' or '-' or '=')
+                continue;
+            return false;
+        }
+
+        return true;
+    }
+
     private static int IndexOfAscii(byte[] data, ReadOnlySpan<byte> needle, int start = 0)
     {
         if (start < 0)
@@ -921,6 +1063,17 @@ public static class CplPhotosRecordParser
         var span = data.AsSpan(start);
         var rel = span.IndexOf(needle);
         return rel < 0 ? -1 : start + rel;
+    }
+
+    private static int LastIndexOfAscii(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
+    {
+        for (var i = haystack.Length - needle.Length; i >= 0; i--)
+        {
+            if (haystack.Slice(i, needle.Length).SequenceEqual(needle))
+                return i;
+        }
+
+        return -1;
     }
 
     private static bool IsIdent(byte b) =>
