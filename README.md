@@ -48,7 +48,7 @@ https://giordanosconti.github.io/iCloudKitExtractor/
 
 Screen recordings highlights (GIF). MP4 copies of the same clips live under [`video/`](video/).
 
-### Backup login → download
+### Recovery Key Flow
 
 ![Backup login download](video/07-backup-login-download.gif)
 

@@ -2,7 +2,7 @@
 
 Highlight dalle registrazioni schermo di **iCloud Backup Extractor** (per il README GitHub usa le GIF; gli MP4 sono più leggeri se preferisci linkarli da Releases).
 
-### Backup login → download
+### Recovery Key Flow
 
 ![Backup login download](07-backup-login-download.gif)
 
