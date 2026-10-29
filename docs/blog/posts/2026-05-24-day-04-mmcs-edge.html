@@ -6,7 +6,7 @@
   <title>24 May 2026 &mdash; First steps into MMCS and edge-content &mdash; Forensis-Lab</title>
   <meta
     name="description"
-    content="After a month of RE: MMCS opens. Independence from EPB/jailbreak for the next climb, edge-content byte ranges, Ford vs chunk data&mdash;and a September coda on 0x04 vs 0xC4."
+    content="After a month of RE: MMCS opens. Independence from EPB/jailbreak for the next climb, edge-content byte ranges, Ford vs chunk data&mdash;and an August coda on 0x04 vs 0xC4."
   />
   <meta name="theme-color" content="#0c2f34" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -91,8 +91,8 @@
         <p>
           Edge ranges still get classified before decrypt: a short offset-0 window &ldquo;looks like&rdquo;
           Ford ciphertext when the lead byte matches the capture oracle. Treating a data chunk
-          as Ford (or rejecting a <code>0xC4</code> Ford as &ldquo;not <code>0x04</code>&rdquo;) is how entire
-          file tails vanished until September.
+          as Ford (or rejecting a <code>0xC4</code> data lead as &ldquo;not <code>0x04</code>&rdquo;) is how entire
+          file tails vanished until early August.
         </p>
         <a
           class="src"

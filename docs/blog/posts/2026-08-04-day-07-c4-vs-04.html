@@ -6,7 +6,7 @@
   <title>4 August 2026 &mdash; Lead byte 0x04 vs 0xC4 &mdash; Forensis-Lab</title>
   <meta
     name="description"
-    content="The fulcrum of a clean backup download: Ford lead 0x04 vs data leads like 0xC4, plus orphaned CloudKit files and non-Apple ciphertext."
+    content="Protocol-complete MMCS (not yet Octagon/ADP KeySet): Ford lead 0x04 vs data leads like 0xC4, orphans, and non-Apple ciphertext."
   />
   <meta name="theme-color" content="#0c2f34" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -39,11 +39,15 @@
       </p>
       <h1>One nibble: when 0xC4 stopped looking like broken Ford</h1>
       <p>
-        <strong>4 August 2026</strong> is the day a complete, clean backup download stopped being a
-        fantasy. For months we treated lead byte <strong><code>0x04</code></strong> as the sacred
-        marker of &ldquo;this host is Ford / this slice is decryptable.&rdquo; Force paths scanned for
-        <code>0x04</code>; anything else was discarded or forced through Ford open checks that
-        could not succeed.
+        <strong>4 August 2026</strong> is the day a <em>protocol-complete MMCS</em> backup download
+        stopped being a fantasy&mdash;ciphertext that still lives on edge hosts, classified and
+        decrypted end-to-end. That is <strong>not</strong> the same as finishing ADP:
+        zone masters / <code>backupProperties</code> still wait on Octagon
+        (<a href="./2026-10-05-day-09-octagon-bottles-icdp.html">Day 9</a> /
+        <a href="./2026-10-24-day-10-recovery-key-tlkshares.html">Day 10</a>). For months we treated
+        lead byte <strong><code>0x04</code></strong> as the sacred marker of &ldquo;this host is Ford /
+        this slice is decryptable.&rdquo; Force paths scanned for <code>0x04</code>; anything else was
+        discarded or forced through Ford open checks that could not succeed.
       </p>
       <p>
         The fulcrum was absurdly small: many <strong>data</strong> ChunkInfo bodies do not start with
@@ -66,8 +70,9 @@
         without a different oracle; calling that a &ldquo;failed MMCS decrypt&rdquo; would be a lie.
       </p>
       <p>
-        So August unlocked a <em>protocol-complete</em> Apple backup download for the material that
-        still lives on MMCS&mdash;not a claim that every historical filename on earth is recoverable.
+        So August unlocked a <em>protocol-complete MMCS</em> download for the material that still
+        lives on the edge&mdash;not every historical filename, and not the Octagon KeySet story that
+        October still had to climb.
       </p>
 
       <aside class="observe" aria-label="Code observation">
