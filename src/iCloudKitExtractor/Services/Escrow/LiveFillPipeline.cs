@@ -333,7 +333,9 @@ public static class LiveFillPipeline
         byte[]? fileChecksum21 = null,
         ReadOnlySpan<byte> fordIkm = default)
     {
-        _ = fileChecksum21; // ownership solo da plan.FileChecksum (Auth), non AssetSignature
+        // Ownership: plan.FileChecksum (refs) OR AssetSignature (CK) embedded in gate45.
+        // Batch AG: plan FC can be stale/wrong while AssetSignature still matches the Ford gate.
+        var assetSig = fileChecksum21 is { Length: 21 } ? fileChecksum21 : null;
         var list = new List<FileGroupFillDecrypt.BoundStorage>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var descs = UbChunkBuilder.CollectAuthFordDescriptors(authBody, plan, hosts);
@@ -349,12 +351,18 @@ public static class LiveFillPipeline
             if (d.Gate45.Length != 45 || d.CtLen is < 0x12 or > 65_536)
                 continue;
 
-            //  gate embeds FileChecksum del FileGroup (refs.field1) — GateOwnsPlan.
-            if (plan.FileChecksum is { Length: 21 }
-                && !UbChunkBuilder.GateOwnsPlan(d.Gate45, plan))
+            // gate embeds FileChecksum (refs.field1) and/or AssetSignature.
+            if (plan.FileChecksum is { Length: 21 } || assetSig is { Length: 21 })
             {
-                skipFc++;
-                continue;
+                var ownsPlan = plan.FileChecksum is { Length: 21 }
+                               && UbChunkBuilder.GateOwnsPlan(d.Gate45, plan);
+                var ownsAsset = assetSig is { Length: 21 }
+                                && UbChunkBuilder.GateEmbedsFileChecksum(d.Gate45, assetSig);
+                if (!ownsPlan && !ownsAsset)
+                {
+                    skipFc++;
+                    continue;
+                }
             }
 
             bool CtOk(ReadOnlySpan<byte> cand) =>
@@ -530,10 +538,10 @@ public static class LiveFillPipeline
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -778,7 +786,7 @@ public static class LiveFillPipeline
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",

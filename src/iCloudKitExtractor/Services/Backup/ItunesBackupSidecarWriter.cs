@@ -19,12 +19,15 @@ public static class ItunesBackupSidecarWriter
         BackupSnapshot snapshot,
         ICloudSession? session = null,
         IProgress<string>? log = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool isComplete = true,
+        bool? isFullBackup = null)
     {
         Directory.CreateDirectory(cleanBackupDirectory);
         var date = snapshot.BackupPropertiesDate
                    ?? snapshot.BackupDate
                    ?? DateTimeOffset.UtcNow;
+        var full = isFullBackup ?? isComplete;
 
         // Info: Build/Device/Product/Serial/UDID da device + Lockdown già sul snapshot.
         await File.WriteAllBytesAsync(
@@ -32,10 +35,10 @@ public static class ItunesBackupSidecarWriter
             BuildInfoPlist(device, snapshot, date),
             ct).ConfigureAwait(false);
 
-        // Status: UUID snapshot + stato finished.
+        // Status: finished solo se Manifest flags=1 tutti presenti su disco.
         await File.WriteAllBytesAsync(
             Path.Combine(cleanBackupDirectory, "Status.plist"),
-            BuildStatusPlist(snapshot, date),
+            BuildStatusPlist(snapshot, date, isComplete, full),
             ct).ConfigureAwait(false);
 
         // Manifest: preferisci backupProperties plaintext (include Lockdown completo);
@@ -60,7 +63,9 @@ public static class ItunesBackupSidecarWriter
 
         log?.Report(
             $"  Info.plist + Status.plist scritti da device/Lockdown " +
-            $"(UDID={device.HardwareUdid ?? snapshot.HardwareUdid ?? "—"})");
+            $"(UDID={device.HardwareUdid ?? snapshot.HardwareUdid ?? "—"}; " +
+            $"SnapshotState={(isComplete ? "finished" : "incomplete")}; " +
+            $"IsFullBackup={full})");
         log?.Report(
             $"Snapshot pulito → {cleanBackupDirectory} " +
             "(Manifest.db + Info/Status/Manifest.plist + xx/fileID)");
@@ -100,17 +105,23 @@ public static class ItunesBackupSidecarWriter
 
     /// <summary>
     ///  bplist — BackupState, SnapshotState, Version, Date, UUID, IsFullBackup.
+    ///  <paramref name="isComplete"/> false → SnapshotState=incomplete.
+    ///  <paramref name="isFullBackup"/> = vista full (merge incrementale), anche se incomplete.
     /// </summary>
-    private static byte[] BuildStatusPlist(BackupSnapshot snapshot, DateTimeOffset date)
+    private static byte[] BuildStatusPlist(
+        BackupSnapshot snapshot,
+        DateTimeOffset date,
+        bool isComplete,
+        bool isFullBackup)
     {
         var dict = new Dictionary<string, object?>
         {
             ["BackupState"] = "new",
-            ["SnapshotState"] = "finished",
+            ["SnapshotState"] = isComplete ? "finished" : "incomplete",
             ["Version"] = "2.4",
             ["Date"] = date.ToUniversalTime(),
             ["UUID"] = IkeBackupOutputPaths.ResolveSnapshotGuid(snapshot),
-            ["IsFullBackup"] = true
+            ["IsFullBackup"] = isFullBackup
         };
         return AppleBinaryPlist.Write(dict);
     }

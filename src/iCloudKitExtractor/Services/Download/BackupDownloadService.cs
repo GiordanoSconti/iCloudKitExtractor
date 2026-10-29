@@ -3949,11 +3949,41 @@ public sealed class BackupDownloadService
         SnapshotBackupPropertiesDecryptor.ApplyHardwareIdentityToDevices([job.Device]);
         var cleanDir = IkeBackupOutputPaths.ResolveCleanBackupDirectory(job.OutputDirectory);
         Directory.CreateDirectory(cleanDir);
+
+        // Catena incrementale → vista full (file invariati dagli snapshot più vecchi).
+        var merge = await IncrementalSnapshotFullMaterializer.MaterializeAsync(
+            cleanDir, deviceDirectory: null, log, ct).ConfigureAwait(false);
+        var isFullBackup = merge.PriorsScanned > 0
+                           || merge.AddedFromPriors > 0
+                           || merge.FilledHoles > 0;
+
+        // Placeholder size=0 senza MMCS → shard vuoto (prima del check completezza).
+        BackupEmptyFileMaterializer.MaterializeFromManifest(cleanDir, log);
+
+        var completeness = BackupCompleteness.Evaluate(cleanDir);
+        var workDir = IkeBackupOutputPaths.ResolveSnapshotWorkDirectoryFromCleanBackup(cleanDir);
+        await BackupCompleteness.WriteMissingCheckpointAsync(workDir, completeness, ct)
+            .ConfigureAwait(false);
+        var isComplete = BackupCompleteness.IsFinished(completeness);
+        // Anche senza prior: se il FL era già full-complete, marca full.
+        if (isComplete)
+            isFullBackup = true;
+        log?.Report(
+            $"Completeness Manifest flags=1: {completeness.PresentOnDisk:N0}/" +
+            $"{completeness.ExpectedFileRows:N0} su disco" +
+            (completeness.MissingOnDisk > 0
+                ? $", missing={completeness.MissingOnDisk:N0} → {BackupCompleteness.MissingFilesFileName}"
+                : "") +
+            $"; IsFullBackup={isFullBackup}");
+
         log?.Report(
             "Sidecar iTunes a fine snapshot: Info.plist + Status.plist + Manifest.plist " +
-            $"(device/snapshot/Lockdown → {cleanDir})");
+            $"(device/snapshot/Lockdown → {cleanDir}; " +
+            $"SnapshotState={(isComplete ? "finished" : "incomplete")})");
         await ItunesBackupSidecarWriter.WriteAsync(
-            cleanDir, job.Device, job.Snapshot, session, log, ct).ConfigureAwait(false);
+            cleanDir, job.Device, job.Snapshot, session, log, ct,
+            isComplete: isComplete,
+            isFullBackup: isFullBackup).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -4988,8 +5018,9 @@ public sealed class BackupDownloadService
             return;
         var hex = Convert.ToHexString(sig).ToLowerInvariant();
         shardBySig[hex] = path;
-        deviceDirectory ??= InferDeviceDirectoryFromCleanBackup(cleanDir);
-        PersistDeviceSigCacheEntry(deviceDirectory, hex, path);
+        // Solo cache per-snapshot (device-wide contaminava fileID/size tra UUID).
+        _ = deviceDirectory;
+        PersistSnapshotSigCacheEntry(cleanDir, hex, path);
     }
 
     private static string? InferDeviceDirectoryFromCleanBackup(string cleanDir)
@@ -5012,7 +5043,8 @@ public sealed class BackupDownloadService
     }
 
     /// <summary>
-    /// Carica indice signature→path da run precedenti (device <c>.ike_sig_cache</c>).
+    /// Resume: carica signature→path dalla cache <b>di questo</b> snapshot
+    /// (<c>{work}/.ike_sig_cache</c>), non dal device-wide legacy.
     /// </summary>
     private static int SeedShardIndexFromPriorSnapshots(
         string deviceDirectory,
@@ -5020,10 +5052,12 @@ public sealed class BackupDownloadService
         ConcurrentDictionary<string, string> shardBySig,
         IProgress<string>? log)
     {
+        _ = deviceDirectory;
         var added = 0;
         try
         {
-            var cacheDir = IkeBackupOutputPaths.ResolveDeviceSigCacheDirectory(deviceDirectory);
+            var cacheDir = IkeBackupOutputPaths.ResolveSnapshotSigCacheDirectory(
+                currentWorkDirectory);
             if (Directory.Exists(cacheDir))
             {
                 foreach (var entry in Directory.EnumerateFiles(cacheDir))
@@ -5053,14 +5087,14 @@ public sealed class BackupDownloadService
 
         if (added > 0)
             log?.Report(
-                $"  CopySnapshot: indice device {added:N0} signature riusabili " +
-                $"(sibling snapshot sotto {deviceDirectory})");
+                $"  CopySnapshot: indice snapshot {added:N0} signature riusabili " +
+                $"(cache sotto {currentWorkDirectory})");
         return added;
     }
 
     /// <summary>
-    /// Se la signature (o lo stesso fileID iTunes) esiste già su disco da uno snapshot
-    /// precedente, collega la sorgente in <paramref name="shardBySig"/> per la copia.
+    /// Riuso da sibling solo con fileID <b>e</b> SizeBytes coincidente.
+    /// Niente lettura cache device-wide (cross-UUID).
     /// </summary>
     private static bool TryBindPriorShardSource(
         BackupAsset asset,
@@ -5068,39 +5102,24 @@ public sealed class BackupDownloadService
         string deviceDirectory,
         string currentWorkDirectory)
     {
+        // Size obbligatoria: senza non si può validare il contenuto riusato.
+        if (asset.SizeBytes is not > 0)
+            return false;
+
         if (asset.AssetSignature is { Length: 21 } sig)
         {
             var hex = Convert.ToHexString(sig).ToLowerInvariant();
             if (shardBySig.TryGetValue(hex, out var mapped)
                 && IsUsablePriorShardFile(mapped, asset.SizeBytes))
                 return true;
-
-            // Indice device lazy (entry scritta da run precedenti).
-            try
-            {
-                var entry = IkeBackupOutputPaths.ResolveDeviceSigCacheEntryPath(deviceDirectory, hex);
-                if (File.Exists(entry))
-                {
-                    var target = File.ReadAllText(entry).Trim();
-                    if (IsUsablePriorShardFile(target, asset.SizeBytes))
-                    {
-                        shardBySig[hex] = target;
-                        return true;
-                    }
-                }
-            }
-            catch
-            {
-                // fall through fileId
-            }
+            // Non leggere .ike_sig_cache device-wide: puntava a shard di altri UUID.
         }
 
-        // Stesso fileID in Backup/ di uno sibling = contenuto invariato (incrementale).
         var fid = asset.EnsureFileId();
         if (string.IsNullOrWhiteSpace(fid))
             return false;
         var prior = IkeBackupOutputPaths.TryFindPriorBackupShard(
-            deviceDirectory, fid, currentWorkDirectory);
+            deviceDirectory, fid, currentWorkDirectory, asset.SizeBytes);
         if (prior is null || !IsUsablePriorShardFile(prior, asset.SizeBytes))
             return false;
 
@@ -5108,7 +5127,16 @@ public sealed class BackupDownloadService
         {
             var hex2 = Convert.ToHexString(sig2).ToLowerInvariant();
             shardBySig[hex2] = prior;
-            PersistDeviceSigCacheEntry(deviceDirectory, hex2, prior);
+            try
+            {
+                var clean = IkeBackupOutputPaths.ResolveCleanBackupDirectory(
+                    currentWorkDirectory);
+                PersistSnapshotSigCacheEntry(clean, hex2, prior);
+            }
+            catch
+            {
+                // ignore
+            }
         }
 
         return true;
@@ -5117,6 +5145,9 @@ public sealed class BackupDownloadService
     private static bool IsUsablePriorShardFile(string? path, long? expectedSizeBytes)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return false;
+        // Size richiesta per ogni riuso prior/sibling.
+        if (expectedSizeBytes is not > 0)
             return false;
         long len;
         try
@@ -5128,25 +5159,24 @@ public sealed class BackupDownloadService
             return false;
         }
 
-        if (len <= 0)
-            return false;
-        if (expectedSizeBytes is > 0 && len != expectedSizeBytes.Value)
-            return false;
-        return true;
+        return len == expectedSizeBytes.Value;
     }
 
-    private static void PersistDeviceSigCacheEntry(
-        string? deviceDirectory,
+    private static void PersistSnapshotSigCacheEntry(
+        string cleanOrWorkDirectory,
         string sigHex,
         string absolutePath)
     {
-        if (string.IsNullOrWhiteSpace(deviceDirectory) || string.IsNullOrWhiteSpace(sigHex))
+        if (string.IsNullOrWhiteSpace(cleanOrWorkDirectory)
+            || string.IsNullOrWhiteSpace(sigHex))
             return;
         try
         {
-            var dir = IkeBackupOutputPaths.ResolveDeviceSigCacheDirectory(deviceDirectory);
+            var work = IkeBackupOutputPaths.ResolveSnapshotWorkDirectoryFromCleanBackup(
+                cleanOrWorkDirectory);
+            var dir = IkeBackupOutputPaths.ResolveSnapshotSigCacheDirectory(work);
             Directory.CreateDirectory(dir);
-            var entry = IkeBackupOutputPaths.ResolveDeviceSigCacheEntryPath(deviceDirectory, sigHex);
+            var entry = IkeBackupOutputPaths.ResolveSnapshotSigCacheEntryPath(work, sigHex);
             File.WriteAllText(entry, absolutePath);
         }
         catch
@@ -6430,7 +6460,8 @@ public sealed class BackupDownloadService
             // per-gate; retry quando OidHostBodyCache.Put recupera il CT.
             if (fordIkm is { Length: 16 or 32 }
                 && !OidHostBodyCache.TryOwnedFordCtAvailable(
-                    authBody, plan, chunks, sibMap, fordIkm))
+                    authBody, plan, chunks, sibMap, fordIkm,
+                    assetSignature21: asset.AssetSignature))
             {
                 var deferPath = asset.RelativePath ?? asset.RecordName ?? outputFile;
                 OidHostBodyCache.RegisterOwnedPendings(

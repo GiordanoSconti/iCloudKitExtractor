@@ -188,17 +188,41 @@ public static class IkeBackupOutputPaths
     }
 
     /// <summary>
-    /// Indice device-level signature→shard (CopySnapshotFiles / riuso incrementale).
-    /// Un file per hex(sig21) sotto <c>{deviceDir}/.ike_sig_cache/</c>.
+    /// Indice signature→shard <b>per snapshot</b> (niente riuso cross-UUID).
+    /// Un file per hex(sig21) sotto <c>{snapshotWork}/.ike_sig_cache/</c>.
     /// </summary>
     public const string DeviceSigCacheFolderName = ".ike_sig_cache";
 
+    /// <summary>
+    /// Cache legacy device-wide (non usare per bind cross-snapshot: contaminava fileID/size).
+    /// </summary>
     public static string ResolveDeviceSigCacheDirectory(string deviceDirectory) =>
         Path.Combine(deviceDirectory, DeviceSigCacheFolderName);
 
     public static string ResolveDeviceSigCacheEntryPath(string deviceDirectory, string sigHex21) =>
         Path.Combine(
             ResolveDeviceSigCacheDirectory(deviceDirectory),
+            sigHex21.Trim().ToLowerInvariant());
+
+    /// <summary>Radice snapshot (cartella <c>[GUID][…]</c>) da <c>…/Backup</c> o dalla work dir.</summary>
+    public static string ResolveSnapshotWorkDirectoryFromCleanBackup(string cleanBackupDirectory)
+    {
+        var trimmed = cleanBackupDirectory.TrimEnd(
+            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var name = Path.GetFileName(trimmed);
+        if (string.Equals(name, CleanBackupFolderName, StringComparison.OrdinalIgnoreCase))
+            return Path.GetDirectoryName(trimmed) ?? trimmed;
+        return trimmed;
+    }
+
+    public static string ResolveSnapshotSigCacheDirectory(string snapshotWorkDirectory) =>
+        Path.Combine(ResolveSnapshotRoot(snapshotWorkDirectory), DeviceSigCacheFolderName);
+
+    public static string ResolveSnapshotSigCacheEntryPath(
+        string snapshotWorkDirectory,
+        string sigHex21) =>
+        Path.Combine(
+            ResolveSnapshotSigCacheDirectory(snapshotWorkDirectory),
             sigHex21.Trim().ToLowerInvariant());
 
     /// <summary>
@@ -248,15 +272,20 @@ public static class IkeBackupOutputPaths
     }
 
     /// <summary>
-    /// Cerca un file già materializzato in Backup/ di uno snapshot precedente
-    /// (stesso fileID iTunes ⇒ contenuto invariato nello snapshot incrementale).
+    /// Cerca un file già materializzato in Backup/ di uno snapshot precedente.
+    /// Stesso fileID <b>e</b> stessa size (obbligatoria): senza size match si contaminano
+    /// snapshot diversi che condividono il path iTunes ma non il contenuto.
     /// </summary>
     public static string? TryFindPriorBackupShard(
         string deviceDirectory,
         string fileId,
-        string? currentWorkDirectory = null)
+        string? currentWorkDirectory = null,
+        long? expectedSizeBytes = null)
     {
         if (string.IsNullOrWhiteSpace(fileId) || fileId.Length < 2)
+            return null;
+        // Size obbligatoria: fileID da solo non implica contenuto invariato tra snapshot.
+        if (expectedSizeBytes is not > 0)
             return null;
 
         foreach (var work in EnumerateSiblingSnapshotWorkDirs(deviceDirectory, currentWorkDirectory))
@@ -265,7 +294,10 @@ public static class IkeBackupOutputPaths
             {
                 var clean = ResolveCleanBackupDirectory(work);
                 var path = ToShardedFilePath(clean, fileId);
-                if (File.Exists(path) && new FileInfo(path).Length > 0)
+                if (!File.Exists(path))
+                    continue;
+                var len = new FileInfo(path).Length;
+                if (len == expectedSizeBytes.Value)
                     return path;
             }
             catch

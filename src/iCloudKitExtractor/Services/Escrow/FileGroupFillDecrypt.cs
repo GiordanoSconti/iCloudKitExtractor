@@ -114,7 +114,6 @@ public static class FileGroupFillDecrypt
         bool canMmcs,
         byte[]? mmcsKek16)
     {
-        _ = asset;
         IReadOnlyList<BoundStorage> storages = Array.Empty<BoundStorage>();
         var fordN = 0;
 
@@ -141,8 +140,11 @@ public static class FileGroupFillDecrypt
             sibCache, plan, chunks, authBody, fordIkm);
         // Data plant (sig:) — Ford solo da PutChunksFromHostBodies / .chunks.
         PlantAuthChecksumSlicesIntoMap(sibCache, plan, chunks, sibCache, fordIkm: fordIkm);
+        // Pass AssetSignature: batch AG plan.FileChecksum can miss the Ford gate that embeds CK sig.
         storages = LiveFillPipeline.BindOwnedFordStorages(
-            authBody, plan, chunks, sibCache, fordIkm: fordIkm);
+            authBody, plan, chunks, sibCache,
+            fileChecksum21: asset.AssetSignature,
+            fordIkm: fordIkm);
         // Aggiungi storage data (refs host senza Ford) come Phase A.
         var refHosts = CollectRefHostIndices(plan);
         for (var i = 0; i < plan.Containers.Count; i++)
@@ -162,7 +164,7 @@ public static class FileGroupFillDecrypt
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",
@@ -211,7 +213,7 @@ public static class FileGroupFillDecrypt
                     }).ToList();
                 var anyOpens = fordSt.Any(static d => d["opens"] is true);
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "03cce7",
@@ -243,6 +245,7 @@ public static class FileGroupFillDecrypt
             {
                 var descsDiag = UbChunkBuilder.CollectAuthFordDescriptors(
                     authBody, plan, chunks);
+                var assetSig = asset.AssetSignature;
                 var gateDiag = descsDiag.Take(6).Select(d =>
                 {
                     var emb4 = d.Gate45.Length == 45
@@ -251,6 +254,10 @@ public static class FileGroupFillDecrypt
                     var lead3 = d.Gate45.Length >= 3
                         ? Convert.ToHexString(d.Gate45.AsSpan(0, 3))
                         : "";
+                    var ownsPlan = UbChunkBuilder.GateOwnsPlan(d.Gate45, plan);
+                    var ownsAsset = assetSig is { Length: 21 }
+                                    && UbChunkBuilder.GateEmbedsFileChecksum(
+                                        d.Gate45, assetSig);
                     return new Dictionary<string, object?>
                     {
                         ["gate8"] = d.Gate45.Length >= 8
@@ -258,7 +265,8 @@ public static class FileGroupFillDecrypt
                             : "",
                         ["lead3"] = lead3,
                         ["embFc4"] = emb4,
-                        ["owns"] = UbChunkBuilder.GateOwnsPlan(d.Gate45, plan),
+                        ["owns"] = ownsPlan,
+                        ["ownsAsset"] = ownsAsset,
                         ["ctLen"] = d.CtLen,
                         ["oid8"] = d.ObjectId is { Length: >= 8 } o
                             ? o[..8]
@@ -267,6 +275,10 @@ public static class FileGroupFillDecrypt
                 }).ToList();
                 var fordCiN = plan.Containers.Sum(static g =>
                     g.Count(UbChunkBuilder.IsAuthFordDescriptorChunk));
+                var ownsN = descsDiag.Count(d =>
+                    UbChunkBuilder.GateOwnsPlan(d.Gate45, plan)
+                    || (assetSig is { Length: 21 }
+                        && UbChunkBuilder.GateEmbedsFileChecksum(d.Gate45, assetSig)));
                 var payload = new Dictionary<string, object?>
                 {
                     ["sessionId"] = "b3df71",
@@ -292,43 +304,68 @@ public static class FileGroupFillDecrypt
                         ["fcLead"] = plan.FileChecksum is { Length: 21 } fc2
                             ? fc2[0]
                             : -1,
-                        ["assetSig4"] = asset.AssetSignature is { Length: 21 } asg
+                        ["assetSig4"] = assetSig is { Length: 21 } asg
                             ? Convert.ToHexString(asg.AsSpan(0, 4))
                             : null,
-                        ["assetSigLead"] = asset.AssetSignature is { Length: 21 } asg2
+                        ["assetSigLead"] = assetSig is { Length: 21 } asg2
                             ? asg2[0]
                             : -1,
                         ["descs"] = descsDiag.Count,
                         ["fordCiN"] = fordCiN,
-                        ["ownsN"] = gateDiag.Count(static g => g["owns"] is true),
+                        ["ownsN"] = ownsN,
                         ["gates"] = gateDiag,
                         ["hasPipeC"] = hasPipeC,
                         ["ikmLen"] = fordIkm.Length,
+                        ["emptyHosts"] = plan.Containers.Count(static c => c.Count == 0),
                     },
                 };
                 var line = System.Text.Json.JsonSerializer.Serialize(payload)
                     + Environment.NewLine;
-                File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
-                    line);
-                File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
-                    line);
+                // Small files first: debug-03cce7 (~17GB) AppendAllText often throws and
+                // previously swallowed the whole diagnostic (no b3df71 / no_ford for Unify).
+                try
+                {
+                    File.AppendAllText(
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-unify-ford.jsonl",
+                        line);
+                }
+                catch { /* ignore */ }
+                try
+                {
+                    File.AppendAllText(
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
+                        line);
+                }
+                catch { /* ignore */ }
+                try
+                {
+                    File.AppendAllText(
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
+                        line);
+                }
+                catch { /* ignore */ }
+                try
+                {
+                    File.AppendAllText(
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
+                        line);
+                }
+                catch { /* ignore */ }
                 // #region agent log
-                // Dump AG wire on TM / no-ford so we can compare authDescN vs fordCi offline.
+                // Dump AG wire on TM / Unify / no-ford so we can compare authDescN vs fordCi offline.
                 try
                 {
                     var rel = asset.RelativePath ?? asset.RecordName ?? "";
                     var dumpTm = rel.Contains("translations-models", StringComparison.OrdinalIgnoreCase)
+                        || rel.Contains("UnifyStorage", StringComparison.OrdinalIgnoreCase)
                         || (plan.FileChecksum is { Length: 21 } fcDump
                             && fcDump[0] == 0x04 && fcDump[1] == 0xC0 && fcDump[2] == 0x55
                             && fcDump[3] == 0xB5);
                     if (dumpTm && authBody is { Length: > 0 })
                     {
-                        var outDir = Path.Combine(
-                            Path.GetTempPath(),
-                            "ike_captures",
-                            "translations_models");
+                        var outDir = rel.Contains("UnifyStorage", StringComparison.OrdinalIgnoreCase)
+                            ? @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\mitm\captures\unify_ford"
+                            : @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\mitm\captures\translations_models_x64dbg";
                         Directory.CreateDirectory(outDir);
                         var agPath = Path.Combine(outDir, "ike_ag_wire.bin");
                         File.WriteAllBytes(agPath, authBody);
@@ -355,10 +392,10 @@ public static class FileGroupFillDecrypt
                                 },
                             }) + Environment.NewLine;
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                             dumpLine);
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                             dumpLine);
                     }
                 }
@@ -441,10 +478,10 @@ public static class FileGroupFillDecrypt
                         },
                     }) + Environment.NewLine;
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\AIAgent\debug-4ff690.log",
                     line);
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-4ff690.log",
                     line);
             }
             catch { /* ignore */ }
@@ -643,10 +680,10 @@ public static class FileGroupFillDecrypt
                             },
                         }) + Environment.NewLine;
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                         line);
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line);
                 }
                 catch { /* ignore */ }
@@ -806,7 +843,7 @@ public static class FileGroupFillDecrypt
             if (deleted > 0)
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "03cce7",
@@ -1051,7 +1088,7 @@ public static class FileGroupFillDecrypt
             try
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "03cce7",
@@ -1093,7 +1130,7 @@ public static class FileGroupFillDecrypt
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "03cce7",
@@ -1175,7 +1212,7 @@ public static class FileGroupFillDecrypt
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -1398,7 +1435,7 @@ public static class FileGroupFillDecrypt
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",
@@ -1446,7 +1483,7 @@ public static class FileGroupFillDecrypt
             try
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "03cce7",
@@ -1560,7 +1597,7 @@ public static class FileGroupFillDecrypt
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -1649,7 +1686,7 @@ public static class FileGroupFillDecrypt
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -1951,7 +1988,7 @@ public static class FileGroupFillDecrypt
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -2092,7 +2129,7 @@ public static class FileGroupFillDecrypt
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -2288,7 +2325,7 @@ public static class FileGroupFillDecrypt
                             },
                         });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                             line + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -2324,7 +2361,7 @@ public static class FileGroupFillDecrypt
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -2391,7 +2428,7 @@ public static class FileGroupFillDecrypt
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -2449,7 +2486,7 @@ public static class FileGroupFillDecrypt
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -2608,7 +2645,7 @@ public static class FileGroupFillDecrypt
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -2897,7 +2934,7 @@ public static class FileGroupFillDecrypt
                 try
                 {
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                         {
                             ["sessionId"] = "03cce7",
@@ -2938,7 +2975,7 @@ public static class FileGroupFillDecrypt
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",
@@ -3306,7 +3343,7 @@ public static class FileGroupFillDecrypt
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }

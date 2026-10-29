@@ -103,7 +103,8 @@ public static class OidHostBodyCache
         AuthorizeGetDecryptPlan plan,
         IReadOnlyList<SignedUrlChunk> hosts,
         IReadOnlyDictionary<string, (byte[] Compact, long MmcsStart)>? siblings,
-        ReadOnlySpan<byte> fordIkm)
+        ReadOnlySpan<byte> fordIkm,
+        byte[]? assetSignature21 = null)
     {
         if (authBody is not { Length: > 0 } || fordIkm.Length is not (16 or 32))
             return false;
@@ -114,9 +115,16 @@ public static class OidHostBodyCache
         {
             if (d.Gate45.Length != 45 || d.CtLen is < 0x12 or > 65_536)
                 continue;
-            if (plan.FileChecksum is { Length: 21 }
-                && !UbChunkBuilder.GateOwnsPlan(d.Gate45, plan))
-                continue;
+            if (plan.FileChecksum is { Length: 21 } || assetSignature21 is { Length: 21 })
+            {
+                var ownsPlan = plan.FileChecksum is { Length: 21 }
+                               && UbChunkBuilder.GateOwnsPlan(d.Gate45, plan);
+                var ownsAsset = assetSignature21 is { Length: 21 }
+                                && UbChunkBuilder.GateEmbedsFileChecksum(
+                                    d.Gate45, assetSignature21);
+                if (!ownsPlan && !ownsAsset)
+                    continue;
+            }
             anyOwned = true;
 
             if (ChunkFileCache.TryRead(d.Gate45, d.CtLen, out var fileCt)
@@ -210,7 +218,7 @@ public static class OidHostBodyCache
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",
