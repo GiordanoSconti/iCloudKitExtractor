@@ -123,7 +123,8 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
         if (!File.Exists(_fetchScript))
         {
             throw new FileNotFoundException(
-                "fetch_anisette.py assente. Imposta FRIDA_ANISETTE_FETCH_PY.",
+                "fetch_anisette.py assente. Imposta FRIDA_ANISETTE_FETCH_PY " +
+                "sul file o sulla directory ios_akd_probe (scripts/ios_akd_probe).",
                 _fetchScript);
         }
 
@@ -276,22 +277,32 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
         ClientTimeUtc = h.ClientTimeUtc,
     };
 
+    /// <summary>
+    /// Path a <c>fetch_anisette.py</c>.
+    /// <c>FRIDA_ANISETTE_FETCH_PY</c> può essere il file oppure la directory
+    /// <c>ios_akd_probe</c> (si usa <c>fetch_anisette.py</c> al suo interno).
+    /// Default: <c>ios_akd_probe/</c> accanto all'exe (publish) o
+    /// <c>scripts/ios_akd_probe/</c> nel repo.
+    /// </summary>
     public static string ResolveFetchScriptPath()
     {
         var env = Environment.GetEnvironmentVariable("FRIDA_ANISETTE_FETCH_PY")?.Trim();
         if (!string.IsNullOrEmpty(env))
-            return Path.GetFullPath(env);
+            return NormalizeFetchPyPath(env);
 
-        // Default: sibling iCloudDownloader checkout next to iCloudKitExtractor
         var here = AppContext.BaseDirectory;
         var candidates = new[]
         {
+            // Publish / run output: scripts copiati in ios_akd_probe/
+            Path.GetFullPath(Path.Combine(here, "ios_akd_probe", "fetch_anisette.py")),
+            // Dev: AnisetteServer bin → …/src/AnisetteServer → repo root scripts/
+            Path.GetFullPath(Path.Combine(here, "..", "..", "..", "..", "..",
+                "scripts", "ios_akd_probe", "fetch_anisette.py")),
+            Path.GetFullPath(Path.Combine(here, "..", "..", "..", "..",
+                "scripts", "ios_akd_probe", "fetch_anisette.py")),
+            // Legacy sibling iCloudDownloader checkout
             Path.GetFullPath(Path.Combine(here, "..", "..", "..", "..", "..",
                 "iCloudDownloader", "mitm", "ios_akd_probe", "fetch_anisette.py")),
-            Path.GetFullPath(Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                "PROGRAMMAZIONE", "Projects", "iCloudDownloader",
-                "mitm", "ios_akd_probe", "fetch_anisette.py")),
         };
 
         foreach (var c in candidates)
@@ -300,7 +311,18 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
                 return c;
         }
 
-        return candidates[^1];
+        return candidates[0];
+    }
+
+    /// <summary>
+    /// Accetta path al .py oppure alla cartella <c>ios_akd_probe</c>.
+    /// </summary>
+    public static string NormalizeFetchPyPath(string pathOrDir)
+    {
+        var full = Path.GetFullPath(pathOrDir.Trim());
+        if (Directory.Exists(full))
+            return Path.Combine(full, "fetch_anisette.py");
+        return full;
     }
 
     private static string ExtractProductType(string clientInfo)

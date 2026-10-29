@@ -288,6 +288,8 @@ if (backend is "frida" or "iphone-frida" or "jb-frida")
     Console.WriteLine($"  Script:  {fr?.FetchScript ?? FridaIphoneAnisetteProvider.ResolveFetchScriptPath()}");
     Console.WriteLine("  Env: FRIDA_ANISETTE_HOST, FRIDA_ANISETTE_PROCESS, FRIDA_ANISETTE_FETCH_PY,");
     Console.WriteLine("       FRIDA_ANISETTE_PYTHON, FRIDA_ANISETTE_LITE, FRIDA_ANISETTE_TIMEOUT");
+    Console.WriteLine("  FRIDA_ANISETTE_FETCH_PY = file fetch_anisette.py oppure dir ios_akd_probe");
+    Console.WriteLine("  (default: ios_akd_probe/ accanto all'exe ← scripts/ios_akd_probe).");
     Console.WriteLine("  Serve frida-server sull'iPhone + frida-tools sul PC (stessa versione).");
 }
 else if (backend is "akd-emulated" or "akd")

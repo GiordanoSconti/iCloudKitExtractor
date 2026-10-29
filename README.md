@@ -134,7 +134,7 @@ Preferred path for a coherent **iPhone/akd** identity: OTP is minted on-device v
 - Jailbroken iPhone with **frida-server** running (USB or Wi‑Fi)
 - Matching **frida-tools** version on the PC (`pip install frida-tools`)
 - Python 3 available as `python` (or set `FRIDA_ANISETTE_PYTHON`)
-- `fetch_anisette.py` (Frida attach script). Set its path with `FRIDA_ANISETTE_FETCH_PY`
+- Bundled Frida scripts under `scripts/ios_akd_probe/` (`fetch_anisette.py` + JS). Copied next to AnisetteServer as `ios_akd_probe/` on build/publish. Optional override: `FRIDA_ANISETTE_FETCH_PY` (file or that directory)
 
 > Jailbreak install steps: see **[Preparing a jailbroken iPhone](#preparing-a-jailbroken-iphone)** below (details TBA).
 
@@ -148,12 +148,10 @@ Preferred path for a coherent **iPhone/akd** identity: OTP is minted on-device v
 | `ICLOUD_AUTH_MODE` | recommended | `iphone` (via config) | Use `iphone` for full AuthKit iPhone SRP |
 | `FRIDA_ANISETTE_HOST` | no | `127.0.0.1:27042` | frida-server host:port (USB often via `iproxy 27042 27042`) |
 | `FRIDA_ANISETTE_PROCESS` | no | `akd` | Process to attach |
-| `FRIDA_ANISETTE_FETCH_PY` | **yes*** | heuristic path | Absolute path to `fetch_anisette.py` |
+| `FRIDA_ANISETTE_FETCH_PY` | no | `ios_akd_probe/` next to exe | Path to `fetch_anisette.py` **or** to the `ios_akd_probe` directory |
 | `FRIDA_ANISETTE_PYTHON` | no | `python` | Python executable |
 | `FRIDA_ANISETTE_LITE` | no | `1` / true | Lite attach mode |
 | `FRIDA_ANISETTE_TIMEOUT` | no | `60` | Seconds before aborting a mint |
-
-\*Without `FRIDA_ANISETTE_FETCH_PY`, the app only searches a few legacy sibling paths; set the env var explicitly.
 
 Optional app config file: `%AppData%\iCloudKitExtractor\anisette.json` (`authMode`, `serverUrl`). Env vars override the file.
 
@@ -164,7 +162,8 @@ $env:ANISETTE_SERVER_BACKEND = "frida"
 $env:ANISETTE_SERVER_PORT = "6971"
 $env:FRIDA_ANISETTE_HOST = "127.0.0.1:27042"
 $env:FRIDA_ANISETTE_PROCESS = "akd"
-$env:FRIDA_ANISETTE_FETCH_PY = "C:\path\to\fetch_anisette.py"
+# Optional — defaults to bundled scripts/ios_akd_probe (copied beside the exe)
+# $env:FRIDA_ANISETTE_FETCH_PY = "C:\path\to\scripts\ios_akd_probe"
 $env:FRIDA_ANISETTE_PYTHON = "python"
 $env:FRIDA_ANISETTE_LITE = "1"
 $env:FRIDA_ANISETTE_TIMEOUT = "60"

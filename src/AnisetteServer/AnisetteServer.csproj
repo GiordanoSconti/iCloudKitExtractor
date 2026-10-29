@@ -41,4 +41,11 @@
     <None Include="..\..\native\CoreAdiBridge\out\CoreAdiBridge.exe" Link="CoreAdiBridge.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\native\CoreAdiBridge\out\CoreAdiBridge.exe')" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\scripts\ios_akd_probe\**\*"
+          Link="ios_akd_probe\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
