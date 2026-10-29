@@ -436,6 +436,41 @@ main {
   line-height: 1.12;
 }
 
+.article h2 {
+  margin: 1.85rem 0 0.65rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.article .evidence-list {
+  margin: 0 0 1.25rem;
+  padding-left: 1.25rem;
+  color: var(--ink-soft);
+}
+
+.article ol.evidence-list {
+  list-style: decimal;
+}
+
+.article ul.evidence-list {
+  list-style: disc;
+}
+
+.article .evidence-list li {
+  margin: 0 0 0.65rem;
+  line-height: 1.5;
+}
+
+.article .evidence-list li:last-child {
+  margin-bottom: 0;
+}
+
+.article .evidence-list code {
+  font-size: 0.92em;
+}
+
 .article p {
   margin: 0 0 1.1rem;
   color: var(--ink-soft);
