@@ -11,6 +11,43 @@ namespace iCloudKitExtractor.Protocol;
 /// </summary>
 public static class UbChunkBuilder
 {
+    /// <summary>
+    /// Cap storico Auth Ford CT (112 / empty / packed piccoli). Path classico invariato.
+    /// </summary>
+    public const int MaxAuthFordCtLen = 65_536;
+
+    /// <summary>
+    /// Sanità protobuf/DoS per bag multi-key (Unify ~110KiB+). Non usare sui Ford regolari.
+    /// </summary>
+    public const int MaxAuthFordCtLenSanity = 32 * 1024 * 1024;
+
+    /// <summary>Ford CT classico: <c>[0x12 .. 64KiB]</c> — stesso gate di prima.</summary>
+    public static bool IsClassicAuthFordCtLen(int ctLen) =>
+        ctLen is >= 0x12 and <= MaxAuthFordCtLen;
+
+    /// <summary>Bag multi-key: <c>ctLen &gt; 64KiB</c> (richiede ByteRange host).</summary>
+    public static bool IsLargeAuthFordCtLen(int ctLen) =>
+        ctLen > MaxAuthFordCtLen && ctLen <= MaxAuthFordCtLenSanity;
+
+    /// <summary>
+    /// Parse: classici sempre; large solo entro sanità (ByteRange a valle).
+    /// </summary>
+    public static bool IsPlausibleAuthFordCtLen(int ctLen) =>
+        IsClassicAuthFordCtLen(ctLen) || IsLargeAuthFordCtLen(ctLen);
+
+    /// <summary>
+    /// Bind: classici <b>ignorano</b> hostLen (comportamento storico).
+    /// Large: obbligatorio <c>ctLen ≤ ByteRange length</c>.
+    /// </summary>
+    public static bool IsPlausibleAuthFordCtLen(int ctLen, long hostByteRangeLen)
+    {
+        if (IsClassicAuthFordCtLen(ctLen))
+            return true;
+        if (!IsLargeAuthFordCtLen(ctLen))
+            return false;
+        return hostByteRangeLen > 0 && ctLen <= hostByteRangeLen;
+    }
+
     private static readonly Regex AssetSizeSuffixRegex = new(
         @":(\d+)$",
         RegexOptions.Compiled);
@@ -272,7 +309,7 @@ public static class UbChunkBuilder
             try
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "03cce7",
@@ -738,7 +775,7 @@ public static class UbChunkBuilder
             return;
         try
         {
-            var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log");
+            var path = @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log";
             var url = firstUrl ?? "";
             var urlEsc = url.Replace("\\", "\\\\").Replace("\"", "\\\"");
             var hasPort = url.Contains(":443", StringComparison.Ordinal)
@@ -959,7 +996,7 @@ public static class UbChunkBuilder
                     fordHosts++;
                 if (fordN > 1)
                     multiFord++;
-                if (fordN == 1 && g.Count == 1 && g[0].Length is >= 0x12 and <= 65_536)
+                if (fordN == 1 && g.Count == 1 && IsPlausibleAuthFordCtLen(g[0].Length))
                 {
                     // placeholder: logged below via sample
                 }
@@ -969,7 +1006,7 @@ public static class UbChunkBuilder
             }
 
             var path =
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log");
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log";
             var line =
                 "{\"sessionId\":\"03cce7\",\"runId\":\"ike-fg-1to1\",\"hypothesisId\":\"H-IKE-FG\"," +
                 "\"location\":\"UbChunkBuilder.BuildDecryptPlan\"," +
@@ -1243,7 +1280,7 @@ public static class UbChunkBuilder
             try
             {
                 var path =
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log");
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log";
                 var line =
                     "{\"sessionId\":\"03cce7\",\"runId\":\"host-sel-v2\",\"hypothesisId\":\"H-IKE-SEL\"," +
                     "\"location\":\"UbChunkBuilder.SelectFileGroupDownloadHostIndices\"," +
@@ -2108,7 +2145,7 @@ public static class UbChunkBuilder
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -2146,6 +2183,10 @@ public static class UbChunkBuilder
             return true;
         if (host.Count != 1)
             return false;
+        // Solo taglie Ford “classiche” / multiplo piccolo.
+        // I bag multi-key grandi (Unify ~110KiB) passano già da
+        // host.All(IsAuthFordDescriptorChunk) sopra — non allargare qui
+        // i data host mono-CI (stabilità vs IsPlausibleAuthFordCtLen).
         var len = host[0].Length;
         return len is 112 or 155 or 224 or 310 or 464 or 480
                || (len >= 112 && len <= 4096 && (len % 112 == 0 || len % 155 == 0));
@@ -2166,7 +2207,7 @@ public static class UbChunkBuilder
                 $"\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"runId\":\"post-fix\"}}" +
                 Environment.NewLine;
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
@@ -2187,7 +2228,7 @@ public static class UbChunkBuilder
                 $"\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"runId\":\"ike-gate45-v1\"}}" +
                 Environment.NewLine;
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
@@ -2918,12 +2959,12 @@ public static class UbChunkBuilder
         var ctLen = 0;
         var hostHint = 0;
 
-            // f3 varint = CT len (live: 112; multi-key empty Ford fino a ~64 KiB, es. 12881)
+            // f3: classici ≤64KiB; large (Unify) accettati qui, ByteRange in Collect.
         if (pos < authorizeGetBody.Length && authorizeGetBody[pos] == 0x18)
         {
             pos++;
             if (!TryReadVarintInt(authorizeGetBody, ref pos, out ctLen)
-                || ctLen is < 0x12 or > 65_536)
+                || !IsPlausibleAuthFordCtLen(ctLen))
                 return;
         }
         else
@@ -2999,7 +3040,7 @@ public static class UbChunkBuilder
 
             foreach (var ch in group)
             {
-                if (!IsAuthFordDescriptorChunk(ch) || ch.Length is < 0x12 or > 65_536)
+                if (!IsAuthFordDescriptorChunk(ch) || !IsPlausibleAuthFordCtLen(ch.Length))
                     continue;
                 var gate = ch.Checksum21;
 
@@ -3023,6 +3064,32 @@ public static class UbChunkBuilder
                 }
 
                 list.Add(new AuthFordDescriptor(gate, ch.Length, 0, oid, -1 - i));
+            }
+        }
+
+        // Solo bag large: esigi ctLen ≤ ByteRange host. I classici non si toccano.
+        if (chunks is { Count: > 0 } && list.Count > 0)
+        {
+            for (var di = list.Count - 1; di >= 0; di--)
+            {
+                var d = list[di];
+                if (!IsLargeAuthFordCtLen(d.CtLen))
+                    continue;
+                long hostLen = 0;
+                if (!string.IsNullOrEmpty(d.ObjectId))
+                {
+                    foreach (var ch in chunks)
+                    {
+                        if (!string.Equals(ch.EdgeHeaders?.ObjectId, d.ObjectId, StringComparison.Ordinal)
+                            || ch.ByteRange is not { } br)
+                            continue;
+                        hostLen = br.End - br.Start + 1;
+                        break;
+                    }
+                }
+
+                if (!IsPlausibleAuthFordCtLen(d.CtLen, hostLen))
+                    list.RemoveAt(di);
             }
         }
 

@@ -7851,7 +7851,12 @@ public sealed class BackupDownloadService
                 continue;
 
             var hostLen = br.End - br.Start + 1;
-            if (hostLen < 112 || hostLen > 65_536)
+            // Empty: cap classico 64KiB. Ford CI/gate45: ByteRange è il bound (variabile).
+            if (hostLen < 112)
+                continue;
+            if (empty && hostLen > 65_536)
+                continue;
+            if (!empty && hostLen > UbChunkBuilder.MaxAuthFordCtLenSanity)
                 continue;
 
             var hostOid = host.EdgeHeaders?.ObjectId ?? "";
@@ -7954,6 +7959,7 @@ public sealed class BackupDownloadService
                 continue;
 
             var hostLen = br.End - br.Start + 1;
+            // Solo empty host: cap classico 64KiB.
             if (hostLen < 112 || hostLen > 65_536)
                 continue;
 
@@ -8042,7 +8048,7 @@ public sealed class BackupDownloadService
         long hostStart,
         byte[] body)
     {
-        if (body.Length < 0x12 || body.Length > 65_536 || string.IsNullOrEmpty(hostOid))
+        if (body.Length < 0x12 || body.Length > UbChunkBuilder.MaxAuthFordCtLenSanity || string.IsNullOrEmpty(hostOid))
             return;
         var key = FreshAgAssetKey(asset);
         if (string.IsNullOrEmpty(key))
@@ -12366,7 +12372,7 @@ public sealed class BackupDownloadService
 
             // Read(ctLen) identity: SOLO body == ctLen. MAI pack[0..ctLen) —
             // su host N×112 il gate owned è a off>0 (oracle oid0ctLen → fordOpen=0 / MAC/SIV).
-            if (preferredCtLen is >= 0x12 and <= 65_536 && body.Length == preferredCtLen)
+            if (UbChunkBuilder.IsPlausibleAuthFordCtLen(preferredCtLen) && body.Length == preferredCtLen)
             {
                 siblingCompacts[oid + "@0"] = (body, 0L);
                 oid0Aliased++;
@@ -12416,13 +12422,13 @@ public sealed class BackupDownloadService
             var ctPrefer = descs
                 .Where(d => string.Equals(d.ObjectId, oidHost, StringComparison.Ordinal))
                 .Select(d => d.CtLen)
-                .FirstOrDefault(l => l is >= 0x12 and <= 65_536);
+                .FirstOrDefault(UbChunkBuilder.IsPlausibleAuthFordCtLen);
             if (ctPrefer == 0 && group is not null)
             {
                 foreach (var c in group)
                 {
                     if (UbChunkBuilder.IsAuthFordDescriptorChunk(c)
-                        && c.Length is >= 0x12 and <= 65_536)
+                        && UbChunkBuilder.IsPlausibleAuthFordCtLen(c.Length))
                     {
                         ctPrefer = c.Length;
                         break;
@@ -12441,7 +12447,7 @@ public sealed class BackupDownloadService
         // Nested gate-oid senza host CI45: plant CT owned sotto oid@0 da cache Auth range.
         foreach (var d in descs)
         {
-            if (string.IsNullOrEmpty(d.ObjectId) || d.CtLen is < 0x12 or > 65_536)
+            if (string.IsNullOrEmpty(d.ObjectId) || !UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen))
                 continue;
             if (fileId is { Length: 21 }
                 && d.Gate45.Length == 45

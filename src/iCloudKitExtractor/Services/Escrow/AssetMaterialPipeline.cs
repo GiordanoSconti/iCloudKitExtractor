@@ -135,7 +135,7 @@ public static class AssetMaterialPipeline
         UbChunkBuilder.AuthFordDescriptor? owned = null;
         foreach (var d in UbChunkBuilder.CollectAuthFordDescriptors(authBody, plan, hosts))
         {
-            if (d.Gate45.Length != 45 || d.CtLen is < 0x12 or > 65_536)
+            if (d.Gate45.Length != 45 || !UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen))
                 continue;
             if (fc21 is { Length: 21 }
                 && !UbChunkBuilder.GateEmbedsFileChecksum(d.Gate45, fc21))
@@ -176,7 +176,7 @@ public static class AssetMaterialPipeline
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",

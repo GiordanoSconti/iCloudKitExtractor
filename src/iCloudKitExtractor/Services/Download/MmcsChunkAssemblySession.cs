@@ -238,7 +238,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -275,7 +275,7 @@ public sealed class MmcsChunkAssemblySession
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch { /* ignore */ }
@@ -304,7 +304,7 @@ public sealed class MmcsChunkAssemblySession
                     },
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                     line);
             }
             catch { /* ignore */ }
@@ -348,10 +348,10 @@ public sealed class MmcsChunkAssemblySession
                     },
                 });
             IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                     line);
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
         }
         catch { /* ignore */ }
@@ -509,7 +509,7 @@ public sealed class MmcsChunkAssemblySession
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "9a5651",
@@ -582,7 +582,7 @@ public sealed class MmcsChunkAssemblySession
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "9a5651",
@@ -761,10 +761,10 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -944,7 +944,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
@@ -1046,7 +1046,7 @@ public sealed class MmcsChunkAssemblySession
                                     });
                                 // Quiet-safe: sempre su disco (diagnostica contaminazione).
                                 File.AppendAllText(
-                                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                                     line + Environment.NewLine);
                             }
                             catch { /* ignore */ }
@@ -1125,7 +1125,7 @@ public sealed class MmcsChunkAssemblySession
                                 },
                             });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                             line + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -1388,10 +1388,10 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "9a5651",
@@ -1627,7 +1627,7 @@ public sealed class MmcsChunkAssemblySession
             if (leaseHold > 0 || pendingHold > 0)
             {
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
                     JsonSerializer.Serialize(new Dictionary<string, object?>
                     {
                         ["sessionId"] = "9a5651",
@@ -1798,7 +1798,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch { /* ignore */ }
@@ -1923,7 +1923,7 @@ public sealed class MmcsChunkAssemblySession
                                         },
                                     });
                                     File.AppendAllText(
-                                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                                         ok + Environment.NewLine);
                                 }
                                 catch { /* ignore */ }
@@ -1953,7 +1953,7 @@ public sealed class MmcsChunkAssemblySession
                                     },
                                 });
                                 File.AppendAllText(
-                                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                                     ok + Environment.NewLine);
                             }
                             catch { /* ignore */ }
@@ -2022,10 +2022,10 @@ public sealed class MmcsChunkAssemblySession
                             },
                         });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                             miss + Environment.NewLine);
                         IkeLogOptions.AppendAgentNdjson(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                             miss);
                     }
                     catch { /* ignore */ }
@@ -2064,7 +2064,7 @@ public sealed class MmcsChunkAssemblySession
                             },
                         });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                             line + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -2086,6 +2086,17 @@ public sealed class MmcsChunkAssemblySession
                     // Solo ByteRange.Start==0 → oid@0 (mai alias da @highOffset).
                     if (exactCt && br.Start == 0)
                         map.TryAdd(oid + "@0", (body, 0L));
+                }
+                // Solo bag large (ctLen>64KiB): CI gate45, body==Length≤ByteRange.
+                else if (hasFordDesc
+                         && br.Start == 0
+                         && group.Count == 1
+                         && UbChunkBuilder.IsAuthFordDescriptorChunk(group[0])
+                         && UbChunkBuilder.IsLargeAuthFordCtLen(group[0].Length)
+                         && group[0].Length == body.Length
+                         && UbChunkBuilder.IsPlausibleAuthFordCtLen(body.Length, hostLen))
+                {
+                    map.TryAdd(oid + "@0", (body, 0L));
                 }
                 added++;
                 addedBytes += body.Length;
@@ -2150,7 +2161,7 @@ public sealed class MmcsChunkAssemblySession
                                 },
                             });
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                                 line + Environment.NewLine);
                         }
                         catch { /* ignore */ }
@@ -2222,7 +2233,7 @@ public sealed class MmcsChunkAssemblySession
             });
             // Always-on: provenance is the L0/L1 map for Pipe A/B.
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
             // Keep prior seed summary for H-AUTH-FORD filters.
             var seedLine = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
@@ -2248,7 +2259,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 seedLine);
         }
         catch { /* ignore */ }
@@ -2349,7 +2360,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -2481,7 +2492,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch { /* ignore */ }
@@ -2570,7 +2581,7 @@ public sealed class MmcsChunkAssemblySession
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -2624,7 +2635,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line);
         }
         catch
@@ -2953,7 +2964,7 @@ public sealed class MmcsChunkAssemblySession
                 ["data"] = data,
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
@@ -3043,7 +3054,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -3118,7 +3129,7 @@ public sealed class MmcsChunkAssemblySession
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
         }
@@ -3211,7 +3222,7 @@ public sealed class MmcsChunkAssemblySession
                                 },
                             });
                             File.AppendAllText(
-                                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                                 line + Environment.NewLine);
                         }
                         catch { /* ignore */ }
@@ -3249,7 +3260,7 @@ public sealed class MmcsChunkAssemblySession
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -3289,7 +3300,7 @@ public sealed class MmcsChunkAssemblySession
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                     line + Environment.NewLine);
             }
             catch { /* ignore */ }
@@ -3437,7 +3448,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -3526,7 +3537,7 @@ public sealed class MmcsChunkAssemblySession
                 ["data"] = data,
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch { /* ignore */ }
@@ -3575,7 +3586,7 @@ public sealed class MmcsChunkAssemblySession
                 },
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch { /* ignore */ }

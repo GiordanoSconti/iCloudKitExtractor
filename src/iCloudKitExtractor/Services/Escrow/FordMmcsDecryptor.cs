@@ -955,7 +955,7 @@ public static class FordMmcsDecryptor
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
@@ -988,13 +988,13 @@ public static class FordMmcsDecryptor
             if (message is "filegroup_ford_none_attached" or "filegroup_ford_keycount_miss")
             {
                 System.IO.File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line + Environment.NewLine);
             }
             else
             {
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
         }
@@ -1031,7 +1031,7 @@ public static class FordMmcsDecryptor
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch
@@ -1175,7 +1175,7 @@ public static class FordMmcsDecryptor
                     },
                 });
                 File.AppendAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line + Environment.NewLine);
             }
             catch
@@ -1291,8 +1291,29 @@ public static class FordMmcsDecryptor
                 authorizeGetBody, plan, original);
             foreach (var d in descs)
             {
-                if (d.CtLen < 0x12 || d.CtLen > 65_536 || string.IsNullOrEmpty(d.ObjectId))
+                if (string.IsNullOrEmpty(d.ObjectId))
                     continue;
+                // Classici: nessun vincolo ByteRange. Large: ctLen ≤ host range.
+                long hostLen = 0;
+                if (UbChunkBuilder.IsLargeAuthFordCtLen(d.CtLen))
+                {
+                    foreach (var ch in original)
+                    {
+                        if (!string.Equals(ch.EdgeHeaders?.ObjectId, d.ObjectId, StringComparison.Ordinal)
+                            || ch.ByteRange is not { } hbr)
+                            continue;
+                        hostLen = hbr.End - hbr.Start + 1;
+                        break;
+                    }
+
+                    if (!UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen, hostLen))
+                        continue;
+                }
+                else if (!UbChunkBuilder.IsClassicAuthFordCtLen(d.CtLen))
+                {
+                    continue;
+                }
+
                 byte[]? fordBody = null;
                 var prefix = d.ObjectId + "@";
                 foreach (var (key, (blob, start)) in siblingCompacts)
@@ -1923,7 +1944,7 @@ public static class FordMmcsDecryptor
                     ["runId"] = "huge-stream-v1",
                 });
                 IkeLogOptions.AppendAgentNdjson(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                     line);
             }
             catch
@@ -3449,8 +3470,32 @@ public static class FordMmcsDecryptor
 
         foreach (var d in descriptors)
         {
-            if (d.CtLen < 0x12 || d.CtLen > 65_536)
+            if (UbChunkBuilder.IsClassicAuthFordCtLen(d.CtLen))
+            {
+                // path storico: nessun check ByteRange
+            }
+            else if (UbChunkBuilder.IsLargeAuthFordCtLen(d.CtLen))
+            {
+                long hostLen = 0;
+                if (!string.IsNullOrEmpty(d.ObjectId) && chunks is { Count: > 0 })
+                {
+                    foreach (var ch in chunks)
+                    {
+                        if (!string.Equals(ch.EdgeHeaders?.ObjectId, d.ObjectId, StringComparison.Ordinal)
+                            || ch.ByteRange is not { } hbr)
+                            continue;
+                        hostLen = hbr.End - hbr.Start + 1;
+                        break;
+                    }
+                }
+
+                if (!UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen, hostLen))
+                    continue;
+            }
+            else
+            {
                 continue;
+            }
 
             byte[]? body = null;
             var src = "none";
@@ -4111,7 +4156,8 @@ public static class FordMmcsDecryptor
             }
 
             // Reject "whole huge body as ford" (SIV would have failed anyway on MB-scale).
-            if (fordCt.Length == compact.Length && compact.Length > 65_536)
+            // Solo sanità: bag multi-key possono eguagliare l’intero ByteRange host.
+            if (fordCt.Length == compact.Length && compact.Length > UbChunkBuilder.MaxAuthFordCtLenSanity)
             {
                 sizeSkip++;
                 continue;
@@ -4284,7 +4330,7 @@ public static class FordMmcsDecryptor
         // non IKM-open trial (anti data_only invent).
         void TryAddBody(byte[]? body, bool structuralFord)
         {
-            if (body is not { Length: >= 0x12 } || body.Length > 65_536)
+            if (body is not { Length: >= 0x12 } || body.Length > UbChunkBuilder.MaxAuthFordCtLenSanity)
                 return;
             if (!structuralFord
                 && !IsExactStandardFordHostLength(body.Length)
@@ -4855,7 +4901,7 @@ public static class FordMmcsDecryptor
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             System.IO.File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch
@@ -4882,7 +4928,7 @@ public static class FordMmcsDecryptor
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             System.IO.File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch

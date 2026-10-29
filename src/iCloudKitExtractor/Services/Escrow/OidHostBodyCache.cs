@@ -44,7 +44,7 @@ public static class OidHostBodyCache
     {
         if (string.IsNullOrEmpty(oid)
             || gate45.Length != 45
-            || ctLen is < 0x12 or > 65_536
+            || !UbChunkBuilder.IsPlausibleAuthFordCtLen(ctLen)
             || ikm.Length is not (16 or 32))
             return;
 
@@ -113,7 +113,7 @@ public static class OidHostBodyCache
         var anyOwned = false;
         foreach (var d in UbChunkBuilder.CollectAuthFordDescriptors(authBody, plan, hosts))
         {
-            if (d.Gate45.Length != 45 || d.CtLen is < 0x12 or > 65_536)
+            if (d.Gate45.Length != 45 || !UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen))
                 continue;
             if (plan.FileChecksum is { Length: 21 } || assetSignature21 is { Length: 21 })
             {

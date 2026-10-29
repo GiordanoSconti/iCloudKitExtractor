@@ -46,7 +46,8 @@ public sealed class AssetCkFile
     public int HostCount { get; set; }
 
     public bool HasFord =>
-        Gate45 is { Length: 45 } && CtLen is >= 0x12 and <= 65_536;
+        Gate45 is { Length: 45 }
+        && Protocol.UbChunkBuilder.IsPlausibleAuthFordCtLen(CtLen);
 
     public bool HasIkm => Ikm is { Length: 16 or 32 };
 

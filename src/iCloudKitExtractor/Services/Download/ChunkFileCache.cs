@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using iCloudKitExtractor.Protocol;
 
 namespace iCloudKitExtractor.Services.Download;
 
@@ -63,13 +64,13 @@ public static class ChunkFileCache
         PutCore(signature, body, overwrite: true);
 
     /// <summary>
-    /// Ford gate (45): ctLen tipico ≤65 536.
+    /// Ford gate (45): body ≤ sanità; bound reale = ByteRange host a valle.
     /// Data sig (21): può superare 64 KiB (es. Categories 73728) — cap MMCS-pratico.
     /// </summary>
     private static bool BodyLenOk(int sigLen, int bodyLen) =>
         bodyLen >= 0x12
         && (sigLen == 45
-            ? bodyLen <= 65_536
+            ? UbChunkBuilder.IsPlausibleAuthFordCtLen(bodyLen)
             : bodyLen <= 32 * 1024 * 1024);
 
     private static void PutCore(ReadOnlySpan<byte> signature, ReadOnlySpan<byte> body, bool overwrite)
@@ -222,7 +223,7 @@ public static class ChunkFileCache
         try
         {
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 JsonSerializer.Serialize(new Dictionary<string, object?>
                 {
                     ["sessionId"] = "03cce7",

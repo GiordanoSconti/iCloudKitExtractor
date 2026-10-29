@@ -1030,7 +1030,7 @@ public static class FileGroupFillDecrypt
 
         foreach (var d in nestedDescs)
         {
-            if (d.Gate45.Length != 45 || d.CtLen is < 0x12 or > 65_536)
+            if (d.Gate45.Length != 45 || !UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen))
                 continue;
 
             var hostCi = -1;
@@ -1376,7 +1376,7 @@ public static class FileGroupFillDecrypt
         out byte[] fordCt)
     {
         fordCt = [];
-        if (ctLen is < 0x12 or > 65_536)
+        if (!UbChunkBuilder.IsPlausibleAuthFordCtLen(ctLen))
             return false;
         if ((uint)hostCi >= (uint)plan.Containers.Count)
             return false;
@@ -1472,7 +1472,7 @@ public static class FileGroupFillDecrypt
         out byte[] fordCt)
     {
         fordCt = [];
-        if (siblings is null || gate45.Length != 45 || ctLen is < 0x12 or > 65_536)
+        if (siblings is null || gate45.Length != 45 || !UbChunkBuilder.IsPlausibleAuthFordCtLen(ctLen))
             return false;
         var gateKey = "gate:" + Convert.ToHexString(gate45).ToLowerInvariant();
         if (!siblings.TryGetValue(gateKey, out var entry))
@@ -1535,7 +1535,7 @@ public static class FileGroupFillDecrypt
         plantOff = -1;
         _ = ch; _ = hostStart; _ = hostLen; _ = layoutOff; _ = chunkIndex;
         _ = ciCount; _ = layoutSum; _ = fordOnly; _ = size0; _ = fordIkm;
-        if (ctLen is < 0x12 or > 65_536 || body.Length != ctLen || body[0] != 0x04)
+        if (!UbChunkBuilder.IsPlausibleAuthFordCtLen(ctLen) || body.Length != ctLen || body[0] != 0x04)
             return false;
         fordSlice = body;
         plantOff = 0;
@@ -1559,7 +1559,7 @@ public static class FileGroupFillDecrypt
             nestedGateCt = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var d in UbChunkBuilder.ExtractAuthFordDescriptors(authBody))
             {
-                if (d.Gate45.Length != 45 || d.CtLen is < 0x12 or > 65_536)
+                if (d.Gate45.Length != 45 || !UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen))
                     continue;
                 nestedGateCt[Convert.ToHexString(d.Gate45).ToLowerInvariant()] = d.CtLen;
             }
@@ -1877,7 +1877,7 @@ public static class FileGroupFillDecrypt
         var descs = UbChunkBuilder.ExtractAuthFordDescriptors(authBody);
         foreach (var d in descs)
         {
-            if (d.Gate45.Length != 45 || d.CtLen is < 0x12 or > 65_536)
+            if (d.Gate45.Length != 45 || !UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen))
                 continue;
             var gk = "gate:" + Convert.ToHexString(d.Gate45).ToLowerInvariant();
             if (ChunkFileCache.TryRead(d.Gate45, d.CtLen, out var diskCt)
@@ -2204,7 +2204,7 @@ public static class FileGroupFillDecrypt
         out byte[] fordCt)
     {
         fordCt = [];
-        if (ctLen is < 0x12 or > 65_536)
+        if (!UbChunkBuilder.IsPlausibleAuthFordCtLen(ctLen))
             return false;
 
         if (TryGetHostBody(hostCi, bodies, original, siblings, out var hostBody)
@@ -2539,7 +2539,7 @@ public static class FileGroupFillDecrypt
     {
         foreach (var d in descs)
         {
-            if (d.CtLen is < 0x12 or > 65_536 || d.CtLen > bodyLen)
+            if (!UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen) || d.CtLen > bodyLen)
                 continue;
             if (string.IsNullOrEmpty(d.ObjectId)
                 || HostOidEquals(original, containerIndex, d.ObjectId))
@@ -2547,7 +2547,7 @@ public static class FileGroupFillDecrypt
         }
 
         // Empty GET = CT puro = Auth ctLen (live 112 / 155 / 224 / 234 / …).
-        if (bodyLen is >= 0x12 and <= 65_536)
+        if (UbChunkBuilder.IsPlausibleAuthFordCtLen(bodyLen))
             return bodyLen;
 
         return 0;
@@ -2685,7 +2685,7 @@ public static class FileGroupFillDecrypt
             foreach (var ch in g)
             {
                 if (UbChunkBuilder.IsAuthFordDescriptorChunk(ch)
-                    && ch.Length is >= 0x12 and <= 65_536)
+                    && UbChunkBuilder.IsPlausibleAuthFordCtLen(ch.Length))
                     set.Add(ch.Length);
             }
         }

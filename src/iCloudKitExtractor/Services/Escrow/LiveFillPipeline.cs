@@ -96,9 +96,9 @@ public static class LiveFillPipeline
 
                 var gateHex = Convert.ToHexString(ch.Checksum21).ToLowerInvariant();
                 var ctLen = nestedCt.TryGetValue(gateHex, out var nCt)
-                            && nCt is >= 0x12 and <= 65_536
+                            && UbChunkBuilder.IsPlausibleAuthFordCtLen(nCt)
                     ? nCt
-                    : ch.Length is >= 0x12 and <= 65_536 ? ch.Length : 0;
+                    : UbChunkBuilder.IsPlausibleAuthFordCtLen(ch.Length) ? ch.Length : 0;
                 if (ctLen < 0x12)
                     continue;
 
@@ -348,7 +348,7 @@ public static class LiveFillPipeline
         var ikmBytes = fordIkm.IsEmpty ? Array.Empty<byte>() : fordIkm.ToArray();
         foreach (var d in descs)
         {
-            if (d.Gate45.Length != 45 || d.CtLen is < 0x12 or > 65_536)
+            if (d.Gate45.Length != 45 || !UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen))
                 continue;
 
             // gate embeds FileChecksum (refs.field1) and/or AssetSignature.
@@ -592,14 +592,14 @@ public static class LiveFillPipeline
     {
         if (string.IsNullOrEmpty(oid)
             || authBody is not { Length: > 0 }
-            || body.Length is < 0x12 or > 65_536
+            || !UbChunkBuilder.IsPlausibleAuthFordCtLen(body.Length)
             || body[0] != 0x04)
             return 0;
 
         var n = 0;
         foreach (var d in UbChunkBuilder.ExtractAuthFordDescriptors(authBody))
         {
-            if (d.Gate45.Length != 45 || d.CtLen is < 0x12 or > 65_536)
+            if (d.Gate45.Length != 45 || !UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen))
                 continue;
             if (body.Length != d.CtLen)
                 continue;
@@ -637,7 +637,7 @@ public static class LiveFillPipeline
             return map;
         foreach (var d in UbChunkBuilder.ExtractAuthFordDescriptors(authBody))
         {
-            if (d.Gate45.Length == 45 && d.CtLen is >= 0x12 and <= 65_536)
+            if (d.Gate45.Length == 45 && UbChunkBuilder.IsPlausibleAuthFordCtLen(d.CtLen))
                 map[Convert.ToHexString(d.Gate45).ToLowerInvariant()] = d.CtLen;
         }
 
