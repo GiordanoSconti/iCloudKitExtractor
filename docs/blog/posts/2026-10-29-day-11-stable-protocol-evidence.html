@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>29 October 2026 &mdash; A protocol travel diary &mdash; Forensis-Lab</title>
+  <title>29 October 2026 &mdash; How we got here, and what stayed true on the wire &mdash; Forensis-Lab</title>
   <meta
     name="description"
-    content="Day 11: the IKE arc retold as a journey&mdash;problems faced, how we reverse-engineered them (Themida, Frida, EPB fossils), and the wire-stable particulars each stage left behind."
+    content="Day 11: chronological account of the IKE work, with the consolidated wire evidence for GSA, Lock, authorizeGet, Ford/ChunkInfo, IKM, iTunes layout, and Octagon."
   />
   <meta name="theme-color" content="#0c2f34" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -37,239 +37,372 @@
         <time datetime="2026-10-29">29 October 2026</time>
         &middot; Day 11 &middot; Giordano Sconti
       </p>
-      <h1>Travel diary: the problems, the reverse engineering, the wire we kept</h1>
+      <h1>How we got here, and what stayed true on the wire</h1>
       <p>
-        The earlier notes are dated waypoints. This one is the journey retold in order: what
-        blocked us, how we attacked it, and which technical particulars survived into
-        iCloudKit Extractor. It is still evidence&mdash;only arranged the way we actually lived it,
-        with a colleague under <strong>Forensis-Lab</strong>, often in spare hours, from an ADP
-        backup we could not buy off the shelf.
+        Days
+        <a href="./2026-03-25-day-01-adp-necessity.html">1</a>&ndash;<a href="./2026-10-24-day-10-recovery-key-tlkshares.html">10</a>
+        are dated notes written as we went. This entry is different: I put the story in order, and
+        under each stretch I list the facts we still treat as solid&mdash;the ones that survived
+        refactors because captures and live restores keep confirming them. Language first, then
+        the evidence. Nothing here is a contract with Apple; private surfaces can move. It is what
+        iCloudKit Extractor encodes today after months of checking.
       </p>
 
-      <h2>Departure: ADP, and learning to watch someone else&rsquo;s binary</h2>
+      <h2>March: ADP, EPB, Frida, GrandSlam</h2>
       <p>
-        Late March 2026. Commercial suites failed on an <strong>ADP</strong>-protected iCloud
-        backup. The operational question (&ldquo;how do we get the data?&rdquo;) collapsed into a research
-        one: what does the iCloud section of Settings actually say on the wire?
+        In late March 2026 we needed an ADP-protected iCloud backup and the commercial tools we
+        used were not delivering it. With a colleague, under Forensis-Lab, I started from two
+        things we already had: a jailbroken iPhone and a licensed copy of Elcomsoft Phone Breaker.
       </p>
       <p>
-        We started with two observation channels we already held: a
-        <strong>jailbroken iPhone</strong> and a licensed <strong>Elcomsoft Phone Breaker</strong>.
-        Studying EPB was not &ldquo;copy the GUI.&rdquo; It was reverse engineering a protected Windows
-        stack. That meant confronting commercial obfuscation&mdash;especially
-        <strong>Themida</strong>-class packing: virtualized regions, API wrapping, anti-debug noise.
-        We did not invent that discipline from scratch. We leaned on public research, including a
-        <strong>student thesis</strong> line of work on unpacking / reconstructing Themida-protected
-        executables (DBI-style write-then-execute detection, import recovery, PE rebuild thinking),
-        and then applied those habits with <strong>x64dbg</strong>, memory dumps, and patient
-        comparison of live sessions. The goal was never a cracked product; it was a map of
-        <em>requests and responses</em> we could later reproduce ourselves.
+        Watching EPB meant reverse-engineering a protected Windows binary. Themida-style packing
+        (virtualization, API wrapping, anti-debug) was part of that. We used public research on
+        unpacking Themida&mdash;including work from a student thesis on DBI-style recovery
+        (write-then-execute, import rebuild, PE reconstruction)&mdash;and applied the same habits
+        with x64dbg and session dumps. The point was never to ship a cracked product. It was to
+        see which requests and responses mattered so we could reproduce them.
       </p>
       <p>
-        Parallel to that, Frida on the phone and the browser surface taught the first authentication
-        geography. <strong>iCloud.com</strong> gave <strong>idmsa</strong> web tokens&mdash;useful for
-        Photos metadata and trusted-device / SMS flows, wrong for native mobile clients.
-        <strong>GrandSlam / GsService2</strong> on the device side was the real gate:
-        lookup &rarr; init with <code>A2k</code>, <code>u</code>, <code>cpd</code>,
-        <code>ps: [s2k, s2k_fo]</code> &rarr; complete with <code>M1</code> only (an extra
-        <code>M2</code> yields <code>ec=-22410</code>). Anisette headers
-        (<code>X-Apple-I-MD</code>, <code>X-Apple-I-MD-M</code>, RINFO, device id, client time)
-        feed CPD; reminting machine data mid-SRP breaks the pair. Default iterations when the
-        server omits <code>i</code>: <strong>20016</strong>. Windows vs iOS RINFO constants in our
-        builders (<code>84215040</code> / <code>17106176</code>) are still there because wrong
-        identity fails quietly upstream of every CloudKit call.
+        Early pain was GrandSlam. EPB was broken for the flows we needed; Elcomsoft fixed it the
+        next month. I did not wait. iCloud.com gave idmsa web tokens (fine for browser Photos /
+        trusted-device / SMS work, wrong for native mobile clients). On the phone, mobile GrandSlam
+        and the first backup CloudKit names showed up: container
+        <code>com.apple.backup.ios</code>, zone <code>mbksync</code>.
       </p>
-      <p>
-        First CloudKit names that stuck:
-        container <code>com.apple.backup.ios</code>, bundle <code>com.apple.backupd</code>,
-        zones <code>_defaultZone</code> and <code>mbksync</code>&mdash;not a vague &ldquo;MobileSync&rdquo;
-        label. EPB was broken for our flows that month; Elcomsoft fixed later. We did not wait.
-      </p>
+      <p class="evidence-lead">What we treat as solid from this stretch:</p>
+      <ul class="evidence-list">
+        <li>
+          GrandSlam: lookup, then init at
+          <code>https://gsa.apple.com/grandslam/GsService2/</code> with <code>A2k</code>, Apple ID
+          <code>u</code>, <code>cpd</code>, and <code>ps: [&quot;s2k&quot;, &quot;s2k_fo&quot;]</code>.
+          Complete sends <code>u</code>, <code>c</code>, <code>M1</code>, <code>cpd</code> only&mdash;an
+          extra <code>M2</code> field returns <code>ec=-22410</code>.
+        </li>
+        <li>
+          If the server omits iteration count <code>i</code>, we default to <strong>20016</strong>.
+        </li>
+        <li>
+          CPD comes from Anisette (<code>GrandSlamCpdBuilder</code>): at least
+          <code>X-Apple-I-Client-Time</code>, timezone/locale, <code>X-Apple-I-MD</code>,
+          <code>X-Apple-I-MD-M</code>, <code>X-Apple-I-MD-RINFO</code>, <code>X-Apple-I-MD-LU</code>,
+          <code>X-Mme-Device-Id</code>, plus bootstrap / <code>svct=iCloud</code>. AuthKitWin vs akd
+          differ in <code>capp</code> and related fields.
+        </li>
+        <li>
+          RINFO constants we hard-code: Windows <code>84215040</code>, iOS/akd
+          <code>17106176</code>. Soft reuse of MD is short (~3 minutes Client-Time refresh without
+          reminting). Reminting mid-SRP breaks init/complete pairing (<code>-22410</code> again).
+        </li>
+        <li>
+          After GSA: <code>setup.icloud.com</code> configurations/init and authenticate. Trusted-device
+          secondary auth needs PET (<code>com.apple.gs.idms.pet</code>) for later escrow Basic auth.
+        </li>
+        <li>
+          Backup binding: container <code>com.apple.backup.ios</code>, bundle
+          <code>com.apple.backupd</code>; zones <code>_defaultZone</code>, <code>mbksync</code>.
+        </li>
+      </ul>
 
-      <h2>April: snapshots without the mountain</h2>
+      <h2>April: snapshots, then Lock</h2>
       <p>
-        Mid-April we could list snapshots&mdash;records under <code>S:</code> after
-        <code>D:&lt;sha&gt;</code>&mdash;while the IDE and the coding agent kept reshaping the tree
-        around us. Elcomsoft shipped an iOS&nbsp;26-capable build; with ADP still on it returned
-        <strong>HTTP 403</strong>. That 403 was evidence: ADP is a server/crypto gate, not &ldquo;old
-        iOS.&rdquo; We used their release as an oracle for <em>how</em> snapshot access had been
-        unblocked at all, messy captures included.
+        By 11 April we could list snapshots (<code>S:</code> after <code>D:&lt;sha&gt;</code>). EPB
+        could talk to iOS 26 backups, but with ADP on we still got HTTP 403. That told us ADP is a
+        server/crypto gate, not &ldquo;old iOS.&rdquo; We used their build as an oracle for how
+        snapshot listing had been unblocked at all. <code>backupProperties</code> (UDID / Lockdown
+        fields) stayed encrypted; we barely knew the field name yet.
       </p>
       <p>
-        What we still could not open was <code>backupProperties</code>&mdash;the Lockdown UDID and
-        friends. Months later the path is ShareProtection (zone / one-shot catalog unwrap) &rarr;
-        CUWK label <code>backupProperties</code> &rarr; PCSFP-GCM with AAD type0 = field name. Without
-        a PCS KeySet on the session the field stays encrypted. That KeySet is an Octagon story;
-        in April we only knew we were staring at ciphertext.
-      </p>
-
-      <h2>The Lock wall: Prepare Restore as a state machine</h2>
-      <p>
-        Listing is not restoring. On the phone you see a preparing phase; on the wire it is
-        CloudKit ending in a <strong>Lock</strong> on <code>mbksync</code> before the large
-        post-Lock catalog (<code>N:</code> / EN) opens. Diary shorthand &ldquo;Prepare Restore
-        Session&rdquo; is that ordered climb. In IKE it is
+        Listing is not restoring. On 29 April the real exam was CloudKit Lock on
+        <code>mbksync</code> before the large post-Lock catalog. Diary name &ldquo;Prepare Restore
+        Session&rdquo; means that ordered climb; in code it is
         <code>PrepareDownloadAsync</code> / <code>AcquireRestoreLockAsync</code>&mdash;there is no
-        separate public RPC named PrepareRestore in our tree.
+        separate public RPC called PrepareRestore in this tree. Frida on the phone plus a few
+        malformed EPB request/response pairs (wrong for a clean download, useful as fossils) were
+        how we reconstructed the state machine.
       </p>
       <p>
-        The order we still refuse to reorder:
-        <strong>zones &rarr; BackupAccount &rarr; D: &rarr; S: &rarr; (optional mobilebackup stub) &rarr;
-        Lock &rarr; N:</strong>.
-        Lock record: <code>{deviceSha}:Lock</code>, type <code>Lock</code>, owner = device SHA,
-        duration <strong>172800</strong> s. Fail Foreground Restore hw/sha identity&mdash;or
-        double-wrap a protobuf field name the wrong way (Lockb9 vs Lockb7)&mdash;and
-        MobileBackupServerExtension answers <strong>Invalid lock id</strong>.
+        Important for the timeline: in April we could get Lock without yet decrypting
+        <code>backupProperties</code>. The restore-host exam and the ADP KeySet are not the same
+        step. The full path we ship today wants escrow / PCS KeySet before Lock and before
+        authorizeGet; that KeySet is the October Octagon work, not something we already held on 29
+        April.
       </p>
-      <p>
-        Help was an ugly coalition: <strong>Frida</strong> on the jailbroken phone, plus a few
-        <strong>malformed EPB</strong> request/response pairs that were wrong for a clean download
-        but perfect as fossils. Optional MBS hosts
-        (<code>application/vnd.com.apple.mbs+protobuf</code>,
-        <code>X-Apple-MBS-Protocol-Version: 2.2</code>) appeared as stubs or full-ish manifests.
-      </p>
-      <p>
-        Two timelines meet here, and it is easy to blur them. In
-        <a href="./2026-04-29-day-03-prepare-restore-lock.html">April</a> we could acquire Lock
-        without yet decrypting <code>backupProperties</code>&mdash;the CloudKit restore host exam is
-        separate from opening ADP fields. On the <em>full</em> path we ship today, escrow &rarr; PCS
-        KeySet / zone masters should land <em>before</em> Lock and before any authorizeGet, or Ford
-        / IKM work has no oxygen. That KeySet oxygen is the October Octagon climb
-        (<a href="./2026-10-05-day-09-octagon-bottles-icdp.html">bottle PIN</a> or
-        <a href="./2026-10-24-day-10-recovery-key-tlkshares.html">Recovery Key</a>), not something we
-        already held on 29 April.
-      </p>
+      <p class="evidence-lead">What we treat as solid from this stretch:</p>
+      <ul class="evidence-list">
+        <li>
+          Record prefixes we rely on: <code>D:&lt;sha&gt;</code> (device), <code>S:</code> (snapshots),
+          <code>N:</code> (post-Lock file-list / EN), <code>KA:</code> / <code>MA:</code> /
+          <code>LA:</code> / <code>NA:</code> / <code>JA:</code> (asset families),
+          <code>:CN:</code> / <code>CN:</code> (modern checksum entries), <code>K:</code> (keybag).
+          Fixed name <code>BackupAccount</code>.
+        </li>
+        <li>
+          List path: zones &rarr; <code>BackupAccount</code> &rarr; <code>D:</code> &rarr;
+          <code>S:</code>. Restore bootstrap we refuse to reorder:
+          <strong>zones &rarr; Account &rarr; D: &rarr; S: &rarr; (optional mbs) &rarr; Lock &rarr;
+          N:</strong>. Zone retrieve prefers <code>record/retrieve</code>, falls back to
+          <code>zone/retrieve</code>.
+        </li>
+        <li>
+          Optional Mobile Backup stub:
+          <code>p32-mobilebackup.icloud.com</code> / <code>{partition}-mobilebackup.icloud.com</code>,
+          Accept <code>application/vnd.com.apple.mbs+protobuf</code>, header
+          <code>X-Apple-MBS-Protocol-Version: 2.2</code>.
+        </li>
+        <li>
+          Lock record: name <code>{deviceSha}:Lock</code> (no leading hyphen on the sha), type
+          <code>Lock</code>, zone <code>mbksync</code>, owner = device SHA (strip
+          <code>D:</code>), duration <strong>172800</strong> seconds (48&nbsp;h). Private
+          modify-records (inner type <code>210</code> in our builder).
+        </li>
+        <li>
+          Failure string: <strong><code>Invalid lock id</code></strong> (MobileBackupServerExtension).
+          Double-wrapping named protobuf fields historically produced Lockb9 vs Lockb7 with the same
+          error.
+        </li>
+        <li>
+          Foreground Restore metadata rides in CAog-style auth tokens. For one analyzed account,
+          HardwareId / plist SHA were stable across many sessions&mdash;not claimed for every account.
+          <code>mme-client-info</code> varies; we merge it from live responses.
+        </li>
+        <li>
+          <code>backupProperties</code>: CloudKit field name on the snapshot; ciphertext shorter than
+          ~16 bytes is ignored. Decrypt path: ShareProtection (zone and/or one-shot catalog unwrap)
+          &rarr; CUWK label <code>backupProperties</code> &rarr; PCSFP-GCM, AAD type0 = field name.
+          Without PCS KeySet on the session the field stays marked encrypted. Plaintext Lockdown.*
+          feeds UI and prefers writing into <code>Info.plist</code> / <code>Manifest.plist</code>.
+        </li>
+        <li>
+          Zone-master cache artifacts: <code>mbksync_zones_retrieve.bin</code>, directory
+          <code>mbksync_zone_masters</code>.
+        </li>
+      </ul>
 
-      <h2>Into MMCS: two species of bytes on one host</h2>
+      <h2>May&ndash;July: MMCS, IKM, Ford vs ChunkInfo</h2>
       <p>
-        Roughly a month of reverse engineering past Lock put us on
-        <strong>24 May 2026</strong> into <strong>MMCS</strong>. The map changed from CloudKit
-        records to edge-content hosts, ranged GETs, and blobs that refused to be one kind of thing.
-        By then the phone and EPB were no longer daily crutches for the <em>next</em> problems;
-        coding agents and older public fragments pointing at <strong>Octagon</strong> opened paths
-        the commercial &ldquo;normal restore&rdquo; road never advertised. EPB stayed as an oracle for
-        <strong>MMCS caching</strong> and <strong>chunk reassembly</strong>. Side-by-side through the
-        summer, our reconstructions often held on the order of <strong>~3000 more decrypted
-        files</strong>&mdash;and still left a stubborn tail.
+        After about a month past Lock, on 24 May we were into MMCS: edge-content hosts, ranged GETs,
+        blobs that are not one kind of thing. By then the phone and EPB were no longer daily
+        crutches for the next problems. Coding agents and older public fragments about Octagon
+        pointed at paths commercial &ldquo;normal restore&rdquo; never exposed. EPB stayed useful as an
+        oracle for how they cached MMCS and reassembled chunks. Side-by-side through the summer we
+        often held on the order of ~3000 more decrypted files than EPB&mdash;and still left a
+        stubborn tail.
       </p>
       <p>
-        authorizeGet posts to <code>{contentHost}/{dsid}/authorizeGet</code> as
-        <code>application/vnd.com.apple.me.ubchunk+protobuf</code>, with
-        <code>x-apple-mmcs-auth</code> shaped as
-        <code>{hex21} {hex21} {CAog&hellip;}</code>. Per-file entries carry assetSignature as
-        <strong>f1</strong> (typically <code>0x04‖20B</code>), CAog as <strong>f2</strong>, companion
-        as <strong>f4</strong> (often <code>0x01‖20B</code>). The response is
-        <strong>FileGroups</strong>: one group &harr; one edge host, nested ChunkInfo
-        (checksum 21 or 45&nbsp;B, chunkEncryptionKey, ctLen, packOffset), trailing chunk references
-        for assembly. Edge GETs use <code>content-byte-range=start-end</code>. Incomplete plans
-        (missing URLs, range sum &lt; declared size) are hard failures, not soft warnings.
+        The same host and authorizeGet plan can carry Ford key material and data ChunkInfo. Mix them
+        up and MAC checks fail while looking confident. On 16 June the missing piece for Ford was
+        IKM: not the file-list <code>EncryptionKey</code>, but
+        <code>contents.protectionInfo</code> unwrapped with the zone master. July was the caching
+        war: forcing ranges and planting every lead-<code>0x04</code> candidate sometimes opened a
+        file and also poisoned the checksum21 <code>.chunks/</code> map. The fix that stuck was to
+        wait&mdash;Ford first when the blob really opens with IKM, data when it arrives, often after
+        the gate.
       </p>
-      <p>
-        Same host, different ranges: <strong>Ford</strong> key material versus <strong>data
-        ChunkInfo</strong>. Mis-classify them and MAC checks fail with perfect confidence. That
-        single sentence occupied most of June and July.
-      </p>
+      <p class="evidence-lead">What we treat as solid from this stretch:</p>
+      <ul class="evidence-list">
+        <li>
+          authorizeGet URL: <code>{contentHost}/{dsid}/authorizeGet</code>. Hosts from
+          <code>{partition}-content.icloud.com</code> or per-record ContentBaseUrl.
+        </li>
+        <li>
+          Request/response type:
+          <code>application/vnd.com.apple.me.ubchunk+protobuf</code>. Header
+          <code>x-apple-mmcs-auth</code>.
+        </li>
+        <li>
+          Auth header shape: <code>{hex21_f2} {hex21_f17} {CAog&hellip;}</code>&mdash;21-byte tokens
+          (lead <code>01</code> or <code>04</code> + 20-byte digest). PreAuth scan pattern in tooling:
+          <code>12 15 01&hellip;</code> (f2) &rarr; <code>2a &hellip; CAog</code> (f5) &rarr;
+          <code>8a 01 15 01&hellip;</code> (f17). Decoded CAog is expected to contain
+          <code>Foreground Restore</code> and the signed-FG lead markers we check for.
+        </li>
+        <li>
+          Per-file entry: <strong>f1</strong> = Assets.assetSignature verbatim (21&nbsp;B, typically
+          <code>0x04‖20B</code>); <strong>f2</strong> = CAog token string; <strong>f4</strong>
+          companion typically <code>0x01‖20B</code>. Do not use the CK mmcs-auth part0 as f1. Batch
+          header rebuild from entry[0]: hex(f1) + hex(f4) + ascii(f2).
+        </li>
+        <li>
+          Response: FileGroups&mdash;one group maps to one edge GET host (URL from template fields).
+          Nested ChunkInfo: checksum (21 or 45&nbsp;B), chunkEncryptionKey, ctLen, packOffset.
+          Trailing file-checksum chunk references drive assembly order. Incomplete plans (missing
+          URLs/signatures, range sum &lt; declared size) are hard failures.
+        </li>
+        <li>
+          Edge GET query: <code>content-byte-range={start}-{end}</code>. Same object can expose Ford
+          CT at offset 0 and data ChunkInfo at other ranges.
+        </li>
+        <li>
+          Asset name patterns include <code>MA:udid:uuid:checksumB64:size</code> and
+          <code>:CN:uuid:checksumB64</code>.
+        </li>
+        <li>
+          IKM only from owned-record <code>contents.protectionInfo</code> unwrap with the zone master
+          (16 or 32&nbsp;B). File-list <code>EncryptionKey</code> poisons Ford opens.
+        </li>
+        <li>
+          Ford KDF (capture-checked):
+          <code>HKDF-SHA256(ikm=fileKey, salt=&quot;PCSMMCS2&quot;, info=&quot;&quot;, len=64)</code>&mdash;not
+          swapped salt/info. Output length <code>0x40</code>.
+        </li>
+        <li>
+          Ford blob: lead(1) ‖ nonce(16) ‖ body, body = tag(16) ‖ ciphertext from offset
+          <code>0x11</code>. AES-SIV (RFC&nbsp;5297), AD = <code>[nonce, lead]</code>. Per-chunk
+          expansion: HKDF info <code>signature-key</code>, 0x60 bytes &rarr; k1/k2/k3.
+        </li>
+        <li>
+          Classic Auth Ford <code>ctLen &isin; [0x12, 65536]</code>. Larger bags
+          (<code>ctLen &gt; 64&nbsp;KiB</code>, sanity cap 32&nbsp;MiB) need ByteRange length &ge;
+          ctLen. Empty-host Ford scan uses fixed window lengths (112&hellip;480) with a small scan
+          cap (~4&nbsp;KiB).
+        </li>
+        <li>
+          Ford gate descriptors often use a 45-byte checksum with lead bytes
+          <code>0C 0F 01 04</code>, distinct from 21-byte data checksums.
+        </li>
+        <li>
+          Data ChunkInfo: 21-byte checksum (MAC uses the trailing 20 bytes). Staging header length
+          <code>0x28</code>; little-endian u64 at <code>hdr[0x20]</code> is wire data length.
+        </li>
+        <li>
+          Cache under <code>.chunks/</code> (or tmp <code>CChunkCache</code>), filenames = lowercase
+          hex of the signature (42 hex chars for 21&nbsp;B, 90 for 45&nbsp;B gates). Ford plant:
+          size == ctLen, typically lead <code>0x04</code>, blob must open exactly with IKM&mdash;never
+          plant Ford without IKM. Data CI21 may exceed 64&nbsp;KiB.
+        </li>
+        <li>
+          LiveFill order: authorizeGet &rarr; FileGroups &rarr; ranged GET &rarr; Ford SpillOpen &rarr;
+          FillChunks for storages that already have Ford keys &rarr; data ChunkDecrypt. Map keyed by
+          Auth checksum21 accepts any data lead; Ford-prefix poison detection blocks data slices that
+          open as Ford. Per-domain <code>MmcsChunkAssemblySession</code> shards avoid cross-contaminating
+          FileGroup caches.
+        </li>
+      </ul>
 
-      <h2>IKM, Ford, and the caching war</h2>
+      <h2>August: lead <code>0x04</code> vs <code>0xC4</code>, then an iTunes-shaped tree</h2>
       <p>
-        The file-list <code>EncryptionKey</code> looks like the key. It is the wrong key for Ford.
-        Live behaviour&mdash;and later EPB/oracle traces&mdash;forced a narrow rule: IKM from
-        <code>contents.protectionInfo</code> unwrap with the zone master, then
-        <code>HKDF-SHA256(ikm=fileKey, salt=&quot;PCSMMCS2&quot;, info=&quot;&quot;, len=64)</code>
-        (not the swapped salt/info orientation). Ford blob: lead ‖ nonce(16) ‖ tag(16) ‖ ct;
-        AES-SIV with AD <code>[nonce, lead]</code>. Classic Auth Ford <code>ctLen</code> sits in
-        <code>[0x12, 65536]</code>; larger bags need ByteRange length &ge; ctLen. Gate descriptors
-        often carry 45-byte checksums led by <code>0C 0F 01 04</code>.
+        On 4 August the stubborn tail turned on a classifier bug. We had treated lead
+        <code>0x04</code> as &ldquo;Ford / decryptable.&rdquo; Valid <em>data</em> chunks can start with
+        <code>0xC4</code> and other non-0x04 values, including large bodies. That day unlocked a
+        protocol-complete <em>MMCS</em> download for material that still lives on the edge. It did
+        not finish ADP: zone masters and <code>backupProperties</code> still waited on Octagon in
+        October. Orphans (names in inventory, no live MMCS asset) and non-Apple on-device crypto
+        (e.g. some Mozilla model files in testing) sit outside this path.
       </p>
       <p>
-        Early instinct was to <em>force</em> the plan: guess windows, re-slice hosts, plant every
-        lead-<code>0x04</code> candidate. Those paths sometimes opened a file and also
-        <strong>poisoned</strong> the checksum21-keyed <code>.chunks/</code> cache with Ford-shaped
-        prefixes where data should live. The structural fix was humbler and still in the code:
-        treat MMCS like a store that can deliver chunk data <em>after</em> the Ford gate;
-        SpillOpen only when size == ctLen, lead 0x04, and the blob opens exactly with IKM; never
-        plant Ford without IKM; FillChunks for keyed storages first, then data; accept
-        <strong>any lead byte</strong> for data CI21; detect Ford-prefix poison on data slices.
-        Per-domain assembly sessions so FileGroup caches do not cross-contaminate.
+        By 28 August we could write an iTunes-shaped backup on disk so forensic tools see a familiar
+        tree: hashed file paths, Manifest.db, sidecars.
       </p>
+      <p class="evidence-lead">What we treat as solid from this stretch:</p>
+      <ul class="evidence-list">
+        <li>
+          Typical Ford CT at host offset 0 starts with <code>0x04</code>. Strict gate-cache readers
+          require <code>compact[0] == 0x04</code>.
+        </li>
+        <li>
+          Data chunks may start with <code>0xC4</code> (and other leads). Plant under
+          <code>hex(checksum21)</code> regardless of lead. Gate45 prefix <code>0C0F0104</code> is
+          descriptor metadata, not the data lead byte.
+        </li>
+        <li>
+          Device tree: <code>{root}/{udid}/[{snapshotGuid}][{timestamp}]/</code> with clean
+          <code>Backup/</code> and work <code>tmp/</code> (flist DBs, AUTH, keybag, mmcs cache,
+          <code>.chunks</code>&mdash;removed after success).
+        </li>
+        <li>
+          Asset path: <code>Backup/{fileID[0..2]}/{fileID}</code>, fileID = SHA1 hex. Manifest rows
+          use <code>SHA1(domain + &quot;-&quot; + relativePath)</code> in our writer.
+        </li>
+        <li>
+          <code>Manifest.db</code> from decrypted <code>MA:</code> candidates (SQLite magic after
+          decrypt). Sidecars: <code>Info.plist</code> (XML), <code>Status.plist</code>,
+          <code>Manifest.plist</code> (bplist); <code>Manifest.plist</code> prefers a copy of
+          decrypted <code>backupProperties</code>.
+        </li>
+        <li>
+          Catalog evolution in tooling: modern <code>S: &rarr; :CN: &rarr; EN:</code>; classic
+          <code>S: &rarr; M: &rarr; files</code>.
+        </li>
+      </ul>
 
-      <h2>One nibble: <code>0x04</code> versus <code>0xC4</code></h2>
+      <h2>October: Octagon (PIN, then Recovery Key)</h2>
       <p>
-        August&rsquo;s absurdity: we had trained ourselves that Ford CT at offset 0 starts with
-        <code>0x04</code>. Valid <em>data</em> chunks can start with <code>0xC4</code> (and other
-        non-0x04 leads), including large bodies well over 64&nbsp;KiB. Requiring 0x04 on data was a
-        classifier bug, not an Apple gate. Gate45&rsquo;s <code>0C0F0104</code> is descriptor metadata,
-        not the data lead. Orphaned CloudKit names and third-party on-device crypto (Mozilla models
-        in testing, and similar) sat outside the Ford/MMCS path entirely&mdash;another false trail
-        until we named it as such.
+        MMCS can fetch ciphertext forever; ADP still decides whether it decrypts. On 5 October we
+        opened iCDP bottles with the trusted-device passcode. On 24 October, when that PIN path is
+        unavailable, a known Recovery Key derives an Octagon peer locally and unwraps recoverable
+        TLKShares. The public experimental note on 25 October is a release note, not another
+        protocol day.
       </p>
+      <p class="evidence-lead">What we treat as solid from this stretch:</p>
+      <ul class="evidence-list">
+        <li>
+          Escrowproxy <code>get_records</code>; Octagon-relevant labels
+          <code>com.apple.icdp.record.*</code>. Recover against HSM is scarce (~10 attempts per
+          record in our notes)&mdash;tooling treats recover as irreversible.
+        </li>
+        <li>
+          SRP secret is the <strong>device passcode</strong>, not legacy PCS
+          <code>dsid:dsid</code>. Identity uses dsid with
+          <code>x = H(salt ‖ H(dsid &quot;:&quot; passcode))</code> (padded session-key variants exist
+          in the escrow client). HTTP Basic(email, PET). Wrong M1 &rarr; credential errors (e.g.
+          -6015); wrong recover header version can yield CLUBH -6122.
+        </li>
+        <li>
+          EscrowBottle plaintext exposes <code>BottledPeerEntropy</code> (~72&nbsp;B). Cuttlefish
+          container <code>com.apple.security.keychain</code> / cuttlefish coderouter:
+          <code>fetchViableBottles</code> &rarr; AES-GCM OTBottle Contents &rarr; peer
+          signing/encryption keys &rarr; KeySet.
+        </li>
+        <li>
+          Recovery Key KDF (RK is not sent as a password):
+          <code>HKDF-SHA384(ikm=UTF-8(RK), salt=UTF-8(altDSID), info, 56)</code> with info
+          <code>Recovery Signing Private Key</code> /
+          <code>Recovery Encryption Private Key</code>. Deterministic P-384
+          (<code>k = (entropy_be mod (q-1)) + 1</code>). PeerId =
+          <code>RK-</code> + Base64(SHA384(signing public key data)).
+        </li>
+        <li>
+          Cuttlefish <code>fetchRecoverableTLKShares</code> for that peer (protobuf string field 1
+          then 2). Prod path avoids a legacy RPC spelling that returned HTTP 500. Parses
+          <code>tlkshare</code> / <code>synckey</code> records (names like
+          <code>tlkshare-&hellip;::RK-&hellip;</code>).
+        </li>
+        <li>
+          Unwrap: ECIES on wrappedkey with the derived encryption private key &rarr; per-view TLKs.
+          Wrong RK: shares may list, unwrap count is zero. OpenVault default views: Manatee,
+          ProtectedCloudStorage, Passwords&mdash;feeds PCS seed for ADP zones and
+          <code>backupProperties</code>.
+        </li>
+      </ul>
 
-      <h2>Closing the loop on disk</h2>
+      <h2>What we still do not claim</h2>
+      <ul class="evidence-list">
+        <li>
+          That private CloudKit / MMCS / Cuttlefish stay frozen&mdash;experimental MIT software can
+          break when Apple moves.
+        </li>
+        <li>
+          That every historical filename is recoverable (orphans, third-party encryption).
+        </li>
+        <li>
+          That Foreground HardwareId / plist SHA are universal (stable for one heavily analyzed
+          account in our captures).
+        </li>
+        <li>
+          Forever-green emulated anisette; GSA needs a coherent ADI/akd-class stack (local Frida or
+          a maintained remote Anisette server).
+        </li>
+      </ul>
       <p>
-        By late August the protocol spine could feed an iTunes-shaped tree:
-        <code>Backup/{fileID[0..2]}/{fileID}</code> with fileID as SHA1 hex
-        (<code>SHA1(domain + &quot;-&quot; + relativePath)</code> in our Manifest rows),
-        <code>Manifest.db</code> from decrypted <code>MA:</code> candidates, sidecars
-        <code>Info.plist</code> / <code>Status.plist</code> / <code>Manifest.plist</code>
-        (the last preferring decrypted <code>backupProperties</code>). Work lives under
-        <code>tmp/</code>; <code>.chunks</code> die after success. Catalog evolution in tooling:
-        modern <code>S: &rarr; :CN: &rarr; EN:</code>; classic <code>S: &rarr; M: &rarr; files</code>.
-        Forensic tools finally saw a familiar backup&mdash;not because Apple documented it, but
-        because we rebuilt the shape they already know how to open.
-      </p>
-
-      <h2>Octagon: the mountain behind the mountain</h2>
-      <p>
-        MMCS can fetch ciphertext forever; ADP still decides whether it is yours. October opened
-        two doors into the circle.
-      </p>
-      <p>
-        <strong>Bottle / iCDP PIN.</strong> Escrowproxy <code>get_records</code>, labels
-        <code>com.apple.icdp.record.*</code>. Recover is scarce against HSM (~10 attempts in lab
-        notes)&mdash;irreversible in tooling. SRP secret is the <strong>device passcode</strong>, not
-        legacy PCS <code>dsid:dsid</code>:
-        <code>x = H(salt ‖ H(dsid &quot;:&quot; passcode))</code>, Basic(email, PET). EscrowBottle &rarr;
-        <code>BottledPeerEntropy</code> (~72&nbsp;B) &rarr; Cuttlefish
-        <code>fetchViableBottles</code> on <code>com.apple.security.keychain</code> &rarr; peer keys
-        &rarr; KeySet.
-      </p>
-      <p>
-        <strong>Recovery Key.</strong> When the PIN path is unavailable, the RK is not &ldquo;another
-        password sent to Apple.&rdquo; Locally:
-        <code>HKDF-SHA384(ikm=UTF-8(RK), salt=UTF-8(altDSID), info, 56)</code> with
-        <code>Recovery Signing Private Key</code> / <code>Recovery Encryption Private Key</code>,
-        deterministic P-384, PeerId <code>RK-</code>&hellip;. Then
-        <code>fetchRecoverableTLKShares</code> for that peer, ECIES unwrap of
-        <code>tlkshare-&hellip;::RK-&hellip;</code> records, OpenVault into Manatee /
-        ProtectedCloudStorage / Passwords. Wrong RK: shares may list, unwrap count is zero. Correct
-        RK: the same trust class as legitimate recovery&mdash;without pretending to be a hardware
-        bottle. That is how <code>backupProperties</code> and zone masters finally stop being
-        mythology.
-      </p>
-
-      <h2>What the journey taught us to leave unsettled</h2>
-      <p>
-        Private APIs are not a contract. Completeness is not every historical filename. Foreground
-        HardwareId / plist SHA were stable across many captures for one analyzed account&mdash;not
-        claimed universal. Emulated anisette ages; coherent ADI/akd (Frida or a maintained remote
-        server) remains a prerequisite for GSA. The
-        <a href="./2026-10-25-public-experimental-phase.html">experimental phase note</a> still
-        holds: MIT, signed builds, Forensis-Lab attribution, no warranty that tomorrow&rsquo;s wire
-        matches today&rsquo;s diary.
-      </p>
-      <p>
-        Looking back, the Themida / thesis homework mattered less as a single trick and more as a
-        habit: treat protected software as a surface you instrument and compare, not as a temple.
-        Frida, EPB fossils, authorizeGet FileGroups, Ford versus ChunkInfo, Octagon bottles and
-        Recovery Key&mdash;each was a different mountain with the same method. The code is the
-        packing list we kept.
+        See also the
+        <a href="./2026-10-25-public-experimental-phase.html">25 October release note</a>: signed
+        builds, Forensis-Lab attribution, no warranty that tomorrow&rsquo;s wire matches this list.
       </p>
 
       <aside class="observe" aria-label="Code observation">
         <p class="observe__label">In the code today</p>
         <p>
-          The spine comment that survived Lock and Ford debugging is still the shortest map of the
-          trip.
+          Shortest map of the spine that is still accurate:
         </p>
         <a
           class="src"
@@ -297,14 +430,15 @@
           >OctagonRecoveryKeyUnlockService.cs</a
         >
         <pre><code>// CloudKit: zones → BackupAccount → D: → S: → (mbs?) → Lock → N:/EN:
-// MMCS:     authorizeGet (ubchunk+protobuf) → FileGroups → Ford | ChunkInfo
+// MMCS:     authorizeGet (application/vnd.com.apple.me.ubchunk+protobuf)
+//           → FileGroups → edge GET (content-byte-range) → Ford | ChunkInfo
 // Keys:     protectionInfo → IKM → HKDF-SHA256(salt=PCSMMCS2, info="", 64)
 // Octagon:  iCDP+passcode → BottledPeerEntropy → fetchViableBottles
 //           OR RK → HKDF-SHA384 → fetchRecoverableTLKShares → OpenVault</code></pre>
       </aside>
 
       <p>
-        Earlier waypoints:
+        Earlier notes:
         <a href="./2026-03-25-day-01-adp-necessity.html">Day 1</a>,
         <a href="./2026-04-11-day-02-snapshots-epb-403.html">2</a>,
         <a href="./2026-04-29-day-03-prepare-restore-lock.html">3</a>,
