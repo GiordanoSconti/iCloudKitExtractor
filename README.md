@@ -144,9 +144,18 @@ dotnet run --project src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
 
 Or grab a signed build from [Releases](https://github.com/GiordanoSconti/iCloudKitExtractor/releases).
 
-### Preview Anisette Server
+### Preview access to Anisette Server
 
-Want to try the app before standing up your own Anisette stack? Contact privately for temporary access to the lab Anisette Server.
+Temporary public preview endpoint (leave the IKE **License** field empty on first connect to receive a Package-C license once):
+
+**https://37.181.197.216:27042/anisette/**
+
+> **Disclaimer — licensing telemetry & acceptable use**  
+> To issue and bind temporary licenses on **my** preview server, the remote client **IP address** and other request-linked identifiers (machine fingerprint headers used by Package-C) are collected so the license stays tied to that connection profile. I may **revoke** a license if the preview service is abused for unauthorized or non-consensual attacks. This software is made available for **ethical and forensic** use only.  
+> If VPNs (or similar) are used to exploit my server for attacks of any kind, I will **stop offering preview access** through my Anisette endpoint.  
+> I hope there are still people in the world with a sound intellect.
+
+Want longer-term or private access? Contact: [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gruppoinformaticiforensi.it). Prefer hosting your own stack: [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md).
 
 ### Preferred Anisette: Frida on a jailbroken iPhone
 
