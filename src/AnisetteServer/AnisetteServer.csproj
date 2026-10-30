@@ -30,6 +30,7 @@
     <Compile Include="..\iCloudKitExtractor\Services\Auth\HttpAdiCryptoClient.cs" LinkBase="Shared" />
     <Compile Include="..\iCloudKitExtractor\Services\Auth\EmulatedAkdAnisetteProvider.cs" LinkBase="Shared" />
     <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaIphoneAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaAnisetteOptions.cs" LinkBase="Shared" />
   </ItemGroup>
 
   <ItemGroup>
