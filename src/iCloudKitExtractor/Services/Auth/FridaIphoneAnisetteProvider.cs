@@ -40,10 +40,9 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
     /// <summary>Explicit Frida/host settings (Mac middleware UI); null fields fall back to env/defaults.</summary>
     public FridaIphoneAnisetteProvider(FridaAnisetteOptions? options)
     {
-        _python = FirstNonEmpty(
+        _python = ResolvePythonExecutable(
             options?.Python,
-            Environment.GetEnvironmentVariable("FRIDA_ANISETTE_PYTHON"),
-            "python")!;
+            Environment.GetEnvironmentVariable("FRIDA_ANISETTE_PYTHON"));
         _fetchScript = FirstNonEmpty(
             options?.FetchScript,
             Environment.GetEnvironmentVariable("FRIDA_ANISETTE_FETCH_PY"),
@@ -88,6 +87,92 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
         }
         return null;
     }
+
+    /// <summary>
+    /// Resolve a real Python interpreter. On Windows, <c>python</c> / <c>python3</c> on PATH may be
+    /// the Microsoft Store alias under <c>WindowsApps</c> (exit 9009) even when a normal install
+    /// exists later on PATH — interactive shells sometimes hit a different order than GUI apps.
+    /// We pick the first non-Store hit and return its <b>absolute</b> path so CreateProcess
+    /// cannot fall back to the stub.
+    /// </summary>
+    public static string ResolvePythonExecutable(params string?[] preferred)
+    {
+        foreach (var p in preferred)
+        {
+            if (string.IsNullOrWhiteSpace(p))
+                continue;
+            var t = p.Trim();
+            if (File.Exists(t) && !IsWindowsStorePythonStubPath(t))
+                return t;
+            var fromPath = FindOnPath(t);
+            if (fromPath is not null)
+                return fromPath;
+        }
+
+        // Windows labs usually invoke `python` (python3 is often the Store stub).
+        // macOS/Linux typically have `python3`.
+        string[] candidates = OperatingSystem.IsWindows()
+            ?
+            [
+                "python.exe", "python",
+                "python3.exe", "python3",
+            ]
+            :
+            [
+                "python3", "python",
+            ];
+
+        foreach (var candidate in candidates)
+        {
+            var hit = FindOnPath(candidate);
+            if (hit is not null)
+                return hit;
+        }
+
+        return OperatingSystem.IsWindows() ? "python" : "python3";
+    }
+
+    private static string? FindOnPath(string fileName)
+    {
+        if (fileName.IndexOfAny(['/', '\\', ':']) >= 0)
+            return File.Exists(fileName) && !IsWindowsStorePythonStubPath(fileName) ? fileName : null;
+
+        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
+        foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                var baseDir = dir.Trim().Trim('"');
+                if (baseDir.Length == 0)
+                    continue;
+
+                foreach (var name in ExecutableNameVariants(fileName))
+                {
+                    var full = Path.Combine(baseDir, name);
+                    if (File.Exists(full) && !IsWindowsStorePythonStubPath(full))
+                        return full;
+                }
+            }
+            catch
+            {
+                // ignore bad PATH entries
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> ExecutableNameVariants(string fileName)
+    {
+        yield return fileName;
+        if (OperatingSystem.IsWindows()
+            && !fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            yield return fileName + ".exe";
+    }
+
+    private static bool IsWindowsStorePythonStubPath(string fullPath) =>
+        fullPath.Contains(@"\WindowsApps\", StringComparison.OrdinalIgnoreCase)
+        || fullPath.Contains(@"\Microsoft\WindowsApps\", StringComparison.OrdinalIgnoreCase);
 
     public string Host => _host;
     public string ProcessName => _processName;
@@ -216,8 +301,19 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
 
         if (proc.ExitCode != 0 && string.IsNullOrWhiteSpace(stdout))
         {
+            var detail = stderr.Length > 0 ? stderr : "(no output)";
+            if (proc.ExitCode == 9009
+                || detail.Contains("Python was not found", StringComparison.OrdinalIgnoreCase)
+                || detail.Contains("Microsoft Store", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"fetch_anisette exit={proc.ExitCode}: {detail} " +
+                    $"— interpreter tried: '{_python}'. Set FRIDA_ANISETTE_PYTHON to the full path from " +
+                    $"`where.exe python` (avoid WindowsApps Store stubs), or the Mac UI Python field.");
+            }
+
             throw new InvalidOperationException(
-                $"fetch_anisette exit={proc.ExitCode}: {(stderr.Length > 0 ? stderr : "(no output)")}");
+                $"fetch_anisette exit={proc.ExitCode}: {detail}");
         }
 
         // Ultima riga JSON (stdout può avere rumore raro)
