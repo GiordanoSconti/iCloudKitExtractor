@@ -148,7 +148,7 @@ Or grab a signed build from [Releases](https://github.com/GiordanoSconti/iCloudK
 
 Temporary public preview endpoint (leave the IKE **License** field empty on first connect to receive a Package-C license once):
 
-**https://37.181.197.216:27042/anisette/**
+**https://www.icloudkitextractor.eu:27042**
 
 > **Disclaimer — licensing telemetry & acceptable use**  
 > To issue and bind temporary licenses on **my** preview server, the remote client **IP address** and other request-linked identifiers (machine fingerprint headers used by Package-C) are collected so the license stays tied to that connection profile. I may **revoke** a license if the preview service is abused for unauthorized or non-consensual attacks. This software is made available for **ethical and forensic** use only.  
