@@ -8,11 +8,13 @@
     name="description"
     content="Experimental forensic toolkit for iCloud auth, CloudKit/MMCS backup download, and Octagon/PCS recovery. Research software by Forensis-Lab."
   />
-  <meta name="theme-color" content="#0c2f34" />
+  <meta name="theme-color" content="#071c22" />
+  <link rel="icon" type="image/png" href="./assets/app-icon.png" />
+  <link rel="apple-touch-icon" href="./assets/app-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Syne:wght@600;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap"
     rel="stylesheet"
   />
   <link rel="stylesheet" href="./site.css" />
@@ -22,30 +24,101 @@
 
   <header class="hero" aria-label="Introduction">
     <div class="hero__plane" aria-hidden="true"></div>
-    <div class="hero__mesh" aria-hidden="true"></div>
-    <div class="hero__orb" aria-hidden="true"></div>
-    <div class="hero__inner">
-      <p class="brand">Forensis-Lab</p>
-      <h1 class="headline">iCloudKit Extractor</h1>
-      <p class="lede">
-        Experimental forensic research software for iCloud sign-in and complete CloudKit/MMCS backup recovery—including ADP-protected data when you hold the Octagon PIN or Recovery Key.
-      </p>
-      <div class="cta-row">
-        <a class="btn btn--primary" href="#downloads">Download</a>
-        <a class="btn btn--ghost" href="./blog/">Notes</a>
-        <a class="btn btn--ghost" href="https://github.com/GiordanoSconti/iCloudKitExtractor">View on GitHub</a>
-        <a class="btn btn--ghost" href="mailto:giordano.sconti@gruppoinformaticiforensi.it">Contact</a>
+    <div class="hero__glow" aria-hidden="true"></div>
+    <div class="hero__grain" aria-hidden="true"></div>
+    <div class="hero__stage">
+      <div class="hero__copy">
+        <img
+          class="hero__logo"
+          src="./assets/app-icon.png"
+          width="112"
+          height="112"
+          alt="iCloudKit Extractor app icon"
+        />
+        <p class="brand">Forensis-Lab</p>
+        <h1 class="headline">iCloudKit Extractor</h1>
+        <p class="lede">
+          Experimental forensic research software for iCloud sign-in and complete CloudKit/MMCS backup recovery—including ADP-protected data when you hold the Octagon PIN or Recovery Key.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn--primary" href="#downloads">Download</a>
+          <a class="btn btn--ghost" href="#demos">Watch demos</a>
+          <a class="btn btn--ghost" href="./blog/">Notes</a>
+          <a class="btn btn--ghost" href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+        </div>
+      </div>
+      <div class="hero__visual" aria-hidden="true">
+        <img
+          class="hero__app"
+          src="./assets/app-ui.png"
+          width="1280"
+          height="720"
+          alt=""
+          decoding="async"
+        />
       </div>
     </div>
   </header>
 
   <main id="content">
+    <section class="section section--demos" id="demos" aria-labelledby="demos-title">
+      <h2 id="demos-title">See it running</h2>
+      <p>
+        Screen highlights from real lab sessions—Recovery Key unlock, device backups, WhatsApp CloudKit, Drive, mail, and Photos sync.
+      </p>
+
+      <div class="demo-rail" role="list">
+        <figure class="demo" role="listitem">
+          <img src="./media/demos/07-backup-login-download.gif" alt="Recovery Key login and backup download flow" loading="lazy" decoding="async" />
+          <figcaption>
+            <strong>Recovery Key flow</strong>
+            <span>Sign-in, Escrow unlock, start backup pull</span>
+          </figcaption>
+        </figure>
+        <figure class="demo" role="listitem">
+          <img src="./media/demos/01-backup-dispositivi.gif" alt="Device backups listing and download" loading="lazy" decoding="async" />
+          <figcaption>
+            <strong>Device backups</strong>
+            <span>CloudKit / MMCS download pipeline</span>
+          </figcaption>
+        </figure>
+        <figure class="demo" role="listitem">
+          <img src="./media/demos/02-whatsapp-cloudkit.gif" alt="WhatsApp CloudKit extraction" loading="lazy" decoding="async" />
+          <figcaption>
+            <strong>WhatsApp CloudKit</strong>
+            <span>CloudDocs listing and crypto path</span>
+          </figcaption>
+        </figure>
+        <figure class="demo" role="listitem">
+          <img src="./media/demos/03-icloud-drive.gif" alt="iCloud Drive probe and download" loading="lazy" decoding="async" />
+          <figcaption>
+            <strong>iCloud Drive</strong>
+            <span>Browse and pull Drive content</span>
+          </figcaption>
+        </figure>
+        <figure class="demo" role="listitem">
+          <img src="./media/demos/04-imap-posta.gif" alt="IMAP mail export" loading="lazy" decoding="async" />
+          <figcaption>
+            <strong>IMAP mail</strong>
+            <span>Mailbox export from the session</span>
+          </figcaption>
+        </figure>
+        <figure class="demo" role="listitem">
+          <img src="./media/demos/05-icloud-sync-photos.gif" alt="iCloud Sync Data Photos" loading="lazy" decoding="async" />
+          <figcaption>
+            <strong>Sync Data — Photos</strong>
+            <span>CloudKit photos metadata and export</span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
     <section class="section" id="downloads" aria-labelledby="downloads-title">
       <h2 id="downloads-title">Downloads</h2>
       <p>
         Windows x64 builds (framework-dependent). Install the
         <a href="https://dotnet.microsoft.com/download/dotnet/10.0">.NET 10 Desktop Runtime</a>
-        before launching. Experimental builds—expect breakage.
+        before launching. Experimental—expect breakage.
       </p>
       <div class="cta-row cta-row--page">
         <a
@@ -130,7 +203,10 @@
 
   <footer>
     <div class="inner">
-      <span>© Forensis-Lab · Giordano Sconti</span>
+      <span class="footer__brand">
+        <img src="./assets/app-icon.png" width="28" height="28" alt="" />
+        © Forensis-Lab · Giordano Sconti
+      </span>
       <span>MIT License · Experimental research software</span>
     </div>
   </footer>
