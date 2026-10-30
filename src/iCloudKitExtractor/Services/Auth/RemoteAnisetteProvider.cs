@@ -15,21 +15,43 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
 {
     private readonly HttpClient _http;
     private readonly Uri _baseUri;
+    private readonly string? _licenseBearer;
 
-    public RemoteAnisetteProvider(HttpClient http, string baseUrl)
+    public RemoteAnisetteProvider(HttpClient http, string baseUrl, string? licenseBearer = null)
     {
         _http = http;
         _baseUri = new Uri(baseUrl.TrimEnd('/') + "/");
+        _licenseBearer = string.IsNullOrWhiteSpace(licenseBearer)
+            ? ResolveLicenseBearerFromEnv()
+            : licenseBearer.Trim();
     }
 
     public Uri BaseUri => _baseUri;
 
     /// <summary>
-    /// Optional license header for commercial Anisette backends.
-    /// Public builds: no-op (private tree may attach a license token).
+    /// ANISETTE_LICENSE = raw Bearer token, or path to a .license file (lab Licensed Anisette).
     /// </summary>
-    public static void ApplyLicenseHeader(HttpRequestMessage request) =>
-        _ = request;
+    public static string? ResolveLicenseBearerFromEnv()
+    {
+        var raw = Environment.GetEnvironmentVariable("ANISETTE_LICENSE")?.Trim();
+        if (string.IsNullOrEmpty(raw))
+            return null;
+        if (File.Exists(raw))
+        {
+            var line = File.ReadAllLines(raw)
+                .Select(l => l.Trim())
+                .FirstOrDefault(l => l.Length > 0 && !l.StartsWith('#'));
+            return string.IsNullOrEmpty(line) ? null : line;
+        }
+        return raw;
+    }
+
+    public static void ApplyLicenseHeader(HttpRequestMessage request)
+    {
+        var bearer = AnisetteProviderFactory.ResolveLicenseBearer();
+        if (!string.IsNullOrEmpty(bearer))
+            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + bearer);
+    }
 
     public Task<AnisetteHeaders> FetchAsync(CancellationToken ct = default) =>
         FetchAsync(null, ct);
@@ -68,7 +90,7 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
                         ["data"] = new { path = label, error = ex.Message },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -154,7 +176,13 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
             uri = ub.Uri;
         }
 
-        using var response = await _http.GetAsync(uri, ct).ConfigureAwait(false);
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        if (!string.IsNullOrEmpty(_licenseBearer))
+            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + _licenseBearer);
+        else
+            ApplyLicenseHeader(request);
+
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {

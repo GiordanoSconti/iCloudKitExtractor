@@ -12,12 +12,32 @@ public static class AnisetteProviderFactory
         if (!string.IsNullOrEmpty(env))
             return env;
 
-        var file = AnisetteUserSettings.Load().ServerUrl?.Trim();
-        if (!string.IsNullOrEmpty(file))
-            return file;
+        var settings = AnisetteUserSettings.Load();
+        if (settings.IsRemoteServerEnabled())
+        {
+            var file = settings.ServerUrl?.Trim();
+            if (!string.IsNullOrEmpty(file))
+                return file;
+        }
 
         return DefaultServerUrl;
     }
+
+    /// <summary>
+    /// License Bearer: env <c>ANISETTE_LICENSE</c>, altrimenti JSON UI.
+    /// </summary>
+    public static string? ResolveLicenseBearer()
+    {
+        var fromEnv = RemoteAnisetteProvider.ResolveLicenseBearerFromEnv();
+        if (!string.IsNullOrEmpty(fromEnv))
+            return fromEnv;
+
+        var fromFile = AnisetteUserSettings.Load().License?.Trim();
+        return string.IsNullOrEmpty(fromFile) ? null : fromFile;
+    }
+
+    public static bool IsServerUrlOverriddenByEnvironment() =>
+        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANISETTE_SERVER_URL"));
 
     /// <summary>
     /// iphone = AuthKit iPhone end-to-end (Frida/akd device o worker ADI emulato).
@@ -41,7 +61,7 @@ public static class AnisetteProviderFactory
     public static AuthAnisetteProviders CreateAuth(HttpClient http) =>
         new(
             new CoreAdiAnisetteProvider(http, AdiDeviceProfile.Windows),
-            new RemoteAnisetteProvider(http, ResolveServerUrl()));
+            new RemoteAnisetteProvider(http, ResolveServerUrl(), ResolveLicenseBearer()));
 
     public static async Task<AnisetteAuthProfile> ProbeAsync(HttpClient http, CancellationToken ct = default)
     {

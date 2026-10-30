@@ -107,6 +107,7 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
@@ -130,13 +131,69 @@
                             </StackPanel>
                         </Border>
 
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+                        <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Server Anisette" Style="{StaticResource SectionLabelStyle}"/>
+                                <TextBlock x:Name="AnisetteEnvOverrideText"
+                                           Text="ANISETTE_SERVER_URL impostata: ha priorità sulla UI."
+                                           Foreground="#B58600" Margin="0,0,0,8" TextWrapping="Wrap"
+                                           Visibility="Collapsed"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <RadioButton x:Name="AnisetteLocalRadio" Content="Locale (127.0.0.1:6971)"
+                                                 IsChecked="True" GroupName="AnisetteServerMode"
+                                                 Margin="0,0,16,0"
+                                                 Checked="AnisetteServerModeRadio_Changed"/>
+                                    <RadioButton x:Name="AnisetteRemoteRadio" Content="Server remoto"
+                                                 GroupName="AnisetteServerMode"
+                                                 Checked="AnisetteServerModeRadio_Changed"/>
+                                </StackPanel>
+                                <Grid x:Name="AnisetteRemoteFieldsPanel" IsEnabled="False">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="URL" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="AnisetteServerUrlTextBox" Grid.Column="1" Margin="0,0,0,8"
+                                             ToolTip="Es. http://192.168.1.50:6969"/>
+                                    <TextBlock Grid.Row="1" Text="Auth mode" Style="{StaticResource FieldLabelStyle}"/>
+                                    <ComboBox x:Name="AnisetteAuthModeCombo" Grid.Row="1" Grid.Column="1"
+                                              Margin="0,0,0,8" Width="160" HorizontalAlignment="Left"
+                                              SelectedIndex="0">
+                                        <ComboBoxItem Content="iphone" Tag="iphone" IsSelected="True"/>
+                                        <ComboBoxItem Content="hybrid" Tag="hybrid"/>
+                                    </ComboBox>
+                                    <TextBlock Grid.Row="2" Text="License" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="AnisetteLicenseTextBox" Grid.Row="2" Grid.Column="1"
+                                             ToolTip="Opzionale: Bearer token o path a file .license (server Licensed)"/>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <Button x:Name="AnisetteTestButton" Content="Test connessione"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="132" Margin="0,0,8,0"
+                                            Click="AnisetteTestButton_Click"/>
+                                    <Button x:Name="AnisetteSaveButton" Content="Salva Anisette"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="132"
+                                            Click="AnisetteSaveButton_Click"/>
+                                    <TextBlock x:Name="AnisetteSettingsStatusText"
+                                               VerticalAlignment="Center" Margin="12,0,0,0"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
                             <Button x:Name="LoginButton" Content="Accedi"
                                     Style="{StaticResource PrimaryButtonStyle}"
                                     MinWidth="132" Click="LoginButton_Click"/>
                         </StackPanel>
 
-                        <Border x:Name="TwoFactorPanel" Grid.Row="2" Style="{StaticResource SectionCardStyle}"
+                        <Border x:Name="TwoFactorPanel" Grid.Row="3" Style="{StaticResource SectionCardStyle}"
                                 Visibility="Collapsed">
                             <StackPanel>
                                 <TextBlock Text="Verifica a due fattori" Style="{StaticResource SectionLabelStyle}"/>
@@ -165,7 +222,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Grid.Row="3" Style="{StaticResource LogSectionCardStyle}">
+                        <Border Grid.Row="4" Style="{StaticResource LogSectionCardStyle}">
                             <DockPanel LastChildFill="True">
                                 <TextBlock DockPanel.Dock="Top" Text="Log autenticazione"
                                            Style="{StaticResource SectionLabelStyle}"

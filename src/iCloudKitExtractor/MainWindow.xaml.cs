@@ -155,6 +155,7 @@ public partial class MainWindow : Window
         {
             LogAuth("Capture run: disattivata (nessun log in %AppData%\\iCloudKitExtractor\\logs)");
         }
+        LoadAnisetteSettingsUi();
         LogAuth($"Anisette: {AnisetteProviderFactory.ResolveServerUrl()} | mode: {AnisetteProviderFactory.ResolveAuthMode()}");
         LogAuth($"  config: {AnisetteProviderFactory.SettingsFilePath}");
         Loaded += MainWindow_Loaded;
@@ -429,6 +430,159 @@ public partial class MainWindow : Window
 
         _authProfile = await AnisetteProviderFactory.ProbeAsync(Http).ConfigureAwait(true);
         LogAuthProfile(_authProfile);
+    }
+
+    private void LoadAnisetteSettingsUi()
+    {
+        if (AnisetteLocalRadio is null)
+            return;
+
+        var settings = AnisetteUserSettings.Load();
+        var remote = settings.IsRemoteServerEnabled();
+        AnisetteLocalRadio.IsChecked = !remote;
+        AnisetteRemoteRadio.IsChecked = remote;
+        AnisetteServerUrlTextBox.Text = string.IsNullOrWhiteSpace(settings.ServerUrl)
+            ? (AnisetteUserSettings.ExampleMacUrl ?? "")
+            : settings.ServerUrl.Trim();
+        AnisetteLicenseTextBox.Text = settings.License?.Trim() ?? "";
+
+        var mode = (settings.AuthMode ?? AnisetteProviderFactory.ResolveAuthMode())
+            .Trim().ToLowerInvariant();
+        AnisetteAuthModeCombo.SelectedIndex = mode == "hybrid" ? 1 : 0;
+
+        UpdateAnisetteRemoteFieldsEnabled();
+        if (AnisetteProviderFactory.IsServerUrlOverriddenByEnvironment())
+        {
+            AnisetteEnvOverrideText.Visibility = Visibility.Visible;
+            AnisetteEnvOverrideText.Text =
+                "ANISETTE_SERVER_URL impostata: ha priorità sulla UI (" +
+                AnisetteProviderFactory.ResolveServerUrl() + ").";
+        }
+        else
+        {
+            AnisetteEnvOverrideText.Visibility = Visibility.Collapsed;
+        }
+
+        AnisetteSettingsStatusText.Text =
+            "Attivo: " + AnisetteProviderFactory.ResolveServerUrl();
+    }
+
+    private void UpdateAnisetteRemoteFieldsEnabled()
+    {
+        if (AnisetteRemoteFieldsPanel is null)
+            return;
+        var remote = AnisetteRemoteRadio?.IsChecked == true;
+        AnisetteRemoteFieldsPanel.IsEnabled = remote;
+    }
+
+    private void AnisetteServerModeRadio_Changed(object sender, RoutedEventArgs e) =>
+        UpdateAnisetteRemoteFieldsEnabled();
+
+    private AnisetteUserSettings ReadAnisetteSettingsFromUi()
+    {
+        var remote = AnisetteRemoteRadio?.IsChecked == true;
+        var url = AnisetteServerUrlTextBox?.Text?.Trim();
+        var modeTag = (AnisetteAuthModeCombo?.SelectedItem as ComboBoxItem)?.Tag?.ToString()
+                      ?? "iphone";
+        var license = AnisetteLicenseTextBox?.Text?.Trim();
+        return new AnisetteUserSettings
+        {
+            UseRemoteServer = remote,
+            ServerUrl = string.IsNullOrWhiteSpace(url) ? null : url,
+            AuthMode = modeTag,
+            License = string.IsNullOrWhiteSpace(license) ? null : license,
+        };
+    }
+
+    private void InvalidateAnisetteSession()
+    {
+        _authProfile = null;
+        _orchestrator = null;
+    }
+
+    private async void AnisetteSaveButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var settings = ReadAnisetteSettingsFromUi();
+            if (settings.UseRemoteServer == true)
+            {
+                if (string.IsNullOrWhiteSpace(settings.ServerUrl))
+                {
+                    AnisetteSettingsStatusText.Text = "URL remoto obbligatorio.";
+                    return;
+                }
+
+                if (!Uri.TryCreate(settings.ServerUrl, UriKind.Absolute, out var uri)
+                    || uri.Scheme is not ("http" or "https"))
+                {
+                    AnisetteSettingsStatusText.Text = "URL non valido (http/https).";
+                    return;
+                }
+            }
+
+            AnisetteUserSettings.Save(settings);
+            InvalidateAnisetteSession();
+            var resolved = AnisetteProviderFactory.ResolveServerUrl();
+            AnisetteSettingsStatusText.Text = "Salvato → " + resolved;
+            LogAuth($"Anisette salvata: {resolved} | mode: {AnisetteProviderFactory.ResolveAuthMode()}");
+            LogAuth($"  config: {AnisetteProviderFactory.SettingsFilePath}");
+
+            await EnsureAuthProfileAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            AnisetteSettingsStatusText.Text = "Errore salvataggio: " + ex.Message;
+            LogAuth($"Salvataggio Anisette fallito: {ex.Message}");
+        }
+    }
+
+    private async void AnisetteTestButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            AnisetteTestButton.IsEnabled = false;
+            AnisetteSettingsStatusText.Text = "Test in corso…";
+
+            // Prova l'URL selezionato in UI senza obbligatoriamente salvare.
+            var draft = ReadAnisetteSettingsFromUi();
+            var url = draft.UseRemoteServer == true
+                && !string.IsNullOrWhiteSpace(draft.ServerUrl)
+                    ? draft.ServerUrl!.TrimEnd('/')
+                    : AnisetteProviderFactory.DefaultServerUrl;
+            if (AnisetteProviderFactory.IsServerUrlOverriddenByEnvironment())
+                url = AnisetteProviderFactory.ResolveServerUrl().TrimEnd('/');
+
+            if (!Uri.TryCreate(url, UriKind.Absolute, out _))
+            {
+                AnisetteSettingsStatusText.Text = "URL non valido.";
+                return;
+            }
+
+            var license = string.IsNullOrWhiteSpace(draft.License)
+                ? AnisetteProviderFactory.ResolveLicenseBearer()
+                : draft.License;
+            var remote = new RemoteAnisetteProvider(Http, url, license);
+            var backend = await remote.TryGetBackendAsync().ConfigureAwait(true);
+            var headers = await remote.FetchAsync().ConfigureAwait(true);
+            var md = AnisetteCapability.SummarizeMdM(headers.MdM);
+            AnisetteSettingsStatusText.Text =
+                $"OK {url}" +
+                (string.IsNullOrEmpty(backend) ? "" : $" · backend={backend}") +
+                $" · MD-M {md}";
+            LogAuth($"Test Anisette OK: {url}" +
+                    (string.IsNullOrEmpty(backend) ? "" : $" backend={backend}") +
+                    $" MD-M={md}");
+        }
+        catch (Exception ex)
+        {
+            AnisetteSettingsStatusText.Text = "Test fallito: " + ex.Message;
+            LogAuth($"Test Anisette fallito: {ex.Message}");
+        }
+        finally
+        {
+            AnisetteTestButton.IsEnabled = true;
+        }
     }
 
     private void LogAuthProfile(AnisetteAuthProfile profile)
