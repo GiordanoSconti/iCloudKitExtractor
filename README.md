@@ -150,41 +150,53 @@ Want to try the app before standing up your own Anisette stack? Contact privatel
 
 ### Preferred Anisette: Frida on a jailbroken iPhone
 
-OTP minted on-device via Frida → AuthKit/`akd`, served by `AnisetteServer`.
+OTP minted on-device via Frida → AuthKit/`akd`, then served by `AnisetteServer`.
 
-<details>
-<summary><strong>Frida / akd setup (environment, server, jailbreak LaunchDaemon)</strong></summary>
+#### 1. Prerequisites (device + PC)
 
-#### Environment
+- Jailbroken iPhone with **frida-server** running (USB or Wi‑Fi)
+- Matching **frida-tools** version on the PC (`pip install frida-tools`)
+- Python 3 available as `python` (or set `FRIDA_ANISETTE_PYTHON`)
+- Bundled Frida scripts under `scripts/ios_akd_probe/` (`fetch_anisette.py` + JS). Copied next to AnisetteServer as `ios_akd_probe/` on build/publish. Optional override: `FRIDA_ANISETTE_FETCH_PY` (file or that directory)
+
+> Jailbreak install steps: see **[Preparing a jailbroken iPhone](#preparing-a-jailbroken-iphone)** below.
+
+#### 2. Environment variables
 
 | Variable | Required | Default | Meaning |
 |----------|----------|---------|---------|
 | `ANISETTE_SERVER_BACKEND` | **yes** | `coreadi` | Must be `frida` (aliases: `iphone-frida`, `jb-frida`) |
 | `ANISETTE_SERVER_URL` / `ANISETTE_SERVER_URLS` | no | `http://127.0.0.1:6969` | URL(s) where AnisetteServer listens |
 | `ANISETTE_SERVER_PORT` | no | `6969` | Port if URLs not set |
-| `ICLOUD_AUTH_MODE` | recommended | `iphone` | Use `iphone` for full AuthKit iPhone SRP |
-| `FRIDA_ANISETTE_HOST` | no | `127.0.0.1:27042` | frida-server host:port (`iproxy 27042 27042` on USB) |
+| `ICLOUD_AUTH_MODE` | recommended | `iphone` (via config) | Use `iphone` for full AuthKit iPhone SRP |
+| `FRIDA_ANISETTE_HOST` | no | `127.0.0.1:27042` | frida-server host:port (USB often via `iproxy 27042 27042`) |
 | `FRIDA_ANISETTE_PROCESS` | no | `akd` | Process to attach |
-| `FRIDA_ANISETTE_FETCH_PY` | no | `ios_akd_probe/` next to exe | Path to `fetch_anisette.py` or its directory |
+| `FRIDA_ANISETTE_FETCH_PY` | no | `ios_akd_probe/` next to exe | Path to `fetch_anisette.py` **or** to the `ios_akd_probe` directory |
 | `FRIDA_ANISETTE_PYTHON` | no | `python` | Python executable |
-| `FRIDA_ANISETTE_LITE` | no | `1` | Lite attach mode |
+| `FRIDA_ANISETTE_LITE` | no | `1` / true | Lite attach mode |
 | `FRIDA_ANISETTE_TIMEOUT` | no | `60` | Seconds before aborting a mint |
 
-Optional app config: `%AppData%\iCloudKitExtractor\anisette.json` (`authMode`, `serverUrl`). Env vars win.
+Optional app config file: `%AppData%\iCloudKitExtractor\anisette.json` (`authMode`, `serverUrl`). Env vars override the file.
 
-#### Start AnisetteServer (Frida)
+#### 3. Start AnisetteServer (Frida backend)
 
 ```powershell
 $env:ANISETTE_SERVER_BACKEND = "frida"
 $env:ANISETTE_SERVER_PORT = "6971"
 $env:FRIDA_ANISETTE_HOST = "127.0.0.1:27042"
 $env:FRIDA_ANISETTE_PROCESS = "akd"
+# Optional — defaults to bundled scripts/ios_akd_probe (copied beside the exe)
+# $env:FRIDA_ANISETTE_FETCH_PY = "C:\path\to\scripts\ios_akd_probe"
 $env:FRIDA_ANISETTE_PYTHON = "python"
 $env:FRIDA_ANISETTE_LITE = "1"
 $env:FRIDA_ANISETTE_TIMEOUT = "60"
 
 dotnet run --project src/AnisetteServer/AnisetteServer.csproj -c Release -- --backend frida --port 6971
 ```
+
+CLI `--backend` / `--port` override the environment.
+
+Smoke test:
 
 ```powershell
 curl http://127.0.0.1:6971/health
@@ -193,7 +205,7 @@ curl http://127.0.0.1:6971/
 
 Expect JSON with machine data (`X-Apple-I-MD-M`, `X-MMe-Client-Info` containing `com.apple.akd`).
 
-#### Point IKE at the server
+#### 4. Point IKE at the server
 
 ```powershell
 $env:ANISETTE_SERVER_URL = "http://127.0.0.1:6971/"
@@ -201,13 +213,17 @@ $env:ICLOUD_AUTH_MODE = "iphone"
 dotnet run --project src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
 ```
 
-#### Jailbroken iPhone (rootless)
+## Preparing a jailbroken iPhone
 
-Install **Frida** (frida-server) and **OpenSSH** from Sileo. Over SSH as **root**:
+Install **Frida** (frida-server) and **OpenSSH** from **Sileo** on the device first.
+
+Assumes a **rootless** jailbreak (`/var/jb/...`). Over SSH as **root**:
 
 ```sh
 ls -l /var/jb/usr/sbin/frida-server
 ```
+
+Recreate the LaunchDaemon plist (LF endings, rootless)—no editor needed:
 
 ```sh
 cat > /var/jb/Library/LaunchDaemons/re.frida.server.plist <<'EOF'
@@ -234,6 +250,8 @@ cat > /var/jb/Library/LaunchDaemons/re.frida.server.plist <<'EOF'
 EOF
 ```
 
+Normalize line endings, convert the plist to binary, then (re)load the daemon:
+
 ```sh
 tr -d '\r' < /var/jb/Library/LaunchDaemons/re.frida.server.plist > /tmp/frida.plist
 mv /tmp/frida.plist /var/jb/Library/LaunchDaemons/re.frida.server.plist
@@ -246,11 +264,9 @@ launchctl kickstart -k system/re.frida.server
 ps aux | grep '[f]rida-server'
 ```
 
-Binds **frida-server** on `0.0.0.0:27042`, starts at boot, KeepAlive. From the PC use `FRIDA_ANISETTE_HOST=127.0.0.1:27042` after `iproxy`, or the device LAN IP.
+This binds **frida-server** on `0.0.0.0:27042` (all interfaces), starts at boot, and keeps it alive. From the PC set e.g. `FRIDA_ANISETTE_HOST=127.0.0.1:27042` after USB port-forward (`iproxy 27042 27042`) or use the device LAN IP.
 
-</details>
-
-### Other Anisette backends
+## Other anisette backends
 
 | Backend | Use case | Docs |
 |---------|----------|------|
