@@ -61,7 +61,7 @@ Sign in, unlock Escrow with a Recovery Key, then start a device backup pull.
 
 ![Recovery Key flow — login and backup download](video/07-backup-login-download.gif)
 
-[Highlight MP4](video/07-backup-login-download.mp4) · [Full recording (MOV, ~46 MB)](video/2026-10-28%2006-25-12.mov)
+[Highlight MP4](video/07-backup-login-download.mp4) · [Full recording (MP4, ~32 MB)](video/2026-10-28%2006-25-12.mp4)
 
 ### Device backups
 

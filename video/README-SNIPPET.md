@@ -6,7 +6,7 @@ Highlight dalle registrazioni schermo di **iCloud Backup Extractor** (per il REA
 
 ![Backup login download](07-backup-login-download.gif)
 
-[Full recording (MOV)](2026-10-28%2006-25-12.mov) · [Highlight (MP4)](07-backup-login-download.mp4)
+[Full recording (MP4)](2026-10-28%2006-25-12.mp4) · [Highlight (MP4)](07-backup-login-download.mp4)
 
 ### Backup dispositivi
 
