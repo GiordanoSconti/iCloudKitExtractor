@@ -150,6 +150,22 @@ Temporary public preview endpoint (leave the IKE **License** field empty on firs
 
 **https://www.icloudkitextractor.eu:6971**
 
+> **Status — connectivity in preparation.** Reachability from the public Internet is being wired through **Cloudflare Tunnel** (see below). Until that path is live, the URL may time out from outside the lab LAN / when the ISP blocks inbound ports (CGNAT). Prefer self-host or contact for access if the preview is down.
+
+#### How the preview is published (Cloudflare Tunnel)
+
+The lab middleware (`AnisetteServer.Mac` / Licensed) listens locally on **HTTP** `:6971` (`http://127.0.0.1:6971` / `http://0.0.0.0:6971`). A small **`cloudflared`** agent on the same machine opens an **outbound-only** tunnel to Cloudflare. Clients hit a public HTTPS hostname; Cloudflare terminates TLS and forwards into the tunnel. **No router port forward, UPnP, or public IP** is required — this also works behind CGNAT (e.g. many Vodafone Station / FWA setups).
+
+```
+IKE / curl  →  https://www.icloudkitextractor.eu[…]  →  Cloudflare edge
+                                                         ↕  tunnel (outbound)
+                                                   cloudflared (lab Mac)
+                                                         ↓
+                                              http://127.0.0.1:6971  (Anisette)
+```
+
+Self-host tip (same pattern as the preview): keep Anisette on local HTTP, point a Cloudflare Tunnel ingress hostname at `http://127.0.0.1:6971`, then set IKE `ANISETTE_SERVER_URL` to your `https://…` hostname. Details: [Cloudflare Tunnel docs](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/). Licensed stack: [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md).
+
 > **Disclaimer — licensing telemetry & acceptable use**  
 > To issue and bind temporary licenses on **my** preview server, the remote client **IP address** and other request-linked identifiers (machine fingerprint headers used by Package-C) are collected so the license stays tied to that connection profile. I may **revoke** a license if the preview service is abused for unauthorized or non-consensual attacks. This software is made available for **ethical and forensic** use only.  
 > If VPNs (or similar) are used to exploit my server for attacks of any kind, I will **stop offering preview access** through my Anisette endpoint.  
