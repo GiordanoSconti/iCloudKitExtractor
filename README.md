@@ -154,7 +154,7 @@ Temporary public preview endpoint (leave the IKE **License** field empty on firs
 
 #### How the preview is published (Cloudflare Tunnel)
 
-The lab middleware (`AnisetteServer.Mac` / Licensed) listens locally on **HTTP** `:6971` (`http://127.0.0.1:6971` / `http://0.0.0.0:6971`). A small **`cloudflared`** agent on the same machine opens an **outbound-only** tunnel to Cloudflare. Clients hit a public HTTPS hostname; Cloudflare terminates TLS and forwards into the tunnel. **No router port forward, UPnP, or public IP** is required — this also works behind CGNAT (e.g. many Vodafone Station / FWA setups).
+The lab middleware (**Anisette Middleware** / `AnisetteServer.Mac` Avalonia app — **Windows and macOS** — or headless Licensed) listens locally on **HTTP** `:6971` (`http://127.0.0.1:6971` / `http://0.0.0.0:6971`). A small **`cloudflared`** agent on the same machine opens an **outbound-only** tunnel to Cloudflare. Clients hit a public HTTPS hostname; Cloudflare terminates TLS and forwards into the tunnel. **No router port forward, UPnP, or public IP** is required — this also works behind CGNAT (e.g. many Vodafone Station / FWA setups).
 
 ```
 IKE / curl  →  https://www.icloudkitextractor.eu[…]  →  Cloudflare edge
@@ -171,7 +171,7 @@ Self-host tip (same pattern as the preview): keep Anisette on local HTTP, point 
 > If VPNs (or similar) are used to exploit my server for attacks of any kind, I will **stop offering preview access** through my Anisette endpoint.  
 > I hope there are still people in the world with a sound intellect.
 
-Want longer-term or private access? Contact: [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gruppoinformaticiforensi.it). Prefer hosting your own stack: [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md) (Mac/Licensed default is plain **HTTP** `:6971`; optional HTTPS via `https://…` listen URLs or `ANISETTE_TLS_ENABLE=1`).
+Want longer-term or private access? Contact: [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gruppoinformaticiforensi.it). Prefer hosting your own stack: [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md) (Desktop middleware / Licensed default is plain **HTTP** `:6971`; optional HTTPS via `https://…` listen URLs or `ANISETTE_TLS_ENABLE=1`).
 
 ### Preferred Anisette: Frida on a jailbroken iPhone
 
@@ -297,7 +297,7 @@ If you want others to use **your** Frida/iPhone OTP over the network, run the li
 
 | Project | Role |
 |---------|------|
-| `AnisetteServer.Mac` | Avalonia UI: Frida IP, Start/Stop, license admin |
+| `AnisetteServer.Mac` → **AnisetteMiddleware** | Avalonia UI for **Windows & macOS**: Frida IP, Start/Stop, license admin |
 | `AnisetteServer.Licensed` | Headless HTTP gate + Bearer / first-connection auto-issue |
 | `AnisetteLicenseGen` | `init-keys`, issue / disable / enable / revoke |
 
@@ -329,7 +329,7 @@ Also: [docs/IPHONE_INTERNAL_FLOW.md](docs/IPHONE_INTERNAL_FLOW.md) · [docs/APPL
 | `src/PhotosViewer` | Photo library viewer (copied into `viewer-payload` on IKE build) |
 | `src/AnisetteServer` | OTP / ADI server (unsigned, local) |
 | `src/AnisetteServer.Licensed` | Licensed HTTP gate (self-host) |
-| `src/AnisetteServer.Mac` | Avalonia Frida middleware + license panel |
+| `src/AnisetteServer.Mac` | Avalonia Frida middleware + license panel (**Windows / macOS**; binary `AnisetteMiddleware`) |
 | `src/AnisetteLicense` / `AnisetteLicenseGen` | Package-C crypto + CLI |
 | `scripts/` | Emulated akd / bridge / Frida helpers |
 | `docs/` | Protocol notes + [GitHub Pages](https://giordanosconti.github.io/iCloudKitExtractor/) site |

@@ -11,7 +11,7 @@ Generate **your own** keys and database. Never commit `keys/` or `data/licenses/
 | `src/AnisetteLicense` | Ed25519 token + Package-C Base64 bundle + SQLite allowlist |
 | `src/AnisetteLicenseGen` | CLI: init-keys / issue / revoke / disable / enable / delete / list |
 | `src/AnisetteServer.Licensed` | Anisette HTTP API + Bearer gate (headless) |
-| `src/AnisetteServer.Mac` | Avalonia UI (macOS-friendly): Frida host config + license panel + Start/Stop |
+| `src/AnisetteServer.Mac` | Avalonia **desktop UI for Windows and macOS** (folder name is historical; output = `AnisetteMiddleware`): Frida host + license panel + Start/Stop |
 
 Unsigned local server remains `src/AnisetteServer` (no license gate).
 
@@ -54,11 +54,14 @@ dotnet run --project src/AnisetteLicenseGen -- delete --id <license_id>
 
 Paths (override with env): `ANISETTE_LICENSE_ROOT`, `ANISETTE_LICENSE_PRIVATE_KEY`, `ANISETTE_LICENSE_PUBLIC_KEY`, `ANISETTE_LICENSE_DB`.
 
-## Mac Avalonia middleware (Frida → iPhone)
+## Desktop Avalonia middleware (Windows / macOS — Frida → iPhone)
+
+Project path is still `src/AnisetteServer.Mac` for history; the app title and binary are **Anisette Middleware** and run on **both** Windows and macOS.
 
 ```bash
 dotnet run --project src/AnisetteServer.Mac -c Release
-# publish example:
+# publish examples:
+dotnet publish src/AnisetteServer.Mac -c Release -r win-x64 --self-contained false
 dotnet publish src/AnisetteServer.Mac -c Release -r osx-arm64 --self-contained false
 ```
 
@@ -67,7 +70,7 @@ UI:
 - **Server**: Frida host (`192.168.x.y:27042`), process `akd`, Python, listen URLs (`http://0.0.0.0:6971` by default; `https://…` optional), Start/Stop
 - **Licenses**: list / disable / enable / remove / manual Package-C issue
 
-Default data root: `~/Library/Application Support/ForensisLab/AnisetteMiddleware/` (or `%AppData%\ForensisLab\AnisetteMiddleware` on Windows).  
+Default data root: `%AppData%\ForensisLab\AnisetteMiddleware` on Windows, or `~/Library/Application Support/ForensisLab/AnisetteMiddleware/` on macOS.  
 TLS files land in `data/tls/` only when you enable HTTPS.
 
 ### HTTP (default) vs HTTPS (optional)

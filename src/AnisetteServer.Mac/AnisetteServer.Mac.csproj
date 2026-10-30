@@ -6,7 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RootNamespace>AnisetteServer.Mac</RootNamespace>
-    <AssemblyName>AnisetteServer.Mac</AssemblyName>
+    <!-- Folder/project id stays AnisetteServer.Mac (historical); product runs on Windows + macOS. -->
+    <AssemblyName>AnisetteMiddleware</AssemblyName>
+    <Product>Anisette Middleware</Product>
+    <AssemblyTitle>Anisette Middleware (Windows / macOS)</AssemblyTitle>
+    <Description>Avalonia desktop Anisette gate for Windows and macOS (Frida + Package-C licenses).</Description>
     <DefineConstants>$(DefineConstants);ANISETTE_SERVER</DefineConstants>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
