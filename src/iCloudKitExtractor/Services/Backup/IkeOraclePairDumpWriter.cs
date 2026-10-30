@@ -106,7 +106,7 @@ public static class IkeOraclePairDumpWriter
         {
             // Fallback stabile accanto ai dump x64dbg.
             root = Path.Combine(
-                Path.GetTempPath(),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\mitm\captures",
                 "ike_oracle_live",
                 "ike_run");
         }

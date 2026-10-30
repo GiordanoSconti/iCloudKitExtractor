@@ -371,7 +371,7 @@ public sealed class ChunkTree
                 },
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                 line + Environment.NewLine);
         }
         catch { /* ignore */ }
@@ -628,7 +628,7 @@ public sealed class ChunkTree
                 ["data"] = data,
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch

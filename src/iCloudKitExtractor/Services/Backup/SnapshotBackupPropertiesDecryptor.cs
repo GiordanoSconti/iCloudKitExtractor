@@ -482,7 +482,7 @@ public static class SnapshotBackupPropertiesDecryptor
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line + Environment.NewLine);
         }
         catch

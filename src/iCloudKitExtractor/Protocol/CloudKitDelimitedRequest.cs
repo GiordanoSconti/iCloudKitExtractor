@@ -22,11 +22,14 @@ public static class CloudKitDelimitedRequest
         string cloudKitUserId,
         IEnumerable<string> zoneNames,
         RestoreRequestContext? restore = null,
-        CloudKitContainerBinding? container = null)
+        CloudKitContainerBinding? container = null,
+        string? zoneOwnerUserId = null)
     {
         var zones = zoneNames.ToList();
         if (zones.Count == 0)
             throw new ArgumentException("Nessuna zona da recuperare.");
+        // Lab ACL: header identity (cloudKitUserId) may differ from zone owner.
+        var owner = string.IsNullOrWhiteSpace(zoneOwnerUserId) ? cloudKitUserId : zoneOwnerUserId;
 
         byte[]? payload = null;
         for (var i = 0; i < zones.Count; i++)
@@ -40,7 +43,7 @@ public static class CloudKitDelimitedRequest
             // ZoneRetrieveRequest: proto storico InflatableDonkey = field 1;
             // CloudDocs moderno (2026) scrive SOLO field 2. Scrivere field 1 con
             // nome "default" → "Zone does not exist"; field 2 solo → tutte le zone + PI.
-            var zoneId = BuildZoneIdentifier(NormalizeZoneNameForRetrieve(zones[i]), cloudKitUserId);
+            var zoneId = BuildZoneIdentifier(NormalizeZoneNameForRetrieve(zones[i]), owner);
             var zoneWrap = new ProtobufWriter();
             zoneWrap.WriteBytes(2, zoneId);
 
@@ -70,8 +73,9 @@ public static class CloudKitDelimitedRequest
         string cloudKitUserId,
         IEnumerable<string> zoneNames,
         RestoreRequestContext? restore = null,
-        CloudKitContainerBinding? container = null) =>
-        BuildFetchRecordZones(cloudKitUserId, zoneNames, restore, container);
+        CloudKitContainerBinding? container = null,
+        string? zoneOwnerUserId = null) =>
+        BuildFetchRecordZones(cloudKitUserId, zoneNames, restore, container, zoneOwnerUserId);
 
     /// <summary>
     /// CloudDocs usa il nome zona <c>default</c> (non <c>_defaultZone</c>) in zone/retrieve.
@@ -201,8 +205,10 @@ public static class CloudKitDelimitedRequest
         string cloudKitUserId,
         string zoneName,
         byte[]? syncContinuationToken = null,
-        CloudKitContainerBinding? container = null)
+        CloudKitContainerBinding? container = null,
+        string? zoneOwnerUserId = null)
     {
+        var owner = string.IsNullOrWhiteSpace(zoneOwnerUserId) ? cloudKitUserId : zoneOwnerUserId;
         var inner = new ProtobufWriter();
         inner.WriteString(1, Guid.NewGuid().ToString());
         inner.WriteVarint(2, FetchRecordChangesType);
@@ -210,7 +216,7 @@ public static class CloudKitDelimitedRequest
 
         var zid = new ProtobufWriter();
         zid.WriteBytes(1, BuildZoneName(zoneName));
-        zid.WriteBytes(2, BuildUserIdentifier(cloudKitUserId));
+        zid.WriteBytes(2, BuildUserIdentifier(owner));
         zid.WriteVarint(3, 1);
 
         var changes = new ProtobufWriter();

@@ -117,8 +117,10 @@ public sealed class Hsa2TrustedDeviceService
             var baseUrl = AnisetteProviderFactory.ResolveServerUrl().TrimEnd('/');
             var qs = newIdentity ? "?newIdentity=1" : "";
             log?.Invoke($"HSA2: POST {baseUrl}/provision{qs}…");
+            using var provisionReq = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/provision{qs}");
+            RemoteAnisetteProvider.ApplyLicenseHeader(provisionReq);
             using var response = await _http
-                .PostAsync($"{baseUrl}/provision{qs}", content: null, ct)
+                .SendAsync(provisionReq, ct)
                 .ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)

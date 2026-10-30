@@ -375,7 +375,7 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             IkeLogOptions.AppendAgentNdjson(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
                 line);
         }
         catch

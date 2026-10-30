@@ -1486,7 +1486,7 @@ public sealed class WhatsAppDocumentsProbeService
         try
         {
             var logPath =
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log");
+                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log";
             var payload = new Dictionary<string, object?>
             {
                 ["sessionId"] = "7dabb5",

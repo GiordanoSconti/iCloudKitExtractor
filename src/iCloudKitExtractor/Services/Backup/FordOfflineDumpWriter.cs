@@ -454,7 +454,7 @@ public static class FordOfflineDumpWriter
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -494,7 +494,7 @@ public static class FordOfflineDumpWriter
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }
@@ -525,7 +525,7 @@ public static class FordOfflineDumpWriter
                             },
                         });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                             line + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -565,7 +565,7 @@ public static class FordOfflineDumpWriter
                             },
                         });
                         File.AppendAllText(
-                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
                             line + Environment.NewLine);
                     }
                     catch { /* ignore */ }
@@ -593,7 +593,7 @@ public static class FordOfflineDumpWriter
                         },
                     });
                     File.AppendAllText(
-                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ike-debug.log"),
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-03cce7.log",
                         line + Environment.NewLine);
                 }
                 catch { /* ignore */ }

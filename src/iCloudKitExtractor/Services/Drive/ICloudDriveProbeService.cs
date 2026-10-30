@@ -156,6 +156,10 @@ public sealed class ICloudDriveProbeService
 
             progress?.Report(new ICloudDriveProgress("zone/retrieve", 12, "default…"));
             byte[]? defaultZoneRetrieve = null;
+            // Seed PI bag: default + CloudDocs* (come WhatsApp H-WA-CLOUDDOCS-ZONE-PI).
+            // Su alcuni account Cont[0] MasterKeySet (~884 B) manca sul single-zone e sta
+            // solo in un altro retrieve — SelectRichest non basta, serve Concat.
+            var seedZonePayloads = new List<(string Name, byte[] Payload)>();
             var zones = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "com.apple.CloudDocs.container-metadata",
@@ -175,6 +179,9 @@ public sealed class ICloudDriveProbeService
                 await File.WriteAllLinesAsync(
                     Path.Combine(docsDir, "zones_default_retrieve_strings.txt"), dStrings, ct);
                 log?.Report($"  zone/retrieve default → {defaultZoneRetrieve.Length:N0} B");
+                if (defaultZoneRetrieve.Length > 0
+                    && !CloudKitResponseParser.IsCloudKitErrorPayload(defaultZoneRetrieve, out _))
+                    seedZonePayloads.Add(("default", defaultZoneRetrieve));
 
                 foreach (var s in dStrings)
                 {
@@ -242,7 +249,7 @@ public sealed class ICloudDriveProbeService
                     continue;
                 }
 
-                var zonePayloadLive = SelectRichestZonePayload(defaultZoneRetrieve, zonePayload);
+                seedZonePayloads.Add((zone, zonePayload));
                 var allRecordNames = new HashSet<string>(StringComparer.Ordinal);
                 var syncTotalBytes = 0L;
 
@@ -360,6 +367,36 @@ public sealed class ICloudDriveProbeService
                 zonesProcessed++;
                 if (allRecordNames.Count > 0)
                     WriteDocumentIndex(docsDir, zone, allRecordNames.ToList(), log);
+
+                // Crypto PI: bag default+CloudDocs*+zone (H-DRIVE-CLOUDDOCS-ZONE-PI).
+                var zonePayloadLive = ConcatZonePayloads(
+                    seedZonePayloads.Select(static x => x.Payload));
+                var richest = SelectRichestZonePayload(defaultZoneRetrieve, zonePayload);
+                var bagScore = ScoreProtectionInfoPayload(zonePayloadLive);
+                var bagMaxDer = MaxAppl1DerLen(zonePayloadLive);
+                log?.Report(
+                    $"    crypto PI bag ← default+CloudDocs*+zone " +
+                    $"({zonePayloadLive.Length:N0} B, score={bagScore}, maxDer≈{bagMaxDer}; " +
+                    $"richest-solo={richest.Length:N0} B / score={ScoreProtectionInfoPayload(richest)})");
+                // #region agent log
+                AgentLog("H-DRIVE-CLOUDDOCS-ZONE-PI", "ICloudDriveProbeService.cs:crypto_pi",
+                    "crypto_pi_bag", new
+                    {
+                        zone,
+                        seeds = seedZonePayloads.Select(static x => new
+                        {
+                            x.Name,
+                            len = x.Payload.Length,
+                            score = ScoreProtectionInfoPayload(x.Payload),
+                            maxDer = MaxAppl1DerLen(x.Payload),
+                        }).ToList(),
+                        bagLen = zonePayloadLive.Length,
+                        bagScore,
+                        bagMaxDer,
+                        richestLen = richest.Length,
+                        richestScore = ScoreProtectionInfoPayload(richest),
+                    });
+                // #endregion
 
                 var fetched = await FetchDocumentRecordsAsync(
                     session, binding, docsDir, zone, fetchRecords,
@@ -867,6 +904,50 @@ public sealed class ICloudDriveProbeService
             .ToList();
     }
 
+    private static byte[] ConcatZonePayloads(IEnumerable<byte[]> parts)
+    {
+        var list = parts.Where(static p => p.Length > 0).ToList();
+        if (list.Count == 0)
+            return [];
+        if (list.Count == 1)
+            return list[0];
+        var total = list.Sum(static p => p.Length);
+        var bag = new byte[total];
+        var o = 0;
+        foreach (var p in list)
+        {
+            Buffer.BlockCopy(p, 0, bag, o, p.Length);
+            o += p.Length;
+        }
+
+        return bag;
+    }
+
+    private static int MaxAppl1DerLen(byte[] payload)
+    {
+        var max = 0;
+        for (var i = 0; i + 4 < payload.Length; i++)
+        {
+            if (payload[i] != 0x61)
+                continue;
+            var lb = payload[i + 1];
+            int len;
+            if ((lb & 0x80) == 0)
+                len = lb;
+            else if ((lb & 0x7F) == 2 && i + 3 < payload.Length)
+                len = (payload[i + 2] << 8) | payload[i + 3];
+            else if ((lb & 0x7F) == 1 && i + 2 < payload.Length)
+                len = payload[i + 2];
+            else
+                continue;
+            var derApprox = len + 2 + ((lb & 0x80) != 0 ? (lb & 0x7F) : 0);
+            if (derApprox > max)
+                max = derApprox;
+        }
+
+        return max;
+    }
+
     private static byte[] SelectRichestZonePayload(byte[]? preferred, byte[] fallback)
     {
         if (preferred is null or { Length: 0 })
@@ -897,7 +978,10 @@ public sealed class ICloudDriveProbeService
                 len = payload[i + 2];
             else
                 continue;
-            if (len >= 200)
+            // Bonus forte per DER ~1500 (MasterKeySet Cont[0] ~884): come WhatsApp.
+            if (len >= 900)
+                score += 100;
+            else if (len >= 200)
                 score++;
         }
 
