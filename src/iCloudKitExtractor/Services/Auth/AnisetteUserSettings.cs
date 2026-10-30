@@ -39,7 +39,7 @@ public sealed class AnisetteUserSettings
     public string? AuthMode { get; set; }
 
     /// <summary>
-    /// Bearer token o path a file <c>.license</c> (AnisetteServer Licensed).
+    /// Package-C Base64 bundle (token+pubkey), raw Bearer token, o path a file <c>.license</c>.
     /// Sovrascritto da <c>ANISETTE_LICENSE</c> se presente.
     /// </summary>
     [JsonPropertyName("license")]

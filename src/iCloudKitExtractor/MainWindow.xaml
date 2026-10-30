@@ -1378,5 +1378,57 @@
                        TextAlignment="Center"
                        TextWrapping="Wrap"/>
         </Border>
+
+        <!-- First-connection license overlay (Package C) -->
+        <Grid x:Name="LicenseIssuedOverlay"
+              Grid.RowSpan="2"
+              Visibility="Collapsed"
+              Panel.ZIndex="100">
+            <Border Background="#990A3038"/>
+            <Border HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="560"
+                    Margin="24"
+                    Padding="28,24"
+                    CornerRadius="16"
+                    Background="#F2F8FB"
+                    BorderBrush="#330A7A8F"
+                    BorderThickness="1">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="40" ShadowDepth="8" Opacity="0.35" Color="#0A3038"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="Licenza Anisette emessa"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="#0E2430"
+                               Margin="0,0,0,8"/>
+                    <TextBlock TextWrapping="Wrap"
+                               Foreground="#3D5561"
+                               Margin="0,0,0,14"
+                               Text="Salva questo valore nel campo License. Non verrà più inviato alle connessioni successive da questa macchina."/>
+                    <TextBox x:Name="LicenseIssuedValueBox"
+                             IsReadOnly="True"
+                             TextWrapping="Wrap"
+                             MaxHeight="140"
+                             VerticalScrollBarVisibility="Auto"
+                             FontFamily="Consolas"
+                             FontSize="11"
+                             Padding="10"
+                             Margin="0,0,0,14"
+                             Background="#E8F1F4"
+                             BorderBrush="#220A7A8F"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Copia"
+                                Padding="18,8"
+                                Margin="0,0,10,0"
+                                Click="LicenseOverlayCopy_Click"/>
+                        <Button Content="Ho salvato"
+                                Padding="18,8"
+                                Click="LicenseOverlayDismiss_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

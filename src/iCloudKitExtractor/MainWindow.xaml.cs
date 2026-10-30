@@ -54,6 +54,8 @@ public partial class MainWindow : Window
 
     private AnisetteAuthProfile? _authProfile;
 
+    private bool _licenseOverlayShown;
+
     private List<BackupDevice> _devices = new();
 
     /// <summary>True mentre è in corso Aggiorna elenco (lista e/o decrypt backupProperties).</summary>
@@ -113,6 +115,7 @@ public partial class MainWindow : Window
 
         InitializeComponent();
         UpdateDownloadButtonLabel();
+        RemoteAnisetteProvider.AnyLicenseBundleIssued += OnAnisetteLicenseBundleIssued;
 
         OutputFolderTextBox.Text = Path.Combine(
 
@@ -477,6 +480,54 @@ public partial class MainWindow : Window
 
     private void AnisetteServerModeRadio_Changed(object sender, RoutedEventArgs e) =>
         UpdateAnisetteRemoteFieldsEnabled();
+
+    private void OnAnisetteLicenseBundleIssued(string bundleBase64)
+    {
+        if (string.IsNullOrWhiteSpace(bundleBase64))
+            return;
+        Dispatcher.BeginInvoke(() => ApplyIssuedLicenseBundle(bundleBase64));
+    }
+
+    private void ApplyIssuedLicenseBundle(string bundleBase64)
+    {
+        var existing = AnisetteLicenseTextBox?.Text?.Trim();
+        if (!string.IsNullOrWhiteSpace(existing))
+            return;
+        if (_licenseOverlayShown)
+            return;
+
+        if (AnisetteLicenseTextBox is not null)
+            AnisetteLicenseTextBox.Text = bundleBase64;
+        var settings = ReadAnisetteSettingsFromUi();
+        settings.License = bundleBase64;
+        AnisetteUserSettings.Save(settings);
+
+        if (LicenseIssuedValueBox is not null)
+            LicenseIssuedValueBox.Text = bundleBase64;
+        if (LicenseIssuedOverlay is not null)
+            LicenseIssuedOverlay.Visibility = Visibility.Visible;
+        _licenseOverlayShown = true;
+        LogAuth("Licenza Anisette (Package C) ricevuta alla prima connessione — salvata in anisette.json.");
+        AnisetteSettingsStatusText.Text = "Nuova licenza ricevuta — copiala e conservala.";
+    }
+
+    private void LicenseOverlayCopy_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(LicenseIssuedValueBox.Text ?? "");
+            AnisetteSettingsStatusText.Text = "Licenza copiata negli appunti.";
+        }
+        catch (Exception ex)
+        {
+            LogAuth("Copia licenza fallita: " + ex.Message);
+        }
+    }
+
+    private void LicenseOverlayDismiss_Click(object sender, RoutedEventArgs e)
+    {
+        LicenseIssuedOverlay.Visibility = Visibility.Collapsed;
+    }
 
     private AnisetteUserSettings ReadAnisetteSettingsFromUi()
     {

@@ -266,11 +266,24 @@ ps aux | grep '[f]rida-server'
 
 This binds **frida-server** on `0.0.0.0:27042` (all interfaces), starts at boot, and keeps it alive. From the PC set e.g. `FRIDA_ANISETTE_HOST=127.0.0.1:27042` after USB port-forward (`iproxy 27042 27042`) or use the device LAN IP.
 
+## Host a licensed remote Anisette
+
+If you want others to use **your** Frida/iPhone OTP over the network, run the licensed middleware (Package-C licenses, empty DB until you issue or auto-issue):
+
+| Project | Role |
+|---------|------|
+| `AnisetteServer.Mac` | Avalonia UI: Frida IP, Start/Stop, license admin |
+| `AnisetteServer.Licensed` | Headless HTTP gate + Bearer / first-connection auto-issue |
+| `AnisetteLicenseGen` | `init-keys`, issue / disable / enable / revoke |
+
+Full guide: **[docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md)**. Keep your `keys/` and issued licenses private.
+
 ## Other anisette backends
 
 | Backend | Use case | Docs |
 |---------|----------|------|
 | `frida` | Real iPhone/akd OTP (recommended) | This README |
+| Licensed remote | Self-host gate + Package-C licenses | [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md) |
 | `akd-emulated` | Software ADI worker | [docs/EMULATED_AKD.md](docs/EMULATED_AKD.md) |
 | `coreadi` | Windows CoreADI / AuthKitWin hybrid | [docs/MAC_ANISETTE.md](docs/MAC_ANISETTE.md) |
 | Mac Docker + bridge | CGNAT / remote Mac anisette | [docs/ANISETTE_BRIDGE.md](docs/ANISETTE_BRIDGE.md) |
@@ -289,7 +302,10 @@ Also: [docs/IPHONE_INTERNAL_FLOW.md](docs/IPHONE_INTERNAL_FLOW.md) · [docs/APPL
 |------|------|
 | `src/iCloudKitExtractor` | Main WPF app |
 | `src/PhotosViewer` | Photo library viewer (copied into `viewer-payload` on IKE build) |
-| `src/AnisetteServer` | OTP / ADI server (+ optional bridge projects) |
+| `src/AnisetteServer` | OTP / ADI server (unsigned, local) |
+| `src/AnisetteServer.Licensed` | Licensed HTTP gate (self-host) |
+| `src/AnisetteServer.Mac` | Avalonia Frida middleware + license panel |
+| `src/AnisetteLicense` / `AnisetteLicenseGen` | Package-C crypto + CLI |
 | `scripts/` | Emulated akd / bridge / Frida helpers |
 | `docs/` | Protocol notes + [GitHub Pages](https://giordanosconti.github.io/iCloudKitExtractor/) site |
 | `video/` | Demo GIF + MP4 highlights |

@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.IO;
-using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -9,13 +9,20 @@ using iCloudKitExtractor.Models;
 namespace iCloudKitExtractor.Services.Auth;
 
 /// <summary>
-/// Client HTTP verso anisette remota (Mac: dadoum/anisette-v3-server, omnisette, AnisetteServer compatibile).
+/// Client HTTP verso anisette remota (Mac middleware Licensed, dadoum, AnisetteServer).
 /// </summary>
 public sealed class RemoteAnisetteProvider : IAnisetteProvider
 {
     private readonly HttpClient _http;
     private readonly Uri _baseUri;
-    private readonly string? _licenseBearer;
+    private string? _licenseBearer;
+    private readonly bool _sendFingerprintWhenUnlicensed;
+
+    /// <summary>Raised once when the server returns a first-connection Package C license bundle.</summary>
+    public event Action<string>? LicenseBundleIssued;
+
+    /// <summary>App-wide hook (MainWindow overlay) for any remote provider instance.</summary>
+    public static event Action<string>? AnyLicenseBundleIssued;
 
     public RemoteAnisetteProvider(HttpClient http, string baseUrl, string? licenseBearer = null)
     {
@@ -24,12 +31,13 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
         _licenseBearer = string.IsNullOrWhiteSpace(licenseBearer)
             ? ResolveLicenseBearerFromEnv()
             : licenseBearer.Trim();
+        _sendFingerprintWhenUnlicensed = string.IsNullOrWhiteSpace(_licenseBearer);
     }
 
     public Uri BaseUri => _baseUri;
 
     /// <summary>
-    /// ANISETTE_LICENSE = raw Bearer token, or path to a .license file (lab Licensed Anisette).
+    /// ANISETTE_LICENSE = raw Bearer token, Package-C Base64, or path to a .license file.
     /// </summary>
     public static string? ResolveLicenseBearerFromEnv()
     {
@@ -51,6 +59,11 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
         var bearer = AnisetteProviderFactory.ResolveLicenseBearer();
         if (!string.IsNullOrEmpty(bearer))
             request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + bearer);
+    }
+
+    public void SetLicenseBundle(string bundleBase64)
+    {
+        _licenseBearer = bundleBase64.Trim();
     }
 
     public Task<AnisetteHeaders> FetchAsync(CancellationToken ct = default) =>
@@ -76,27 +89,6 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
                 var label = string.IsNullOrEmpty(relativePath) ? "/" : relativePath;
                 errors.Add($"{label}: {ex.Message}");
 
-                // #region agent log
-                try
-                {
-                    var line = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
-                    {
-                        ["sessionId"] = "7dabb5",
-                        ["runId"] = "anisette-401",
-                        ["hypothesisId"] = "H-ANI-PATH",
-                        ["location"] = "RemoteAnisetteProvider.FetchAsync",
-                        ["message"] = "anisette_probe_fail",
-                        ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        ["data"] = new { path = label, error = ex.Message },
-                    });
-                    File.AppendAllText(
-                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
-                        line + Environment.NewLine);
-                }
-                catch { /* ignore */ }
-                // #endregion
-
-                // Se GET / ha risposto (5xx/parse) non ha senso probe get_headers sullo stesso host.
                 if (string.IsNullOrEmpty(relativePath)
                     && TryGetHttpStatus(ex, out var code)
                     && code != 404)
@@ -113,7 +105,6 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
             $"Anisette remota non raggiungibile ({_baseUri}): {detail}");
     }
 
-    /// <summary>GET /health → backend name (rad, akd-emulated, …), o null se non disponibile.</summary>
     public async Task<string?> TryGetBackendAsync(CancellationToken ct = default)
     {
         try
@@ -134,9 +125,7 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
 
     private static IEnumerable<string> ProbePaths()
     {
-        // AnisetteServer IKE: solo GET /
         yield return string.Empty;
-        // Compat dadoum/omnisette (solo se / → 404)
         yield return "v1/get_headers";
         yield return "get_headers";
     }
@@ -145,7 +134,6 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
     {
         status = 0;
         var msg = ex.Message;
-        // "HTTP 404 GET …" / "HTTP 500 GET …"
         if (!msg.StartsWith("HTTP ", StringComparison.Ordinal))
             return false;
         var sp = msg.IndexOf(' ', 5);
@@ -164,7 +152,6 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
         var queryParts = new List<string>();
         if (!string.IsNullOrEmpty(appleId))
             queryParts.Add("apple_id=" + Uri.EscapeDataString(appleId));
-        // Frida/AnisetteServer: mint OTP nuovo (evita MD cached + Client-Time drift → -22410).
         if (forceFresh)
             queryParts.Add("fresh=1");
         if (queryParts.Count > 0)
@@ -177,13 +164,24 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        if (!string.IsNullOrEmpty(_licenseBearer))
-            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + _licenseBearer);
+        var license = !string.IsNullOrEmpty(_licenseBearer)
+            ? _licenseBearer
+            : AnisetteProviderFactory.ResolveLicenseBearer();
+        if (!string.IsNullOrEmpty(license))
+        {
+            // Send full Package-C Base64 (or raw token); server unwraps.
+            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + license);
+        }
         else
-            ApplyLicenseHeader(request);
+        {
+            IkeClientIdentity.ApplyFingerprintHeaders(request);
+        }
 
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+        TryCaptureIssuedBundle(response, body);
+
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
@@ -194,6 +192,40 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
             return payload.ToHeaders();
 
         return await ParseLegacyJsonAsync(body, ct).ConfigureAwait(false);
+    }
+
+    private void TryCaptureIssuedBundle(HttpResponseMessage response, string body)
+    {
+        if (!_sendFingerprintWhenUnlicensed)
+            return;
+        if (!string.IsNullOrWhiteSpace(_licenseBearer))
+            return;
+
+        string? bundle = null;
+        if (response.Headers.TryGetValues(IkeClientIdentity.ResponseBundleHeader, out var vals))
+            bundle = vals.FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(bundle))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("license_bundle", out var lb)
+                    && lb.ValueKind == JsonValueKind.String)
+                    bundle = lb.GetString();
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(bundle))
+            return;
+
+        _licenseBearer = bundle.Trim();
+        LicenseBundleIssued?.Invoke(_licenseBearer);
+        AnyLicenseBundleIssued?.Invoke(_licenseBearer);
     }
 
     private static async Task<AnisetteHeaders> ParseLegacyJsonAsync(string body, CancellationToken ct)
@@ -267,5 +299,8 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
 
         [JsonPropertyName("countryCode")]
         public string? CountryCode { get; set; }
+
+        [JsonPropertyName("license_bundle")]
+        public string? LicenseBundle { get; set; }
     }
 }

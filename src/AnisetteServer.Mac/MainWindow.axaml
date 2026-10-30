@@ -1,0 +1,107 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
+        x:Class="AnisetteServer.Mac.MainWindow"
+        Width="980" Height="720"
+        MinWidth="820" MinHeight="560"
+        Title="Forensis-Lab — Anisette Middleware (Mac)">
+  <Grid RowDefinitions="Auto,*" Margin="16">
+    <StackPanel Spacing="4" Margin="0,0,0,12">
+      <TextBlock Text="Anisette Middleware" FontSize="22" FontWeight="Bold"/>
+      <TextBlock Text="Frida → jailbroken iPhone · Package-C licenses · local HTTP gate"
+                 Opacity="0.7"/>
+      <TextBlock x:Name="StatusText" Text="Stopped" Margin="0,6,0,0" FontWeight="SemiBold"/>
+    </StackPanel>
+
+    <TabControl Grid.Row="1">
+      <TabItem Header="Server">
+        <ScrollViewer>
+          <StackPanel Margin="0,12,0,0" Spacing="10" MaxWidth="720" HorizontalAlignment="Left">
+            <TextBlock Text="Frida host (iPhone IP:27042)" FontWeight="SemiBold"/>
+            <TextBox x:Name="FridaHostBox" PlaceholderText="192.168.x.y:27042"/>
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+              <StackPanel>
+                <TextBlock Text="Process" FontWeight="SemiBold"/>
+                <TextBox x:Name="FridaProcessBox" Text="akd"/>
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Python" FontWeight="SemiBold"/>
+                <TextBox x:Name="PythonBox" Text="python3"/>
+              </StackPanel>
+            </Grid>
+
+            <TextBlock Text="fetch_anisette.py (optional path / ios_akd_probe dir)" FontWeight="SemiBold"/>
+            <TextBox x:Name="FetchScriptBox" PlaceholderText="leave empty = bundled ios_akd_probe"/>
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+              <StackPanel>
+                <TextBlock Text="Timeout (sec)" FontWeight="SemiBold"/>
+                <NumericUpDown x:Name="TimeoutBox" Minimum="10" Maximum="300" Value="60"/>
+              </StackPanel>
+              <StackPanel Grid.Column="1" VerticalAlignment="Bottom">
+                <CheckBox x:Name="LiteCheck" Content="Lite attach" IsChecked="True"/>
+              </StackPanel>
+            </Grid>
+
+            <TextBlock Text="Listen URLs" FontWeight="SemiBold"/>
+            <TextBox x:Name="ListenBox" Text="http://0.0.0.0:6971"/>
+
+            <TextBlock Text="Data root (keys + SQLite)" FontWeight="SemiBold"/>
+            <TextBox x:Name="DataRootBox" IsReadOnly="True"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">
+              <Button x:Name="StartBtn" Content="Start server" Click="StartBtn_OnClick" Padding="16,8"/>
+              <Button x:Name="StopBtn" Content="Stop" Click="StopBtn_OnClick" Padding="16,8" IsEnabled="False"/>
+              <Button Content="Save config" Click="SaveBtn_OnClick" Padding="16,8"/>
+            </StackPanel>
+
+            <TextBlock x:Name="MintText" Text="" Opacity="0.75" TextWrapping="Wrap" Margin="0,8,0,0"/>
+            <TextBlock x:Name="ErrorText" Foreground="#B00020" TextWrapping="Wrap"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Licenses">
+        <Grid RowDefinitions="Auto,*,Auto" Margin="0,12,0,0">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Refresh" Click="RefreshLicenses_OnClick" Padding="12,6"/>
+            <Button Content="Disable" Click="DisableLicense_OnClick" Padding="12,6"/>
+            <Button Content="Enable" Click="EnableLicense_OnClick" Padding="12,6"/>
+            <Button Content="Remove" Click="DeleteLicense_OnClick" Padding="12,6"/>
+          </StackPanel>
+
+          <ListBox Grid.Row="1" x:Name="LicenseList"
+                   Margin="0,10,0,10"
+                   SelectionMode="Single">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock TextWrapping="Wrap"
+                           Text="{Binding}"/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <Border Grid.Row="2" Padding="12" BorderBrush="#33000000" BorderThickness="1" CornerRadius="6">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Add manual license" FontWeight="SemiBold"/>
+              <Grid ColumnDefinitions="2*,*,Auto" ColumnSpacing="8">
+                <TextBox x:Name="ManualSubBox" PlaceholderText="subject / email"/>
+                <TextBox Grid.Column="1" x:Name="ManualFpBox" PlaceholderText="fingerprint (optional)"/>
+                <NumericUpDown Grid.Column="2" x:Name="ManualDaysBox" Minimum="0" Maximum="3650" Value="30"
+                               ToolTip.Tip="0 = no expiry" Width="100"/>
+              </Grid>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Issue Package C" Click="IssueManual_OnClick" Padding="12,6"/>
+                <TextBox x:Name="IssuedBundleBox" IsReadOnly="True" Width="420" PlaceholderText="issued bundle Base64"/>
+                <Button Content="Copy" Click="CopyBundle_OnClick" Padding="12,6"/>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </Grid>
+      </TabItem>
+    </TabControl>
+  </Grid>
+</Window>

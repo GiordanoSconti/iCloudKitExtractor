@@ -33,28 +33,60 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
     private DateTime _cacheUtc;
 
     public FridaIphoneAnisetteProvider()
+        : this(null)
     {
-        _python = Environment.GetEnvironmentVariable("FRIDA_ANISETTE_PYTHON")?.Trim()
-            is { Length: > 0 } py
-            ? py
-            : "python";
-        _fetchScript = ResolveFetchScriptPath();
-        _host = Environment.GetEnvironmentVariable("FRIDA_ANISETTE_HOST")?.Trim()
-            is { Length: > 0 } h
-            ? h
-            : "127.0.0.1:27042";
-        _processName = Environment.GetEnvironmentVariable("FRIDA_ANISETTE_PROCESS")?.Trim()
-            is { Length: > 0 } n
-            ? n
-            : "akd";
-        var liteEnv = Environment.GetEnvironmentVariable("FRIDA_ANISETTE_LITE")?.Trim();
-        _lite = string.IsNullOrEmpty(liteEnv)
-            || liteEnv is "1" or "true" or "yes";
-        _timeoutSec = int.TryParse(
-            Environment.GetEnvironmentVariable("FRIDA_ANISETTE_TIMEOUT")?.Trim(),
-            out var t) && t > 0
-            ? t
-            : 60;
+    }
+
+    /// <summary>Explicit Frida/host settings (Mac middleware UI); null fields fall back to env/defaults.</summary>
+    public FridaIphoneAnisetteProvider(FridaAnisetteOptions? options)
+    {
+        _python = FirstNonEmpty(
+            options?.Python,
+            Environment.GetEnvironmentVariable("FRIDA_ANISETTE_PYTHON"),
+            "python")!;
+        _fetchScript = FirstNonEmpty(
+            options?.FetchScript,
+            Environment.GetEnvironmentVariable("FRIDA_ANISETTE_FETCH_PY"),
+            null) is { Length: > 0 } customScript
+            ? NormalizeFetchPyPath(customScript)
+            : ResolveFetchScriptPath();
+        _host = FirstNonEmpty(
+            options?.Host,
+            Environment.GetEnvironmentVariable("FRIDA_ANISETTE_HOST"),
+            "127.0.0.1:27042")!;
+        _processName = FirstNonEmpty(
+            options?.ProcessName,
+            Environment.GetEnvironmentVariable("FRIDA_ANISETTE_PROCESS"),
+            "akd")!;
+        if (options?.Lite is bool liteOpt)
+            _lite = liteOpt;
+        else
+        {
+            var liteEnv = Environment.GetEnvironmentVariable("FRIDA_ANISETTE_LITE")?.Trim();
+            _lite = string.IsNullOrEmpty(liteEnv)
+                || liteEnv is "1" or "true" or "yes";
+        }
+
+        if (options?.TimeoutSec is int to && to > 0)
+            _timeoutSec = to;
+        else
+        {
+            _timeoutSec = int.TryParse(
+                Environment.GetEnvironmentVariable("FRIDA_ANISETTE_TIMEOUT")?.Trim(),
+                out var t) && t > 0
+                ? t
+                : 60;
+        }
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v))
+                return v.Trim();
+        }
+        return null;
     }
 
     public string Host => _host;

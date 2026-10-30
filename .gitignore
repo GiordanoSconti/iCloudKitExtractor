@@ -48,3 +48,10 @@ ios-adi-split/
 
 *.binlog
 
+
+# Local Anisette license secrets (never commit)
+keys/
+data/anisette-licenses.db
+data/licenses/
+**/anisette_ed25519_private.pem
+**/anisette_ed25519_public.pem

@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>AnisetteServer.Licensed</AssemblyName>
+    <RootNamespace>iCloudKitExtractor.AnisetteServer.Licensed</RootNamespace>
+    <SupportedOSPlatformVersion>10.0</SupportedOSPlatformVersion>
+    <DefineConstants>$(DefineConstants);ANISETTE_SERVER</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AnisetteLicense\AnisetteLicense.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\iCloudKitExtractor\Protocol\AppleXmlPlist.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Models\AnisetteHeaders.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Http\AppleClientInfo.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Http\AkdHttpHeaders.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Http\AppleCertificateTrust.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\AdiDeviceProfile.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\GrandSlamCpdBuilder.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\AnisetteDeviceStore.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\AppleRuntimeLocator.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\CoreAdiBridgeClient.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\AdiProvisioningService.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\IAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\AnisetteFetchOptions.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\CoreAdiAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\IAdiCryptoClient.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\HttpAdiCryptoClient.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\EmulatedAkdAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaIphoneAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaAnisetteOptions.cs" LinkBase="Shared" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\iCloudKitExtractor\Assets\certs\AppleServerAuthenticationCA.der" Link="Assets\certs\AppleServerAuthenticationCA.der" />
+    <EmbeddedResource Include="..\iCloudKitExtractor\Assets\certs\AppleRootCA.cer" Link="Assets\certs\AppleRootCA.cer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\native\CoreAdiBridge\out\CoreAdiBridge.exe" Link="CoreAdiBridge.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\native\CoreAdiBridge\out\CoreAdiBridge.exe')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\scripts\ios_akd_probe\**\*"
+          Link="ios_akd_probe\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

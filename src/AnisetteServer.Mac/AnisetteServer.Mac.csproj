@@ -1,0 +1,49 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RootNamespace>AnisetteServer.Mac</RootNamespace>
+    <AssemblyName>AnisetteServer.Mac</AssemblyName>
+    <DefineConstants>$(DefineConstants);ANISETTE_SERVER</DefineConstants>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AnisetteLicense\AnisetteLicense.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\iCloudKitExtractor\Models\AnisetteHeaders.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\IAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\AnisetteFetchOptions.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaAnisetteOptions.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaIphoneAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\AnisetteServer.Licensed\Licensing\LicenseAuthMiddleware.cs" LinkBase="Licensing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\scripts\ios_akd_probe\**\*"
+          Link="ios_akd_probe\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
