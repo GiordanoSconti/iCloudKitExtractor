@@ -144,6 +144,20 @@ public static class AnisetteTlsCertificate
     /// <summary>Unicast IPv4/IPv6 on up NICs (excludes loopback / link-local IPv6 clutter optional).</summary>
     public static IReadOnlyList<IPAddress> EnumerateLocalAddresses()
     {
+        // NetworkInterface enumeration has hung on some macOS setups; bound the wait.
+        try
+        {
+            var task = Task.Run(EnumerateLocalAddressesCore);
+            return task.Wait(TimeSpan.FromSeconds(3)) ? task.Result : Array.Empty<IPAddress>();
+        }
+        catch
+        {
+            return Array.Empty<IPAddress>();
+        }
+    }
+
+    private static IReadOnlyList<IPAddress> EnumerateLocalAddressesCore()
+    {
         var list = new List<IPAddress>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
@@ -176,7 +190,6 @@ public static class AnisetteTlsCertificate
             // ignore enumeration failures
         }
 
-        // Fallback: DNS host entry for this machine.
         try
         {
             var entry = Dns.GetHostEntry(Dns.GetHostName());
@@ -203,7 +216,11 @@ public static class AnisetteTlsCertificate
 
     private static X509Certificate2 LoadPfx(string path, string? password)
     {
-        var flags = X509KeyStorageFlags.Exportable | X509KeyStorageFlags.EphemeralKeySet;
+        // EphemeralKeySet is fine on Windows; on macOS it can break Kestrel HTTPS
+        // (cert loads but SSL handshake / server start stalls).
+        var flags = X509KeyStorageFlags.Exportable;
+        if (OperatingSystem.IsWindows())
+            flags |= X509KeyStorageFlags.EphemeralKeySet;
 #if NET9_0_OR_GREATER
         return X509CertificateLoader.LoadPkcs12FromFile(path, password, flags);
 #else

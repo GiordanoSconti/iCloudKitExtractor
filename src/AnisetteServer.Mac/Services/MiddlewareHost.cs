@@ -31,21 +31,60 @@ public sealed class MiddlewareHost : IAsyncDisposable
         if (_app is not null)
             return;
 
+        LastError = "";
+        StatusText = "Starting…";
+        Changed?.Invoke();
+
+        // Keep Avalonia UI responsive; cert gen + Kestrel bind can block on macOS.
+        await Task.Run(async () =>
+        {
+            try
+            {
+                await StartCoreAsync(settings).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                LastError = ex.ToString();
+                StatusText = "Start failed";
+                Changed?.Invoke();
+                try
+                {
+                    if (_app is not null)
+                        await StopAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    // ignore cleanup errors
+                }
+
+                throw;
+            }
+        }).ConfigureAwait(false);
+    }
+
+    private async Task StartCoreAsync(MiddlewareSettings settings)
+    {
         settings.EnsureKeys();
         settings.ApplyToEnvironment();
         settings.Save();
 
-        LastError = "";
-        StatusText = "Starting…";
-        Changed?.Invoke();
+        var wantsHttps = settings.ListenUrls.Contains("https://", StringComparison.OrdinalIgnoreCase);
+        if (wantsHttps)
+        {
+            StatusText = "Creating / loading TLS certificate…";
+            Changed?.Invoke();
+        }
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             Args = Array.Empty<string>(),
             ApplicationName = typeof(MiddlewareHost).Assembly.FullName,
+            ContentRootPath = AppContext.BaseDirectory,
         });
         builder.Logging.ClearProviders();
         builder.Logging.AddConsole();
+        // Prevent ASPNETCORE_URLS / launchSettings from forcing https://localhost + dev-cert.
+        builder.WebHost.UseSetting(WebHostDefaults.ServerUrlsKey, string.Empty);
         AnisetteHttpsHosting.Configure(builder, settings.ListenUrls);
 
         builder.Services.AddSingleton(_ => new LicenseDatabase(LicensePaths.DatabasePath));
@@ -67,6 +106,9 @@ public sealed class MiddlewareHost : IAsyncDisposable
                 TimeoutSec = settings.TimeoutSec,
             }));
 
+        StatusText = "Binding Kestrel…";
+        Changed?.Invoke();
+
         var app = builder.Build();
         app.UseMiddleware<LicenseAuthMiddleware>();
 
@@ -82,6 +124,8 @@ public sealed class MiddlewareHost : IAsyncDisposable
                 lite = fr?.Lite,
                 fetchScript = fr?.FetchScript,
                 licensed = true,
+                listen = settings.ListenUrls,
+                tlsCer = wantsHttps ? AnisetteTlsCertificate.CerPath : null,
             });
         });
 
@@ -123,28 +167,47 @@ public sealed class MiddlewareHost : IAsyncDisposable
         _cts = new CancellationTokenSource();
         _app = app;
         _runTask = app.RunAsync(_cts.Token);
-        var tlsNote = settings.ListenUrls.Contains("https://", StringComparison.OrdinalIgnoreCase)
+
+        // Wait briefly so bind failures surface as Start failed (not stuck on Starting…).
+        var completed = await Task.WhenAny(_runTask, Task.Delay(1500)).ConfigureAwait(false);
+        if (completed == _runTask)
+        {
+            var ex = _runTask.Exception?.GetBaseException()
+                     ?? (_runTask.IsCompletedSuccessfully
+                         ? null
+                         : new InvalidOperationException("Kestrel exited during startup."));
+            _app = null;
+            _cts = null;
+            _runTask = null;
+            throw ex ?? new InvalidOperationException("Kestrel exited during startup.");
+        }
+
+        var tlsNote = wantsHttps
             ? $" · TLS {AnisetteTlsCertificate.CerPath}"
-            : "";
+            : " · HTTP (no cert)";
         StatusText = $"Listening {settings.ListenUrls} → Frida {settings.FridaHost}{tlsNote}";
         Changed?.Invoke();
 
-        // Surface startup failures quickly
         _ = Task.Run(async () =>
         {
             try
             {
-                await Task.Delay(800).ConfigureAwait(false);
-                if (_runTask.IsFaulted)
+                await _runTask.ConfigureAwait(false);
+                if (ReferenceEquals(_app, app))
                 {
-                    LastError = _runTask.Exception?.GetBaseException().Message ?? "host faulted";
-                    StatusText = "Faulted";
+                    StatusText = "Stopped";
                     Changed?.Invoke();
                 }
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // ignore
+                // normal stop
+            }
+            catch (Exception ex)
+            {
+                LastError = ex.Message;
+                StatusText = "Faulted";
+                Changed?.Invoke();
             }
         });
 
