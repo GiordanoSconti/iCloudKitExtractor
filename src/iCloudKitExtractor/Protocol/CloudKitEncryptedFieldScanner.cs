@@ -33,7 +33,10 @@ public static class CloudKitEncryptedFieldScanner
         "ShowIconOnly",
         "Key",
         "ImageURL",
-        // VoiceMemos
+        // VoiceMemos (Core Data CloudKit — non Photos mediaMetaDataEnc)
+        "CD_encryptedTitle",
+        "CD_versionedAudioFuture",
+        "CD_customLabel",
         "mediaMetaDataEnc",
         // Photos CPL (PrimarySync)
         "albumNameEnc",
@@ -238,6 +241,24 @@ public static class CloudKitEncryptedFieldScanner
                     rawValue = value;
                     ciphertext = ct;
                     return true;
+                }
+            }
+            // VoiceMemos CD_encryptedTitle: type=3 (BYTES) + nested 12 <len> 03… (GCM DataA)
+            if (value.Length >= 8 && value[0] == 0x08 && value[1] == 0x03)
+            {
+                var p = 2;
+                if (value[p] == 0x12)
+                {
+                    p++;
+                    if (TryReadVarint(value, ref p, out var innerLen)
+                        && innerLen >= 16
+                        && p + (int)innerLen <= value.Length
+                        && value[p] <= 3)
+                    {
+                        rawValue = value;
+                        ciphertext = value.AsSpan(p, (int)innerLen).ToArray();
+                        return true;
+                    }
                 }
             }
             else if (value.Length >= 16 && value[0] <= 3)

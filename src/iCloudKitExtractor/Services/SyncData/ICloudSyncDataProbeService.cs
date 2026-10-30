@@ -273,6 +273,7 @@ public sealed class ICloudSyncDataProbeService
             }
 
             // Database changes → altre zone
+            string? zoneSyncReason = null;
             try
             {
                 await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
@@ -282,9 +283,21 @@ public sealed class ICloudSyncDataProbeService
                 var payload = await _gateway.ZoneChangesAsync(session, body, ct, binding);
                 totalBytes += payload.Length;
                 await SaveAsync(outDir, "zone_changes", payload, ct);
-                log?.Report($"  zone/sync → {payload.Length:N0} B");
-                if (!CloudKitResponseParser.IsCloudKitErrorPayload(payload, out _))
+                if (CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var zsyncErr))
                 {
+                    zoneSyncReason = zsyncErr
+                        ?? CloudKitResponseParser.TryGetCloudKitReason(payload)
+                        ?? $"payload errore {payload.Length} B";
+                    log?.Report($"  zone/sync → {payload.Length:N0} B — errore: {zoneSyncReason}");
+                }
+                else
+                {
+                    var note = CloudKitResponseParser.TryGetCloudKitReason(payload)
+                        ?? CloudKitResponseParser.DescribeCompactPayload(payload);
+                    log?.Report(
+                        $"  zone/sync → {payload.Length:N0} B" +
+                        (note is null ? "" : $" — {note}"));
+
                     var strings = CloudKitResponseParser.ExtractDiagnosticStrings(payload);
                     foreach (var z in WhatsAppCloudKitProbeService.ExtractLikelyZoneNames(strings))
                         zones.Add(z);
@@ -292,22 +305,49 @@ public sealed class ICloudSyncDataProbeService
             }
             catch (Exception ex)
             {
+                zoneSyncReason = ex.Message;
                 log?.Report($"  zone/sync skip: {ex.Message}");
+            }
+
+            // _defaultZone non supporta record/sync (ck1e0lk64); scarta fingerprint spuri.
+            zones.RemoveWhere(IsDefaultZoneName);
+            zones.RemoveWhere(static z => !IsPlausibleCustomZone(z));
+
+            if (zones.Count == 0 && IsCallHistoryContainer(binding.ContainerId))
+            {
+                foreach (var z in CallHistoryFallbackZones)
+                    zones.Add(z);
+                log?.Report(
+                    "  Calls: nessuna zone da sync — provo zone note " +
+                    $"({string.Join(", ", CallHistoryFallbackZones)})");
+                if (zoneSyncReason is not null
+                    && zoneSyncReason.Contains("Optional feature", StringComparison.OrdinalIgnoreCase))
+                {
+                    log?.Report(
+                        "  nota Calls: ckm4qn70 = flag CloudKit «optional feature» sul container, " +
+                        "non il toggle iCloud.com. Serve Phone & FaceTime ON sul device " +
+                        "(Settings → iCloud → See All) e almeno una chiamata dopo l'attivazione.");
+                }
             }
 
             if (zones.Count == 0)
             {
-                // Fallback: prova comunque _defaultZone per record/sync (alcuni store rispondono).
-                zones.Add("_defaultZone");
+                log?.Report(
+                    zoneSyncReason is not null
+                        ? $"  nessuna custom zone per record/sync — motivo: {zoneSyncReason}"
+                        : "  nessuna custom zone per record/sync (zone/retrieve e zone/sync senza zone utili)");
             }
-
-            log?.Report($"  zone da sync: {string.Join(", ", zones.OrderBy(z => z, StringComparer.Ordinal))}");
-            foreach (var zone in zones.OrderBy(z => z, StringComparer.Ordinal))
+            else
             {
-                ct.ThrowIfCancellationRequested();
-                await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
-                totalBytes += await RecordSyncAsync(session, binding, outDir, zone, log, ct);
-                await Task.Delay(150, ct);
+                log?.Report(
+                    $"  zone da sync: {string.Join(", ", zones.OrderBy(z => z, StringComparer.Ordinal))}");
+                foreach (var zone in zones.OrderBy(z => z, StringComparer.Ordinal))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
+                    totalBytes += await RecordSyncAsync(session, binding, outDir, zone, log, ct);
+                    await Task.Delay(150, ct);
+                }
             }
 
             // PCS decrypt: Escrow KeySet e/o Manatee (CKKS OpenVault / disco).
@@ -336,6 +376,22 @@ public sealed class ICloudSyncDataProbeService
                     "(Unlock EscrowedKeys oppure Octagon/CKKS OpenVault)");
             }
 
+            // Voice Memos: download audio MMCS dopo PCS (titoli + zone keys).
+            if (binding.ContainerId.Equals(
+                    VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
+                    var dl = new VoiceMemosAudioDownloader(_http);
+                    _ = await dl.DownloadAsync(session, outDir, log, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    log?.Report($"  VoiceMemos MMCS skip: {ex.Message}");
+                }
+            }
+
             return new SyncDataContainerResult(binding.ContainerId, true, totalBytes, null);
         }
         catch (Exception ex)
@@ -361,25 +417,36 @@ public sealed class ICloudSyncDataProbeService
             var payload = await _gateway.ZoneRetrieveAsync(session, body, ct, container: binding);
             await SaveAsync(outDir, $"zones_{Sanitize(zone)}", payload, ct);
 
-            var note = CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err)
-                ? err
-                : CloudKitResponseParser.DescribeCompactPayload(payload);
-            log?.Report($"    → {payload.Length:N0} B" + (note is null ? "" : $" — {note}"));
+            var isErr = CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err);
+            var reason = CloudKitResponseParser.TryGetCloudKitReason(payload);
+            var note = isErr
+                ? (err ?? reason)
+                : (reason ?? CloudKitResponseParser.DescribeCompactPayload(payload));
+            log?.Report(
+                $"    → {payload.Length:N0} B" +
+                (note is null
+                    ? ""
+                    : isErr || reason is not null && IsLikelyErrorNote(note)
+                        ? $" — errore: {note}"
+                        : $" — {note}"));
 
             var zones = new List<string>();
-            if (!CloudKitResponseParser.IsCloudKitErrorPayload(payload, out _))
+            if (!isErr)
             {
                 var strings = CloudKitResponseParser.ExtractDiagnosticStrings(payload);
                 foreach (var z in WhatsAppCloudKitProbeService.ExtractLikelyZoneNames(strings))
                     zones.Add(z);
-                // Se la risposta ha contenuto utile, includi anche la zona richiesta.
+                // Se la risposta ha contenuto utile, includi la zona richiesta
+                // (mai il solo containerId: non è un zone name).
                 if (payload.Length > 160 && !IsDefaultZoneName(zone))
-                    zones.Add(WhatsAppCloudKitProbeService.NormalizeZoneName(zone));
-                else if (payload.Length > 400)
-                    zones.Add("_defaultZone");
+                {
+                    var n = WhatsAppCloudKitProbeService.NormalizeZoneName(zone);
+                    if (!n.Equals(binding.ContainerId, StringComparison.OrdinalIgnoreCase))
+                        zones.Add(n);
+                }
             }
 
-            return (!CloudKitResponseParser.IsCloudKitErrorPayload(payload, out _), payload.Length, zones);
+            return (!isErr, payload.Length, zones);
         }
         catch (Exception ex)
         {
@@ -406,12 +473,19 @@ public sealed class ICloudSyncDataProbeService
             total = payload.Length;
             await SaveAsync(outDir, $"record_sync_{Sanitize(zone)}_p1", payload, ct);
 
-            var note = CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err)
-                ? err
-                : CloudKitResponseParser.DescribeCompactPayload(payload);
-            log?.Report($"    → {payload.Length:N0} B" + (note is null ? "" : $" — {note}"));
-            if (!CloudKitResponseParser.IsCloudKitErrorPayload(payload, out _)
-                && CloudKitResponseParser.ResponseIndicatesMoreResults(payload))
+            var isErr = CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err);
+            var reason = CloudKitResponseParser.TryGetCloudKitReason(payload);
+            var note = isErr
+                ? (err ?? reason)
+                : (reason ?? CloudKitResponseParser.DescribeCompactPayload(payload));
+            log?.Report(
+                $"    → {payload.Length:N0} B" +
+                (note is null
+                    ? ""
+                    : isErr || reason is not null && IsLikelyErrorNote(note)
+                        ? $" — errore: {note}"
+                        : $" — {note}"));
+            if (!isErr && CloudKitResponseParser.ResponseIndicatesMoreResults(payload))
             {
                 log?.Report("    moreComing — stop (serve syncToken parser)");
             }
@@ -431,9 +505,59 @@ public sealed class ICloudSyncDataProbeService
         await File.WriteAllLinesAsync(Path.Combine(outDir, $"{tag}_strings.txt"), strings, ct);
     }
 
+    private static readonly string[] CallHistoryFallbackZones =
+    [
+        "CallHistory",
+        "com.apple.callhistory.cloudkit.zone",
+        "Sharing",
+    ];
+
+    private static bool IsCallHistoryContainer(string containerId) =>
+        containerId.Contains("CallHistory", StringComparison.OrdinalIgnoreCase)
+        || containerId.Contains("callhistory", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsLikelyErrorNote(string note) =>
+        note.Contains("disabled", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("not exist", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("not support", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("Only custom", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("Optional feature", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("error", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("fail", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("forbidden", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("unauthor", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsDefaultZoneName(string zone) =>
         string.Equals(zone, "_defaultZone", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(zone, "default", StringComparison.OrdinalIgnoreCase);
+        || string.Equals(zone, "default", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(zone, "defaultZone", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Zone custom su cui ha senso record/sync (no hex fingerprint, no token corti).
+    /// </summary>
+    private static bool IsPlausibleCustomZone(string zone)
+    {
+        if (string.IsNullOrWhiteSpace(zone) || IsDefaultZoneName(zone))
+            return false;
+        if (zone.Length >= 16 && zone.All(Uri.IsHexDigit))
+            return false;
+        if (zone.Length <= 8
+            && zone.All(char.IsLetterOrDigit)
+            && !zone.Contains('.')
+            && zone.Any(char.IsDigit)
+            && zone.Any(char.IsLetter))
+            return false;
+        if (zone.Contains('.')
+            || zone.EndsWith("Zone", StringComparison.OrdinalIgnoreCase)
+            || zone.EndsWith("_zone", StringComparison.OrdinalIgnoreCase)
+            || zone.Equals("CallHistory", StringComparison.OrdinalIgnoreCase)
+            || zone.Equals("Sharing", StringComparison.OrdinalIgnoreCase)
+            || zone.Equals("PrimarySync", StringComparison.OrdinalIgnoreCase)
+            || zone.StartsWith("CD_", StringComparison.OrdinalIgnoreCase)
+            || zone.StartsWith("metadata", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return zone.Length >= 9 && zone.Any(char.IsLetter);
+    }
 
     private static string ShortContainerName(string containerId)
     {

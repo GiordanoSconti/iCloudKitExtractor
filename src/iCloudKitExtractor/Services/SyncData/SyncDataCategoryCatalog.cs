@@ -39,7 +39,11 @@ public static class SyncDataCategoryCatalog
         new("contacts", "Contacts", "com.apple.Dataclass.Contacts",
             []),
         new("calls", "Calls", null,
-            [new("com.apple.CallHistory", "com.apple.callhistory.sync-helper")]),
+        [
+            new("com.apple.CallHistory", "com.apple.callhistory.sync-helper"),
+            // CallHistorySyncHelper entitlement: service map → cloud-storage.
+            new("com.apple.callhistory.cloud-storage", "com.apple.callhistory.sync-helper"),
+        ]),
         new("filevault", "FileVault2 token", null,
             []),
         new("health", "Health", "com.apple.Dataclass.Health",
@@ -124,10 +128,11 @@ public static class SyncDataCategoryCatalog
         ContainersForSelection(selectedIds).Count > 0;
 
     /// <summary>
-    /// Solo Photos e Account Info sono recuperabili oggi; le altre categorie
-    /// restano in UI come «(presto)» disabilitate.
+    /// Categorie recuperabili in UI. Photos, Account Info, Voice Memos.
+    /// Le altre restano «(presto)» disabilitate.
     /// </summary>
     public static bool IsRecoverable(Category cat) =>
         string.Equals(cat.Id, PhotosId, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(cat.Id, AccountInfoId, StringComparison.OrdinalIgnoreCase);
+        || string.Equals(cat.Id, AccountInfoId, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(cat.Id, "voicememos", StringComparison.OrdinalIgnoreCase);
 }

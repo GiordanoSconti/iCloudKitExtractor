@@ -52,27 +52,60 @@ public static class CloudKitResponseParser
             .ToList();
     }
 
+    /// <summary>
+    /// Motivo leggibile da payload errore CloudKit (es. «Optional feature disabled…»).
+    /// Preferisce frasi umane rispetto a UUID / errorKey <c>ck…</c>.
+    /// </summary>
+    public static string? TryGetCloudKitReason(byte[]? payload)
+    {
+        if (payload is not { Length: > 0 })
+            return null;
+
+        string? bestHuman = null;
+        string? bestCk = null;
+        foreach (var s in CollectStrings(payload))
+        {
+            if (string.IsNullOrWhiteSpace(s) || s.Length < 5)
+                continue;
+            if (LooksLikeUuidOrOwner(s))
+                continue;
+
+            if (IsHumanCloudKitError(s))
+            {
+                if (bestHuman is null || s.Length > bestHuman.Length)
+                    bestHuman = s;
+                continue;
+            }
+
+            if (s.Length is >= 5 and <= 16
+                && s.StartsWith("ck", StringComparison.OrdinalIgnoreCase)
+                && s.Skip(2).All(char.IsLetterOrDigit))
+                bestCk ??= s;
+        }
+
+        if (bestHuman is not null)
+        {
+            var msg = bestHuman.Length > 160 ? bestHuman[..160] + "…" : bestHuman;
+            return bestCk is null ? msg : $"{msg} ({bestCk})";
+        }
+
+        return bestCk;
+    }
+
     /// <summary>Diagnostica risposte CloudKit troppo piccole (stub/error).</summary>
     public static string? DescribeCompactPayload(byte[]? payload)
     {
         if (payload is not { Length: > 0 and < 512 })
-            return null;
+            return TryGetCloudKitReason(payload);
 
-        foreach (var s in CollectStrings(payload))
-        {
-            if (s.Contains("error", StringComparison.OrdinalIgnoreCase)
-                || s.Contains("notFound", StringComparison.OrdinalIgnoreCase)
-                || s.Contains("permission", StringComparison.OrdinalIgnoreCase)
-                || s.Contains("retry", StringComparison.OrdinalIgnoreCase)
-                || s.Contains("missing filter", StringComparison.OrdinalIgnoreCase)
-                || s.Contains("Record not found", StringComparison.OrdinalIgnoreCase)
-                || s.Contains("BAD_SYNTAX", StringComparison.OrdinalIgnoreCase))
-            {
-                return s.Length > 120 ? s[..120] + "…" : s;
-            }
-        }
+        var reason = TryGetCloudKitReason(payload);
+        if (reason is not null)
+            return reason;
 
-        var runs = CollectStrings(payload).Where(s => s.Length >= 6).Take(4).ToList();
+        var runs = CollectStrings(payload)
+            .Where(static s => s.Length >= 6 && !LooksLikeUuidOrOwner(s))
+            .Take(4)
+            .ToList();
         return runs.Count > 0 ? string.Join(" | ", runs) : $"binary {payload.Length} byte";
     }
 
@@ -85,12 +118,20 @@ public static class CloudKitResponseParser
         if (payload is not { Length: > 0 })
             return false;
 
+        var reason = TryGetCloudKitReason(payload);
+        if (reason is not null && IsHumanCloudKitError(reason.Split('(')[0].TrimEnd()))
+        {
+            description = reason;
+            return true;
+        }
+
         foreach (var s in CollectStrings(payload))
         {
             if (s.Contains("missing filter", StringComparison.OrdinalIgnoreCase)
                 || s.Contains("Record not found", StringComparison.OrdinalIgnoreCase)
                 || s.Contains("BAD_SYNTAX", StringComparison.OrdinalIgnoreCase)
-                || s.Equals("notFound", StringComparison.OrdinalIgnoreCase))
+                || s.Equals("notFound", StringComparison.OrdinalIgnoreCase)
+                || s.Equals("FAILURE", StringComparison.OrdinalIgnoreCase))
             {
                 description = s.Length > 160 ? s[..160] + "…" : s;
                 return true;
@@ -100,14 +141,54 @@ public static class CloudKitResponseParser
         // Errori tipici: body &lt; 200 B con "ck" errorKey.
         if (payload.Length < 200)
         {
-            description = DescribeCompactPayload(payload);
+            description = DescribeCompactPayload(payload) ?? reason;
             if (description is not null
                 && (description.Contains("ck", StringComparison.OrdinalIgnoreCase)
                     || description.Contains("error", StringComparison.OrdinalIgnoreCase)
-                    || description.Contains("fail", StringComparison.OrdinalIgnoreCase)))
+                    || description.Contains("fail", StringComparison.OrdinalIgnoreCase)
+                    || description.Contains("disabled", StringComparison.OrdinalIgnoreCase)
+                    || description.Contains("not exist", StringComparison.OrdinalIgnoreCase)
+                    || description.Contains("not support", StringComparison.OrdinalIgnoreCase)))
                 return true;
         }
 
+        return false;
+    }
+
+    private static bool IsHumanCloudKitError(string s)
+    {
+        if (s.Length < 8)
+            return false;
+        return s.Contains("error", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("notFound", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("permission", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("retry", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("missing filter", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("BAD_SYNTAX", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("disabled", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("not exist", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("does not exist", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("not support", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("Only custom zones", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("Optional feature", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("Feature not", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("unauthenticated", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("forbidden", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("quota", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("throttl", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksLikeUuidOrOwner(string s)
+    {
+        if (s.Length is >= 32 and <= 40 && s.TrimStart('_', '$', '!').All(Uri.IsHexDigit))
+            return true;
+        if (s.Length == 36
+            && s[8] == '-' && s[13] == '-' && s[18] == '-' && s[23] == '-')
+            return true;
+        if (s.StartsWith('_') && s.Length >= 20 && s[1..].All(Uri.IsHexDigit))
+            return true;
         return false;
     }
 

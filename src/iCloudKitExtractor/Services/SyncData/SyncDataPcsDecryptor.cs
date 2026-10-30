@@ -855,7 +855,19 @@ public static class SyncDataPcsDecryptor
         }
 
         if (containerId.Contains("VoiceMemo", StringComparison.OrdinalIgnoreCase))
-            return ["mediaMetaDataEnc"];
+        {
+            // Core Data: type=20 su CD_versionedAudioFuture; titolo spesso type=3+GCM.
+            return
+            [
+                "CD_versionedAudioFuture",
+                "CD_encryptedTitle",
+                "CD_customLabel",
+            ];
+        }
+
+        if (containerId.Contains("CallHistory", StringComparison.OrdinalIgnoreCase)
+            || containerId.Contains("callhistory", StringComparison.OrdinalIgnoreCase))
+            return null; // niente filtro stretto finché non mappiamo i campi
 
         if (containerId.Contains("photos", StringComparison.OrdinalIgnoreCase))
         {

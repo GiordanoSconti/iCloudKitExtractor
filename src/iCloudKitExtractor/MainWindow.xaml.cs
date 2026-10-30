@@ -4303,7 +4303,7 @@ public partial class MainWindow : Window
 
         // Elenco completo: solo Photos + Account Info selezionabili; resto «(presto)».
         SyncDataServicesHintText.Text =
-            "Photos e Account Info attivi; le altre categorie sono in arrivo (presto).";
+            "Attivi: Photos, Account Info, Voice Memos; le altre sono in arrivo (presto).";
 
         foreach (var cat in SyncDataCategoryCatalog.All)
         {

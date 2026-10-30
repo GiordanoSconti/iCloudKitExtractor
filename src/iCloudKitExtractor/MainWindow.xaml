@@ -1187,7 +1187,7 @@
                         <Border Style="{StaticResource SectionCardStyle}">
                             <StackPanel>
                                 <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14"
-                                           Text="Dopo login: Photos (ON di default) e Account Info sono recuperabili; le altre categorie Sync Data compaiono come (presto) e restano disabilitate."/>
+                                           Text="Dopo login: Photos (ON di default), Account Info e Voice Memos sono recuperabili; le altre categorie Sync Data compaiono come (presto) e restano disabilitate."/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
                                     <TextBlock Text="Cartella output" Style="{StaticResource FieldLabelStyle}" Width="120"/>
                                     <TextBox x:Name="SyncDataOutputTextBox" Width="420" Margin="0,0,10,0"/>

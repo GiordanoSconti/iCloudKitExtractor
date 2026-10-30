@@ -40,6 +40,7 @@ public sealed record CloudKitContainerBinding(string ContainerId, string BundleI
         new("com.apple.photos.cloud", "com.apple.Photos"),
         new("com.apple.Maps.Sync", "com.apple.Maps"),
         new("com.apple.CallHistory", "com.apple.callhistory.sync-helper"),
+        new("com.apple.callhistory.cloud-storage", "com.apple.callhistory.sync-helper"),
         new("com.apple.health.sync", "com.apple.healthd"),
         new("com.apple.iBooks", "com.apple.iBooks"),
         new("com.apple.security.keychain", "com.apple.securityd"),
