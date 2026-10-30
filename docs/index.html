@@ -22,48 +22,58 @@
 <body>
   <a class="skip" href="#content">Skip to content</a>
 
+  <nav class="nav" aria-label="Primary">
+    <div class="nav__inner">
+      <a class="nav__brand" href="./">
+        <img src="./assets/app-icon.png" width="32" height="32" alt="" />
+        <span>Forensis-Lab</span>
+      </a>
+      <div class="nav__links">
+        <a href="#demos">Demos</a>
+        <a href="#downloads">Download</a>
+        <a href="./blog/">Notes</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
   <header class="hero" aria-label="Introduction">
     <div class="hero__plane" aria-hidden="true"></div>
     <div class="hero__glow" aria-hidden="true"></div>
-    <div class="hero__grain" aria-hidden="true"></div>
-    <div class="hero__stage">
-      <div class="hero__copy">
-        <img
-          class="hero__logo"
-          src="./assets/app-icon.png"
-          width="112"
-          height="112"
-          alt="iCloudKit Extractor app icon"
-        />
-        <p class="brand">Forensis-Lab</p>
-        <h1 class="headline">iCloudKit Extractor</h1>
-        <p class="lede">
-          Experimental forensic research software for iCloud sign-in and complete CloudKit/MMCS backup recovery—including ADP-protected data when you hold the Octagon PIN or Recovery Key.
-        </p>
-        <div class="cta-row">
-          <a class="btn btn--primary" href="#downloads">Download</a>
-          <a class="btn btn--ghost" href="#demos">Watch demos</a>
-          <a class="btn btn--ghost" href="./blog/">Notes</a>
-          <a class="btn btn--ghost" href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
-        </div>
+    <div class="hero__inner">
+      <img
+        class="hero__logo"
+        src="./assets/app-icon.png"
+        width="96"
+        height="96"
+        alt="iCloudKit Extractor app icon"
+      />
+      <p class="brand">Forensis-Lab</p>
+      <h1 class="headline">iCloudKit Extractor</h1>
+      <p class="lede">
+        Experimental forensic research software for iCloud sign-in and complete CloudKit/MMCS backup recovery—including ADP-protected data when you hold the Octagon PIN or Recovery Key.
+      </p>
+      <div class="cta-row cta-row--center">
+        <a class="btn btn--primary" href="#downloads">Download</a>
+        <a class="btn btn--ghost" href="#demos">Watch demos</a>
+        <a class="btn btn--ghost" href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
       </div>
-      <div class="hero__visual" aria-hidden="true">
+      <figure class="hero__shot">
         <img
-          class="hero__app"
           src="./assets/app-ui.png"
           width="1280"
           height="720"
-          alt=""
+          alt="iCloudKit Extractor application window"
           decoding="async"
         />
-      </div>
+      </figure>
     </div>
   </header>
 
   <main id="content">
-    <section class="section section--demos" id="demos" aria-labelledby="demos-title">
+    <section class="section section--center section--demos" id="demos" aria-labelledby="demos-title">
       <h2 id="demos-title">See it running</h2>
-      <p>
+      <p class="section__lede">
         Screen highlights from real lab sessions—Recovery Key unlock, device backups, WhatsApp CloudKit, Drive, mail, and Photos sync.
       </p>
 
@@ -113,14 +123,14 @@
       </div>
     </section>
 
-    <section class="section" id="downloads" aria-labelledby="downloads-title">
+    <section class="section section--center section--band" id="downloads" aria-labelledby="downloads-title">
       <h2 id="downloads-title">Downloads</h2>
-      <p>
+      <p class="section__lede">
         Windows x64 builds (framework-dependent). Install the
         <a href="https://dotnet.microsoft.com/download/dotnet/10.0">.NET 10 Desktop Runtime</a>
         before launching. Experimental—expect breakage.
       </p>
-      <div class="cta-row cta-row--page">
+      <div class="cta-row cta-row--center cta-row--page">
         <a
           class="btn btn--solid"
           href="https://github.com/GiordanoSconti/iCloudKitExtractor/releases/latest/download/iCloudKitExtractor-win-x64.zip"
@@ -131,21 +141,26 @@
           href="https://github.com/GiordanoSconti/iCloudKitExtractor/releases/latest/download/AnisetteServer-win-x64.zip"
           >Anisette Server</a
         >
+        <a
+          class="btn btn--outline"
+          href="https://github.com/GiordanoSconti/iCloudKitExtractor/releases/latest/download/AnisetteServer.Licensed-win-x64.zip"
+          >Anisette Licensed</a
+        >
         <a class="btn btn--outline" href="https://github.com/GiordanoSconti/iCloudKitExtractor/releases">All releases</a>
       </div>
     </section>
 
-    <section class="section" aria-labelledby="why">
+    <section class="section section--center" aria-labelledby="why">
       <h2 id="why">Built for extreme recoveries</h2>
-      <p>
+      <p class="section__lede">
         When CloudKit data is effectively device-bound—and commercial paths fall short—this project explores the private Apple surfaces needed to restore backups and related key material in a controlled forensic setting.
       </p>
-      <p>
+      <p class="section__lede">
         Validated by the author on personal backups with ADP on or off, including scenarios with Lockdown Mode and iCloud.com disabled.
       </p>
     </section>
 
-    <section class="section" aria-labelledby="capabilities">
+    <section class="section section--center" aria-labelledby="capabilities">
       <h2 id="capabilities">What it targets</h2>
       <div class="pillars">
         <div class="pillar">
@@ -163,40 +178,30 @@
       </div>
     </section>
 
-    <section class="section" aria-labelledby="about">
+    <section class="section section--center section--band" aria-labelledby="about">
       <h2 id="about">About the author</h2>
-      <p>
+      <p class="section__lede">
         <strong>Giordano Sconti</strong> collaborates with the forensic laboratory <strong>Forensis-Lab</strong> as a software researcher and technical consultant (Consulente Tecnico).
       </p>
-      <p>
-        Roughly seven months of research shaped this codebase—often late nights or sparse work-day windows—with Cursor coding agents accelerating implementation while keeping a modular layout.
+      <p class="section__lede">
+        Roughly seven months of research shaped this codebase. Released under MIT; ownership and attribution remain with <strong>Forensis-Lab</strong>. Highly experimental: Apple’s private APIs can change overnight.
       </p>
-      <p>
-        Released under MIT; ownership and attribution remain with <strong>Forensis-Lab</strong>. Highly experimental: Apple’s private APIs can change overnight.
-      </p>
-      <div class="meta">
-        <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>
+      <div class="meta meta--center">
+        <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">Contact</a>
         <a href="https://github.com/GiordanoSconti/iCloudKitExtractor#readme">Full README</a>
-        <a href="./EMULATED_AKD.md">Docs: emulated akd</a>
+        <a href="./ANISETTE_LICENSED.md">Licensed Anisette</a>
         <a href="./blog/">Notes</a>
       </div>
     </section>
 
-    <section class="section" aria-labelledby="notes">
-      <h2 id="notes">Notes</h2>
-      <p>
-        The <a href="./blog/">Notes</a> page is a seven-month research diary—from an ADP backup we
-        could not pull with commercial tools in March 2026 through to the public experimental phase.
-      </p>
-    </section>
-
-    <section class="section" aria-labelledby="contribute">
+    <section class="section section--center" aria-labelledby="contribute">
       <h2 id="contribute">Contribute</h2>
-      <p>
+      <p class="section__lede">
         Testers, reviewers, and contributors are welcome. Prefer paid coding-agent models over free ones, always re-check generated code, and never land unlicensed third-party code. Pull requests are reviewed carefully.
       </p>
-      <p>
-        Prefer recognition for <strong>Forensis-Lab</strong> over buying a coffee. For preview access to the maintainer Anisette Server, ask privately by email.
+      <p class="section__lede">
+        Prefer recognition for <strong>Forensis-Lab</strong> over buying a coffee. Preview Anisette access and self-host notes live in the
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor#preview-access-to-anisette-server">README</a>.
       </p>
     </section>
   </main>
