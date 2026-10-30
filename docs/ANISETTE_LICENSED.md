@@ -1,6 +1,6 @@
 # Licensed remote Anisette (self-host)
 
-Host your own Anisette HTTP gate with **Package-C** licenses (Ed25519 + SQLite). Useful when friends or lab machines need OTP from **your** jailbroken iPhone Frida stack without sharing the phone.
+Host your own Anisette HTTP/HTTPS gate with **Package-C** licenses (Ed25519 + SQLite). Useful when friends or lab machines need OTP from **your** jailbroken iPhone Frida stack without sharing the phone. **HTTP remains the default** (no certificates required); HTTPS is optional.
 
 Generate **your own** keys and database. Never commit `keys/` or `data/licenses/`.
 
@@ -64,10 +64,21 @@ dotnet publish src/AnisetteServer.Mac -c Release -r osx-arm64 --self-contained f
 
 UI:
 
-- **Server**: Frida host (`192.168.x.y:27042`), process `akd`, Python, listen URLs (`http://0.0.0.0:6971`), Start/Stop
+- **Server**: Frida host (`192.168.x.y:27042`), process `akd`, Python, listen URLs (`http://0.0.0.0:6971` by default; `https://…` optional), Start/Stop
 - **Licenses**: list / disable / enable / remove / manual Package-C issue
 
-Default data root: `~/Library/Application Support/ForensisLab/AnisetteMiddleware/` (or `%AppData%\ForensisLab\AnisetteMiddleware` on Windows).
+Default data root: `~/Library/Application Support/ForensisLab/AnisetteMiddleware/` (or `%AppData%\ForensisLab\AnisetteMiddleware` on Windows).  
+TLS files land in `data/tls/` only when you enable HTTPS.
+
+### HTTP (default) vs HTTPS (optional)
+
+| Mode | How |
+|------|-----|
+| **HTTP (default)** | `http://0.0.0.0:6971` — no certificates |
+| **HTTPS auto** | Listen `https://0.0.0.0:6971` or `ANISETTE_TLS_ENABLE=1` → self-signed under `data/tls/` (SAN: localhost, 127.0.0.1, hostname, **all current machine IPv4/IPv6**) |
+| **Custom PFX** | `ANISETTE_TLS_PFX` (+ optional `ANISETTE_TLS_PFX_PASSWORD`) |
+| **PEM** | `ANISETTE_TLS_CERT` + `ANISETTE_TLS_KEY` (e.g. Let's Encrypt) |
+| **Extra SAN names** | `ANISETTE_TLS_DNS=www.example.com,203.0.113.10` |
 
 Prepare the phone: see [Preparing a jailbroken iPhone](../README.md#preparing-a-jailbroken-iphone) in the README.
 
@@ -75,9 +86,13 @@ Prepare the phone: see [Preparing a jailbroken iPhone](../README.md#preparing-a-
 
 ```powershell
 $env:ANISETTE_SERVER_BACKEND = "frida"
-$env:ANISETTE_SERVER_URLS = "http://0.0.0.0:6971"
+# default listen = http://0.0.0.0:6971
 $env:FRIDA_ANISETTE_HOST = "192.168.x.y:27042"
 dotnet run --project src/AnisetteServer.Licensed -- --port 6971
+
+# Optional TLS:
+# $env:ANISETTE_TLS_ENABLE = "1"
+# or: $env:ANISETTE_SERVER_URLS = "https://0.0.0.0:6971"
 ```
 
 Auth rules:
@@ -92,10 +107,19 @@ Auth rules:
 $env:ANISETTE_SERVER_URL = "http://YOUR_HOST:6971"
 # Leave License empty once for auto-issue overlay, then keep the Base64
 # or: $env:ANISETTE_LICENSE = "<Package-C Base64>"
+
+# If the middleware uses HTTPS:
+# $env:ANISETTE_SERVER_URL = "https://YOUR_HOST:6971"
+# Public hostname + self-signed: install the .cer, or:
+# $env:ANISETTE_TLS_INSECURE = "1"
+# $env:ANISETTE_TLS_THUMBPRINT = "<from data/tls/anisette-https.thumbprint>"
+# $env:ANISETTE_TLS_CA = "C:\path\to\anisette-https.cer"
 ```
+
+IKE accepts both `http://` and `https://` server URLs. Loopback / private LAN IPs accept lab self-signed certs automatically when using HTTPS.
 
 ## Security notes
 
-- Treat the **private key** like a password; only the host that issues licenses needs it.
-- Do not publish your `keys/` folder, SQLite DB, or issued `.license` files.
+- Treat the **private key** and **TLS PFX** like passwords; only the host that issues licenses needs them.
+- Do not publish your `keys/` folder, `data/tls/`, SQLite DB, or issued `.license` files.
 - Disable or revoke licenses from the Mac UI or `AnisetteLicenseGen` when a tester should lose access.

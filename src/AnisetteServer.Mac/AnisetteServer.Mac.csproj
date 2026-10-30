@@ -38,6 +38,7 @@
     <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaAnisetteOptions.cs" LinkBase="Shared" />
     <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaIphoneAnisetteProvider.cs" LinkBase="Shared" />
     <Compile Include="..\AnisetteServer.Licensed\Licensing\LicenseAuthMiddleware.cs" LinkBase="Licensing" />
+    <Compile Include="..\AnisetteServer.Licensed\Hosting\AnisetteHttpsHosting.cs" LinkBase="Hosting" />
   </ItemGroup>
 
   <ItemGroup>

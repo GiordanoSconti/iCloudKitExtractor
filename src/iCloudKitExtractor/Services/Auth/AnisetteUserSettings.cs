@@ -26,7 +26,7 @@ public sealed class AnisetteUserSettings
 
     /// <summary>
     /// true = usa <see cref="ServerUrl"/>; false = locale
-    /// <c>http://127.0.0.1:6971</c>. null = legacy (serverUrl non vuoto ⇒ remoto).
+    /// <c>http://127.0.0.1:6971</c> (or <c>https://…</c> when the middleware uses TLS). null = legacy (serverUrl non vuoto ⇒ remoto).
     /// </summary>
     [JsonPropertyName("useRemoteServer")]
     public bool? UseRemoteServer { get; set; }
@@ -44,6 +44,18 @@ public sealed class AnisetteUserSettings
     /// </summary>
     [JsonPropertyName("license")]
     public string? License { get; set; }
+
+    /// <summary>Accept any Anisette HTTPS certificate (lab only). Env: ANISETTE_TLS_INSECURE.</summary>
+    [JsonPropertyName("tlsInsecure")]
+    public bool? TlsInsecure { get; set; }
+
+    /// <summary>Pin Anisette HTTPS cert thumbprint. Env: ANISETTE_TLS_THUMBPRINT.</summary>
+    [JsonPropertyName("tlsThumbprint")]
+    public string? TlsThumbprint { get; set; }
+
+    /// <summary>Path to Anisette HTTPS .cer to trust. Env: ANISETTE_TLS_CA.</summary>
+    [JsonPropertyName("tlsCaPath")]
+    public string? TlsCaPath { get; set; }
 
     public bool IsRemoteServerEnabled()
     {
@@ -76,5 +88,5 @@ public sealed class AnisetteUserSettings
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
     }
 
-    public static string? ExampleMacUrl => "http://192.168.1.50:6969";
+    public static string? ExampleMacUrl => "http://192.168.1.50:6971";
 }

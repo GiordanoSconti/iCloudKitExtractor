@@ -53,8 +53,11 @@ ios-adi-split/
 keys/
 data/anisette-licenses.db
 data/licenses/
+data/tls/
+**/data/tls/
 **/anisette_ed25519_private.pem
 **/anisette_ed25519_public.pem
+*.pfx
 
 # Local release build trees (publish via GitHub Releases, not git)
 _release/

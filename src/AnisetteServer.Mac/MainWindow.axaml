@@ -10,7 +10,7 @@
   <Grid RowDefinitions="Auto,*" Margin="16">
     <StackPanel Spacing="4" Margin="0,0,0,12">
       <TextBlock Text="Anisette Middleware" FontSize="22" FontWeight="Bold"/>
-      <TextBlock Text="Frida → jailbroken iPhone · Package-C licenses · local HTTP gate"
+      <TextBlock Text="Frida → jailbroken iPhone · Package-C licenses · HTTP/HTTPS gate"
                  Opacity="0.7"/>
       <TextBlock x:Name="StatusText" Text="Stopped" Margin="0,6,0,0" FontWeight="SemiBold"/>
     </StackPanel>
@@ -48,8 +48,10 @@
 
             <TextBlock Text="Listen URLs" FontWeight="SemiBold"/>
             <TextBox x:Name="ListenBox" Text="http://0.0.0.0:6971"/>
+            <TextBlock Text="Default HTTP (no certs). For HTTPS use https://0.0.0.0:6971 — cert auto-created in data/tls/ (or ANISETTE_TLS_PFX / CERT+KEY)."
+                       Opacity="0.65" TextWrapping="Wrap" FontSize="12"/>
 
-            <TextBlock Text="Data root (keys + SQLite)" FontWeight="SemiBold"/>
+            <TextBlock Text="Data root (keys + SQLite; tls/ only if HTTPS)" FontWeight="SemiBold"/>
             <TextBox x:Name="DataRootBox" IsReadOnly="True"/>
 
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">

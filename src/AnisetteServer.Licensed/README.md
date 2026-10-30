@@ -1,6 +1,6 @@
 # AnisetteServer.Licensed
 
-Headless Anisette HTTP API with Package-C license gate (Ed25519 + SQLite).
+Headless Anisette API with Package-C license gate (Ed25519 + SQLite). Default listen: `http://0.0.0.0:6971` (no certs). Optional HTTPS: `ANISETTE_TLS_ENABLE=1` or `ANISETTE_SERVER_URLS=https://0.0.0.0:6971`.
 
 See [docs/ANISETTE_LICENSED.md](../../docs/ANISETTE_LICENSED.md).
 

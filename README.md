@@ -155,7 +155,7 @@ Temporary public preview endpoint (leave the IKE **License** field empty on firs
 > If VPNs (or similar) are used to exploit my server for attacks of any kind, I will **stop offering preview access** through my Anisette endpoint.  
 > I hope there are still people in the world with a sound intellect.
 
-Want longer-term or private access? Contact: [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gruppoinformaticiforensi.it). Prefer hosting your own stack: [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md).
+Want longer-term or private access? Contact: [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gruppoinformaticiforensi.it). Prefer hosting your own stack: [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md) (Mac/Licensed default is plain **HTTP** `:6971`; optional HTTPS via `https://…` listen URLs or `ANISETTE_TLS_ENABLE=1`).
 
 ### Preferred Anisette: Frida on a jailbroken iPhone
 

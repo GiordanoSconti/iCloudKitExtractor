@@ -613,7 +613,7 @@ public partial class MainWindow : Window
             var license = string.IsNullOrWhiteSpace(draft.License)
                 ? AnisetteProviderFactory.ResolveLicenseBearer()
                 : draft.License;
-            var remote = new RemoteAnisetteProvider(Http, url, license);
+            var remote = new RemoteAnisetteProvider(AnisetteRemoteHttp.Create(url), url, license);
             var backend = await remote.TryGetBackendAsync().ConfigureAwait(true);
             var headers = await remote.FetchAsync().ConfigureAwait(true);
             var md = AnisetteCapability.SummarizeMdM(headers.MdM);

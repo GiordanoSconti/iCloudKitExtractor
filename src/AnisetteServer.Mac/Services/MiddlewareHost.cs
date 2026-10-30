@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
 using iCloudKitExtractor.AnisetteLicense;
+using iCloudKitExtractor.AnisetteServer.Licensed.Hosting;
 using iCloudKitExtractor.AnisetteServer.Licensed.Licensing;
 using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Services.Auth;
@@ -45,7 +46,7 @@ public sealed class MiddlewareHost : IAsyncDisposable
         });
         builder.Logging.ClearProviders();
         builder.Logging.AddConsole();
-        builder.WebHost.UseUrls(settings.ListenUrls.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        AnisetteHttpsHosting.Configure(builder, settings.ListenUrls);
 
         builder.Services.AddSingleton(_ => new LicenseDatabase(LicensePaths.DatabasePath));
         builder.Services.AddSingleton(sp =>
@@ -122,7 +123,10 @@ public sealed class MiddlewareHost : IAsyncDisposable
         _cts = new CancellationTokenSource();
         _app = app;
         _runTask = app.RunAsync(_cts.Token);
-        StatusText = $"Listening {settings.ListenUrls} → Frida {settings.FridaHost}";
+        var tlsNote = settings.ListenUrls.Contains("https://", StringComparison.OrdinalIgnoreCase)
+            ? $" · TLS {AnisetteTlsCertificate.CerPath}"
+            : "";
+        StatusText = $"Listening {settings.ListenUrls} → Frida {settings.FridaHost}{tlsNote}";
         Changed?.Invoke();
 
         // Surface startup failures quickly

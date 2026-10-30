@@ -58,10 +58,15 @@ public static class AnisetteProviderFactory
 
     public static string SettingsFilePath => AnisetteUserSettings.SettingsPath;
 
-    public static AuthAnisetteProviders CreateAuth(HttpClient http) =>
-        new(
+    public static AuthAnisetteProviders CreateAuth(HttpClient http)
+    {
+        var remoteUrl = ResolveServerUrl();
+        // Dedicated client for Anisette HTTPS so Apple trust policy is not weakened.
+        var remoteHttp = AnisetteRemoteHttp.Create(remoteUrl);
+        return new(
             new CoreAdiAnisetteProvider(http, AdiDeviceProfile.Windows),
-            new RemoteAnisetteProvider(http, ResolveServerUrl(), ResolveLicenseBearer()));
+            new RemoteAnisetteProvider(remoteHttp, remoteUrl, ResolveLicenseBearer()));
+    }
 
     public static async Task<AnisetteAuthProfile> ProbeAsync(HttpClient http, CancellationToken ct = default)
     {

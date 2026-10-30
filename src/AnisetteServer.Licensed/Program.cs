@@ -3,16 +3,16 @@ using System.Net;
 using System.Net.Security;
 using System.Text.Json.Serialization;
 using iCloudKitExtractor.AnisetteLicense;
+using iCloudKitExtractor.AnisetteServer.Licensed.Hosting;
 using iCloudKitExtractor.AnisetteServer.Licensed.Licensing;
 using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Services.Auth;
 using iCloudKitExtractor.Services.Http;
 
 var port = ResolvePort(args);
-// Licensed build defaults to all interfaces so remote testers can reach it;
-// override with ANISETTE_SERVER_URLS (e.g. http://127.0.0.1:6971 for local-only).
-var urls = Environment.GetEnvironmentVariable("ANISETTE_SERVER_URLS")
-    ?? $"http://0.0.0.0:{port}";
+// Licensed build defaults to plain HTTP on all interfaces (no certs required).
+// HTTPS: ANISETTE_SERVER_URLS=https://0.0.0.0:6971 or ANISETTE_TLS_ENABLE=1.
+var urls = AnisetteHttpsHosting.ResolveListenUrls(port);
 
 // CLI --backend wins over env (avoids stale $env from setup-emulated-akd.ps1 in the same session).
 var backend = ResolveBackend(args);
@@ -31,7 +31,7 @@ if (!File.Exists(publicKeyPath) || !File.Exists(privateKeyPath))
 }
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls(urls);
+AnisetteHttpsHosting.Configure(builder, urls);
 
 builder.Services.AddSingleton(_ => new LicenseDatabase(dbPath));
 builder.Services.AddSingleton(sp =>
