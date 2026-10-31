@@ -148,7 +148,7 @@ Or grab a signed build from [Releases](https://github.com/GiordanoSconti/iCloudK
 
 Temporary public preview endpoint (leave the IKE **License** field empty on first connect to receive a Package-C license once):
 
-**https://www.icloudkitextractor.eu:6971**
+**https://www.icloudkitextractor.eu**
 
 > **Status — connectivity in preparation.** Reachability from the public Internet is being wired through **Cloudflare Tunnel** (see below). Until that path is live, the URL may time out from outside the lab LAN / when the ISP blocks inbound ports (CGNAT). Prefer self-host or contact for access if the preview is down.
 
