@@ -191,7 +191,7 @@ OTP minted on-device via Frida → AuthKit/`akd`, then served by `AnisetteServer
 | Variable | Required | Default | Meaning |
 |----------|----------|---------|---------|
 | `ANISETTE_SERVER_BACKEND` | **yes** | `coreadi` | Must be `frida` (aliases: `iphone-frida`, `jb-frida`) |
-| `ANISETTE_SERVER_URL` / `ANISETTE_SERVER_URLS` | no | `http://127.0.0.1:6969` | URL(s) where AnisetteServer listens |
+| `ANISETTE_SERVER_URL` / `ANISETTE_SERVER_URLS` | no | `http://127.0.0.1:6971` | URL(s) where AnisetteServer listens |
 | `ANISETTE_SERVER_PORT` | no | `6969` | Port if URLs not set |
 | `ICLOUD_AUTH_MODE` | recommended | `iphone` (via config) | Use `iphone` for full AuthKit iPhone SRP |
 | `FRIDA_ANISETTE_HOST` | no | `127.0.0.1:27042` | frida-server host:port (USB often via `iproxy 27042 27042`) |
