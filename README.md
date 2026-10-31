@@ -38,7 +38,7 @@ Built by **Giordano Sconti** with **[Forensis-Lab](https://giordanosconti.github
 | Area | Capability |
 |------|------------|
 | **Access** | Apple ID login, HSA2 / trusted devices, Anisette OTP (Frida/akd preferred) |
-| **Escrow & PCS** | KeyBag / bottle unlock, Recovery Key → TLKShares, Manatee keysets |
+| **Escrow & PCS** | EscrowProxy KeyBag / bottle PIN (HSM); or Recovery Key → Octagon TLKShares → Manatee/PCS (no Escrow RECOVER) |
 | **Backup** | List device backups, MMCS download, iTunes-layout materialization |
 | **WhatsApp** | CloudKit / CloudDocs document crypto path |
 | **iCloud Drive** | Drive probe and file pull |
@@ -55,9 +55,9 @@ Built by **Giordano Sconti** with **[Forensis-Lab](https://giordanosconti.github
 
 Screen highlights (GIF). Same clips as MP4 under [`video/`](video/) if you prefer a sharper file.
 
-### Recovery Key → login → backup download
+### Login → Recovery Key (Octagon) → backup download
 
-Sign in, unlock Escrow with a Recovery Key, then start a device backup pull.
+Sign in, unlock Octagon with a Recovery Key (Cuttlefish `fetchRecoverableTLKShares` → CKKS/Manatee — not EscrowProxy), then start a device backup pull.
 
 ![Recovery Key flow — login and backup download](video/07-backup-login-download.gif)
 
@@ -129,7 +129,19 @@ Same account conditions where **Elcomsoft 11.0.5** returned *Access Denied* with
 
 ## Recovery Key & Octagon
 
-Recovery Key unlock hits an **Octagon** endpoint that can dump the full set of **encrypted TLKShares**. From those shares you can recover the ones tied to Recovery Key peers (SHA-384 of the public key that signs the Recovery Key), verify whether a given Recovery Key is present, and — if it is — recover the Manatee/PCS KeySet for CloudKit zones, including **ADP-protected backups** and **Keychain**.
+Recovery Key unlock is an **Octagon / Cuttlefish** path, **not** EscrowProxy `RECOVER` / HSM bottle unlock (that path still needs the device Octagon PIN).
+
+Flow in short:
+
+1. **Login** — session tokens plus `altDSID` (HKDF salt).
+2. **Derive the RK peer** — `HKDF-SHA384(RK, altDSID)` → P-384 signing + encryption keys; peer ID = `RK-` + Base64(SHA-384 of the **signing public key** derived from the Recovery Key).
+3. **`ckAppInit`** on `com.apple.security.keychain`, then **`fetchRecoverableTLKShares(forPeer=RK-…)`** — encrypted TLKShares **scoped to that peer**.
+4. **ECIES unwrap** with the RK encryption private key → TLKs for views such as Manatee / ProtectedCloudStorage / Passwords.
+5. **CKKS OpenVault** → Manatee/PCS KeySet for CloudKit zones, including **ADP-protected backups** and **Keychain**.
+
+**`forPeer` empty:** if the Cuttlefish call omits / sends an empty `forPeer`, the API returns the **full set of recoverable encrypted TLKShares** (all peers), not only those addressed to one `RK-…`. The normal Recovery Key unlock still passes `forPeer=RK-…`; empty `forPeer` is useful for dumping / inventory. Shares remain ECIES-wrapped — you can unwrap only the ones whose receiver keys you hold.
+
+You can also verify offline whether a given Recovery Key matches harvested `RK-…` peer IDs and unwrap recoverable share dumps the same way.
 
 ---
 
@@ -148,9 +160,9 @@ Or grab a signed build from [Releases](https://github.com/GiordanoSconti/iCloudK
 
 Temporary public preview endpoint (leave the IKE **License** field empty on first connect to receive a Package-C license once):
 
-**https://www.icloudkitextractor.eu**
+**https://www.icloudkitextractor.eu:6971**
 
-> **Status — currently live and available.** Reachability from the public Internet is being wired through **Cloudflare Tunnel** (see below). Until that path is live, the URL may time out from outside the lab LAN / when the ISP blocks inbound ports (CGNAT). Prefer self-host or contact for access if the preview is down.
+> **Status — connectivity in preparation.** Reachability from the public Internet is being wired through **Cloudflare Tunnel** (see below). Until that path is live, the URL may time out from outside the lab LAN / when the ISP blocks inbound ports (CGNAT). Prefer self-host or contact for access if the preview is down.
 
 #### How the preview is published (Cloudflare Tunnel)
 
@@ -191,7 +203,7 @@ OTP minted on-device via Frida → AuthKit/`akd`, then served by `AnisetteServer
 | Variable | Required | Default | Meaning |
 |----------|----------|---------|---------|
 | `ANISETTE_SERVER_BACKEND` | **yes** | `coreadi` | Must be `frida` (aliases: `iphone-frida`, `jb-frida`) |
-| `ANISETTE_SERVER_URL` / `ANISETTE_SERVER_URLS` | no | `http://127.0.0.1:6971` | URL(s) where AnisetteServer listens |
+| `ANISETTE_SERVER_URL` / `ANISETTE_SERVER_URLS` | no | `http://127.0.0.1:6969` | URL(s) where AnisetteServer listens |
 | `ANISETTE_SERVER_PORT` | no | `6969` | Port if URLs not set |
 | `ICLOUD_AUTH_MODE` | recommended | `iphone` (via config) | Use `iphone` for full AuthKit iPhone SRP |
 | `FRIDA_ANISETTE_HOST` | no | `127.0.0.1:27042` | frida-server host:port (USB often via `iproxy 27042 27042`) |
