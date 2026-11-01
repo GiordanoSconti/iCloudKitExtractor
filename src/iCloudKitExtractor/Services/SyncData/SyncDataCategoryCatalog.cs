@@ -129,12 +129,13 @@ public static class SyncDataCategoryCatalog
         ContainersForSelection(selectedIds).Count > 0;
 
     /// <summary>
-    /// Categorie recuperabili in UI. Photos, Account Info, Voice Memos, Calls.
+    /// Categorie recuperabili in UI. Photos, Account Info, Voice Memos, Calls, Messages.
     /// Le altre restano «(presto)» disabilitate.
     /// </summary>
     public static bool IsRecoverable(Category cat) =>
         string.Equals(cat.Id, PhotosId, StringComparison.OrdinalIgnoreCase)
         || string.Equals(cat.Id, AccountInfoId, StringComparison.OrdinalIgnoreCase)
         || string.Equals(cat.Id, "voicememos", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(cat.Id, "calls", StringComparison.OrdinalIgnoreCase);
+        || string.Equals(cat.Id, "calls", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(cat.Id, "messages", StringComparison.OrdinalIgnoreCase);
 }

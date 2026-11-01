@@ -325,7 +325,9 @@ public sealed class ICloudSyncDataProbeService
             }
 
             // _defaultZone non supporta record/sync (ck1e0lk64); scarta fingerprint spuri.
+            // metadata_zone = zona sistema CloudKit: spesso solo RetryAfter, zero record utili.
             zones.RemoveWhere(IsDefaultZoneName);
+            zones.RemoveWhere(IsCloudKitSystemZone);
             zones.RemoveWhere(static z => !IsPlausibleCustomZone(z));
 
             if (zones.Count == 0)
@@ -386,19 +388,33 @@ public sealed class ICloudSyncDataProbeService
                     "(Unlock EscrowedKeys oppure Octagon/CKKS OpenVault)");
             }
 
-            // Voice Memos: download audio MMCS dopo PCS (titoli + zone keys).
+            // Voice Memos / Messages: download CKAsset via content.icloud.com dopo PCS.
             if (binding.ContainerId.Equals(
-                    VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase))
+                    VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase)
+                || binding.ContainerId.Equals(
+                    VoiceMemosAudioDownloader.MessagesContainerId, StringComparison.OrdinalIgnoreCase))
             {
+                var isMessages = binding.ContainerId.Equals(
+                    VoiceMemosAudioDownloader.MessagesContainerId,
+                    StringComparison.OrdinalIgnoreCase);
                 try
                 {
                     await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
-                    var dl = new VoiceMemosAudioDownloader(_http);
-                    _ = await dl.DownloadAsync(session, outDir, log, ct).ConfigureAwait(false);
+                    var dl = isMessages
+                        ? VoiceMemosAudioDownloader.ForMessages(_http)
+                        : new VoiceMemosAudioDownloader(_http);
+                    var n = await dl.DownloadAsync(session, outDir, log, ct).ConfigureAwait(false);
+                    if (isMessages && n == 0)
+                    {
+                        log?.Report(
+                            "  Messages: nessun ckAsset MMCS in chiaro. Zone *ManateeZone sono PCS-Manatee — " +
+                            "serve CKKS OpenVault (view Manatee) che riesca a unwrap PublicX nei record; " +
+                            "poi allegati/blob possono comparire come Asset con auth.");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    log?.Report($"  VoiceMemos MMCS skip: {ex.Message}");
+                    log?.Report($"  MMCS asset download skip: {ex.Message}");
                 }
             }
 
@@ -465,6 +481,8 @@ public sealed class ICloudSyncDataProbeService
         }
     }
 
+    private const int MaxRecordSyncPages = 24;
+
     private async Task<long> RecordSyncAsync(
         ICloudSession session,
         CloudKitContainerBinding binding,
@@ -475,29 +493,70 @@ public sealed class ICloudSyncDataProbeService
     {
         log?.Report($"  record/sync → {zone}…");
         long total = 0;
+        byte[]? token = null;
+        var retryAfterLeft = 2;
         try
         {
-            var body = CloudKitDelimitedRequest.BuildRecordRetrieveChanges(
-                session.CloudKitUserId, zone, syncContinuationToken: null, binding);
-            var payload = await _gateway.RecordChangesAsync(session, body, ct, binding);
-            total = payload.Length;
-            await SaveAsync(outDir, $"record_sync_{Sanitize(zone)}_p1", payload, ct);
-
-            var isErr = CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err);
-            var reason = CloudKitResponseParser.TryGetCloudKitReason(payload);
-            var note = isErr
-                ? (err ?? reason)
-                : (reason ?? CloudKitResponseParser.DescribeCompactPayload(payload));
-            log?.Report(
-                $"    → {payload.Length:N0} B" +
-                (note is null
-                    ? ""
-                    : isErr || reason is not null && IsLikelyErrorNote(note)
-                        ? $" — errore: {note}"
-                        : $" — {note}"));
-            if (!isErr && CloudKitResponseParser.ResponseIndicatesMoreResults(payload))
+            for (var page = 1; page <= MaxRecordSyncPages; page++)
             {
-                log?.Report("    moreComing — stop (serve syncToken parser)");
+                ct.ThrowIfCancellationRequested();
+                var body = CloudKitDelimitedRequest.BuildRecordRetrieveChanges(
+                    session.CloudKitUserId, zone, syncContinuationToken: token, binding);
+                var payload = await _gateway.RecordChangesAsync(session, body, ct, binding);
+                total += payload.Length;
+                await SaveAsync(outDir, $"record_sync_{Sanitize(zone)}_p{page}", payload, ct);
+
+                var isErr = CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err);
+                var reason = CloudKitResponseParser.TryGetCloudKitReason(payload);
+                var note = isErr
+                    ? (err ?? reason)
+                    : (reason ?? CloudKitResponseParser.DescribeCompactPayload(payload));
+                log?.Report(
+                    $"    → p{page} {payload.Length:N0} B" +
+                    (note is null
+                        ? ""
+                        : isErr || reason is not null && IsLikelyErrorNote(note)
+                            ? $" — errore: {note}"
+                            : $" — {note}"));
+                if (isErr)
+                {
+                    // RetryAfter: al massimo 2 backoff brevi, poi skip zona.
+                    if (IsRetryAfterNote(note) && retryAfterLeft > 0)
+                    {
+                        retryAfterLeft--;
+                        var delayMs = retryAfterLeft == 1 ? 2_000 : 4_000;
+                        log?.Report($"    RetryAfter → attesa {delayMs} ms, riprovo…");
+                        await Task.Delay(delayMs, ct);
+                        page--;
+                        continue;
+                    }
+
+                    if (IsRetryAfterNote(note))
+                        log?.Report($"    RetryAfter persistente — skip {zone}");
+                    break;
+                }
+
+                var cont = CloudKitResponseParser.TryExtractRecordSyncContinuation(payload);
+                var stringMore = CloudKitResponseParser.ExtractDiagnosticStrings(payload)
+                    .Any(static s => s.Contains("moreComing", StringComparison.OrdinalIgnoreCase));
+                var shouldContinue = cont.MoreComing
+                                     || (stringMore && cont.SyncContinuationToken is { Length: > 0 });
+                if (!shouldContinue || cont.SyncContinuationToken is not { Length: > 0 })
+                {
+                    if ((cont.MoreComing || stringMore) && cont.SyncContinuationToken is null)
+                        log?.Report("    moreComing senza token — stop");
+                    break;
+                }
+
+                if (token is not null
+                    && token.AsSpan().SequenceEqual(cont.SyncContinuationToken))
+                {
+                    log?.Report("    syncToken invariato — stop");
+                    break;
+                }
+
+                token = cont.SyncContinuationToken;
+                await Task.Delay(120, ct);
             }
         }
         catch (Exception ex)
@@ -528,7 +587,16 @@ public sealed class ICloudSyncDataProbeService
         || note.Contains("error", StringComparison.OrdinalIgnoreCase)
         || note.Contains("fail", StringComparison.OrdinalIgnoreCase)
         || note.Contains("forbidden", StringComparison.OrdinalIgnoreCase)
-        || note.Contains("unauthor", StringComparison.OrdinalIgnoreCase);
+        || note.Contains("unauthor", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("RetryAfter", StringComparison.OrdinalIgnoreCase)
+        || note.Contains("throttl", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsRetryAfterNote(string? note) =>
+        note is not null
+        && (note.Contains("RetryAfter", StringComparison.OrdinalIgnoreCase)
+            || note.Contains("retry after", StringComparison.OrdinalIgnoreCase)
+            || note.Contains("throttl", StringComparison.OrdinalIgnoreCase)
+            || note.Equals("retry", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsDefaultZoneName(string zone) =>
         string.Equals(zone, "_defaultZone", StringComparison.OrdinalIgnoreCase)
@@ -536,28 +604,23 @@ public sealed class ICloudSyncDataProbeService
         || string.Equals(zone, "defaultZone", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Zone custom su cui ha senso record/sync (no hex fingerprint, no token corti).
+    /// Zone sistema CloudKit: sync inutile / throttle (Messages metadata_zone → RetryAfter).
+    /// </summary>
+    private static bool IsCloudKitSystemZone(string zone) =>
+        zone.Equals("metadata_zone", StringComparison.OrdinalIgnoreCase)
+        || zone.Equals("com.apple.coredata.cloudkit.zone", StringComparison.OrdinalIgnoreCase)
+        || zone.Equals("com.apple.coredata.cloudkit.metadata", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Zone custom su cui ha senso record/sync (no hex fingerprint, no rumore binario).
     /// </summary>
     private static bool IsPlausibleCustomZone(string zone)
     {
-        if (string.IsNullOrWhiteSpace(zone) || IsDefaultZoneName(zone))
+        if (string.IsNullOrWhiteSpace(zone) || IsDefaultZoneName(zone) || IsCloudKitSystemZone(zone))
             return false;
         if (zone.Length >= 16 && zone.All(Uri.IsHexDigit))
             return false;
-        if (zone.Length <= 8
-            && zone.All(char.IsLetterOrDigit)
-            && !zone.Contains('.')
-            && zone.Any(char.IsDigit)
-            && zone.Any(char.IsLetter))
-            return false;
-        if (zone.Contains('.')
-            || zone.EndsWith("Zone", StringComparison.OrdinalIgnoreCase)
-            || zone.EndsWith("_zone", StringComparison.OrdinalIgnoreCase)
-            || zone.Equals("PrimarySync", StringComparison.OrdinalIgnoreCase)
-            || zone.StartsWith("CD_", StringComparison.OrdinalIgnoreCase)
-            || zone.StartsWith("metadata", StringComparison.OrdinalIgnoreCase))
-            return true;
-        return zone.Length >= 9 && zone.Any(char.IsLetter);
+        return WhatsAppCloudKitProbeService.LooksLikeRealZoneName(zone);
     }
 
     private static string ShortContainerName(string containerId)

@@ -163,6 +163,7 @@ public partial class MainWindow : Window
         LogAuth($"Anisette: {AnisetteProviderFactory.ResolveServerUrl()} | mode: {AnisetteProviderFactory.ResolveAuthMode()}");
         LogAuth($"  config: {AnisetteProviderFactory.SettingsFilePath}");
         Loaded += MainWindow_Loaded;
+        ApplyResponsiveLayout(ActualWidth, ActualHeight);
         HookRichLogResize(DownloadInfoLogBox);
         HookRichLogResize(DownloadWarningLogBox);
         HookRichLogResize(DownloadErrorLogBox);
@@ -415,8 +416,85 @@ public partial class MainWindow : Window
             DownloadStatusText.Text = _lastDownloadProgressStatus;
     }
 
+    private bool _workAreaStacked;
+
+    private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ApplyResponsiveLayout(e.NewSize.Width, e.NewSize.Height);
+    }
+
+    /// <summary>
+    /// Adatta layout a larghezze/altezze ridotte: pannello sessione sotto le tab,
+    /// blob di sfondo e tipografia header.
+    /// </summary>
+    private void ApplyResponsiveLayout(double width, double height)
+    {
+        if (WorkAreaGrid is null || SideSessionPanel is null)
+            return;
+
+        // Stack side panel under tabs when the content area is too narrow for both.
+        var stack = width < 1120;
+        if (stack != _workAreaStacked)
+        {
+            _workAreaStacked = stack;
+            if (stack)
+            {
+                WorkGapCol.Width = new GridLength(0);
+                WorkSideCol.Width = new GridLength(0);
+                WorkStackGapRow.Height = new GridLength(10);
+                Grid.SetRow(MainTabControl, 0);
+                Grid.SetColumn(MainTabControl, 0);
+                Grid.SetColumnSpan(MainTabControl, 3);
+                Grid.SetRow(SideSessionPanel, 2);
+                Grid.SetColumn(SideSessionPanel, 0);
+                Grid.SetColumnSpan(SideSessionPanel, 3);
+            }
+            else
+            {
+                WorkGapCol.Width = new GridLength(12);
+                WorkSideCol.Width = new GridLength(320);
+                WorkStackGapRow.Height = new GridLength(0);
+                WorkSideRow.Height = new GridLength(0);
+                Grid.SetRow(MainTabControl, 0);
+                Grid.SetColumn(MainTabControl, 0);
+                Grid.SetColumnSpan(MainTabControl, 1);
+                Grid.SetRow(SideSessionPanel, 0);
+                Grid.SetColumn(SideSessionPanel, 2);
+                Grid.SetColumnSpan(SideSessionPanel, 1);
+            }
+        }
+
+        if (_workAreaStacked)
+            WorkSideRow.Height = new GridLength(height < 700 ? 180 : 220);
+
+        if (HeaderTitleText is not null)
+            HeaderTitleText.FontSize = width < 980 ? 20 : 26;
+        if (HeaderSubtitleText is not null)
+            HeaderSubtitleText.Visibility = width < 900 ? Visibility.Collapsed : Visibility.Visible;
+
+        LayoutBackgroundBlobs(width, height);
+    }
+
+    private void LayoutBackgroundBlobs(double width, double height)
+    {
+        if (BlobA is null)
+            return;
+
+        var w = Math.Max(width, 640);
+        var h = Math.Max(height, 480);
+        Canvas.SetLeft(BlobA, -80);
+        Canvas.SetTop(BlobA, -120);
+        Canvas.SetLeft(BlobB, Math.Max(40, w - 420));
+        Canvas.SetTop(BlobB, 20);
+        Canvas.SetLeft(BlobC, w * 0.18);
+        Canvas.SetTop(BlobC, Math.Max(120, h - 340));
+        Canvas.SetLeft(BlobD, w * 0.48);
+        Canvas.SetTop(BlobD, Math.Max(80, h * 0.52));
+    }
+
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        ApplyResponsiveLayout(ActualWidth, ActualHeight);
         try
         {
             await EnsureAuthProfileAsync().ConfigureAwait(true);
@@ -4346,8 +4424,9 @@ public partial class MainWindow : Window
 
         // Elenco: recuperabili vs «(presto)».
         SyncDataServicesHintText.Text =
-            "Attivi: Photos, Account Info, Voice Memos, Calls; le altre sono in arrivo (presto). " +
-            "Calls richiede Phone & FaceTime in iCloud sul device e Unlock Escrow/Octagon per PCS.";
+            "Attivi: Photos, Account Info, Voice Memos, Calls, Messages; le altre sono in arrivo (presto). " +
+            "Calls: Phone & FaceTime in iCloud + Escrow/Octagon. " +
+            "Messages: sync CloudKit + tentativo MMCS su content.icloud.com (come Voice Memos) se ci sono ckAsset.";
 
         foreach (var cat in SyncDataCategoryCatalog.All)
         {

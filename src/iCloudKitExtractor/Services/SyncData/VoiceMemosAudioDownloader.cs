@@ -10,17 +10,42 @@ using iCloudKitExtractor.Services.Http;
 namespace iCloudKitExtractor.Services.SyncData;
 
 /// <summary>
-/// Download audio Voice Memos: Asset <c>CD_versionedAudioFuture_ckAsset</c>
-/// → authorizeGet MMCS → edge GET → unwrap wrap24 + KEK zone PCS → file audio.
+/// Download CKAsset via MMCS (<c>…-content.icloud.com</c> / gateway content):
+/// authorizeGet → edge GET → unwrap wrap + KEK zone PCS.
+/// Usato da Voice Memos (audio) e Messages (allegati / blob).
 /// </summary>
 public sealed class VoiceMemosAudioDownloader
 {
     public const string ContainerId = "com.apple.VoiceMemosContainer";
+    public const string MessagesContainerId = "com.apple.messages.cloud";
     public const string SyncZone = "com.apple.coredata.cloudkit.zone";
 
     private readonly HttpClient _http;
 
+    /// <summary>CloudKit container per header authorizeGet / edge.</summary>
+    public string TargetContainerId { get; init; } = ContainerId;
+
+    /// <summary>Zona preferita (può essere sovrascritta da zone trovate in cartella).</summary>
+    public string TargetZone { get; init; } = SyncZone;
+
+    public string LogTag { get; init; } = "VoiceMemos MMCS";
+
+    /// <summary>Sottocartella output (es. <c>audio</c>, <c>mmcs_assets</c>).</summary>
+    public string OutputSubdirectory { get; init; } = "audio";
+
+    /// <summary>Se true, prova a etichettare gli asset con titoli Voice Memos.</summary>
+    public bool UseVoiceMemoTitles { get; init; } = true;
+
     public VoiceMemosAudioDownloader(HttpClient http) => _http = http;
+
+    public static VoiceMemosAudioDownloader ForMessages(HttpClient http) => new(http)
+    {
+        TargetContainerId = MessagesContainerId,
+        TargetZone = SyncZone,
+        LogTag = "Messages MMCS",
+        OutputSubdirectory = "mmcs_assets",
+        UseVoiceMemoTitles = false,
+    };
 
     public async Task<int> DownloadAsync(
         ICloudSession session,
@@ -30,18 +55,20 @@ public sealed class VoiceMemosAudioDownloader
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
         {
-            log?.Report("  VoiceMemos MMCS: DSID assente");
+            log?.Report($"  {LogTag}: DSID assente");
             return 0;
         }
 
         var syncFiles = Directory.GetFiles(containerDirectory, "record_sync_*.bin");
         if (syncFiles.Length == 0)
         {
-            log?.Report("  VoiceMemos MMCS: nessun record_sync");
+            log?.Report($"  {LogTag}: nessun record_sync");
             return 0;
         }
 
-        var titles = LoadTitles(containerDirectory);
+        var titles = UseVoiceMemoTitles
+            ? LoadTitles(containerDirectory)
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var assets = new List<(CloudKitAssetProto.ParsedAsset Asset, string? Title)>();
         foreach (var sf in syncFiles)
         {
@@ -62,18 +89,20 @@ public sealed class VoiceMemosAudioDownloader
 
         if (assets.Count == 0)
         {
-            log?.Report("  VoiceMemos MMCS: nessun ckAsset con auth/signature");
+            log?.Report($"  {LogTag}: nessun ckAsset con auth/signature (solo metadata sync?)");
             return 0;
         }
 
-        log?.Report($"  VoiceMemos MMCS: {assets.Count} audio asset…");
+        var zone = ResolveZone(containerDirectory, TargetZone);
+        log?.Report(
+            $"  {LogTag}: {assets.Count} asset, container={TargetContainerId}, zone={zone}…");
 
         var kekPool = BuildKekPool(session, containerDirectory, log);
         if (kekPool.Count == 0)
-            log?.Report("  VoiceMemos MMCS: KEK pool vuoto — scarico ciphertext, decrypt forse fallisce");
+            log?.Report($"  {LogTag}: KEK pool vuoto — scarico ciphertext, decrypt forse fallisce");
 
-        var audioDir = Path.Combine(containerDirectory, "audio");
-        Directory.CreateDirectory(audioDir);
+        var outDir = Path.Combine(containerDirectory, OutputSubdirectory);
+        Directory.CreateDirectory(outDir);
         var ok = 0;
         var i = 0;
         foreach (var (asset, title) in assets)
@@ -84,13 +113,13 @@ public sealed class VoiceMemosAudioDownloader
                 ? $"asset{i}"
                 : title.Trim();
             log?.Report(
-                $"  VoiceMemos MMCS {i}/{assets.Count}: «{label}» " +
+                $"  {LogTag} {i}/{assets.Count}: «{label}» " +
                 $"({asset.SizeBytes?.ToString("N0") ?? "?"} B)…");
 
             try
             {
                 if (await TryDownloadOneAsync(
-                        session, asset, label, audioDir, kekPool, log, ct)
+                        session, asset, label, outDir, kekPool, zone, log, ct)
                     .ConfigureAwait(false))
                     ok++;
             }
@@ -100,8 +129,38 @@ public sealed class VoiceMemosAudioDownloader
             }
         }
 
-        log?.Report($"  VoiceMemos MMCS: {ok}/{assets.Count} → {audioDir}");
+        log?.Report($"  {LogTag}: {ok}/{assets.Count} → {outDir}");
         return ok;
+    }
+
+    private static string ResolveZone(string containerDirectory, string fallback)
+    {
+        // Prefer coredata zone if any record_sync / zones file mentions it.
+        foreach (var f in Directory.EnumerateFiles(containerDirectory, "record_sync_*.bin")
+                     .Concat(Directory.EnumerateFiles(containerDirectory, "zones_*.bin")))
+        {
+            var name = Path.GetFileNameWithoutExtension(f);
+            if (name.Contains("coredata.cloudkit.zone", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("coredata_cloudkit_zone", StringComparison.OrdinalIgnoreCase))
+                return SyncZone;
+        }
+
+        // First custom zone from zones_*.bin filename: zones_{zone}.bin
+        foreach (var f in Directory.EnumerateFiles(containerDirectory, "zones_*.bin"))
+        {
+            var name = Path.GetFileNameWithoutExtension(f);
+            if (name.StartsWith("zones_", StringComparison.OrdinalIgnoreCase)
+                && name.Length > 6)
+            {
+                var z = name["zones_".Length..];
+                if (!string.Equals(z, "default", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(z, "_defaultZone", StringComparison.OrdinalIgnoreCase)
+                    && z.Length >= 3)
+                    return z;
+            }
+        }
+
+        return fallback;
     }
 
     private async Task<bool> TryDownloadOneAsync(
@@ -110,6 +169,7 @@ public sealed class VoiceMemosAudioDownloader
         string label,
         string audioDir,
         List<byte[]> kekPool,
+        string zone,
         IProgress<string>? log,
         CancellationToken ct)
     {
@@ -134,7 +194,7 @@ public sealed class VoiceMemosAudioDownloader
         {
             try
             {
-                var (body, status) = await AuthorizeGetAsync(session, host, mmcsAuth, ct)
+                var (body, status) = await AuthorizeGetAsync(session, host, mmcsAuth, zone, ct)
                     .ConfigureAwait(false);
                 statuses.Add($"{TryHost(host)}→{status}");
                 if (body is not { Length: > 0 })
@@ -187,7 +247,7 @@ public sealed class VoiceMemosAudioDownloader
                 ct)
             .ConfigureAwait(false);
 
-        var edgeErr = await TryDownloadWithEdgeVariantsAsync(ctPath, chunks, log, ct)
+        var edgeErr = await TryDownloadWithEdgeVariantsAsync(ctPath, chunks, zone, log, ct)
             .ConfigureAwait(false);
         if (edgeErr is not null)
         {
@@ -200,10 +260,11 @@ public sealed class VoiceMemosAudioDownloader
         if (plain is null)
         {
             log?.Report($"    scaricato {cipher.Length:N0} B ciphertext — decrypt: {reason}");
+            // Per Messages teniamo il .ct: utile per analisi offline anche senza KEK.
             return false;
         }
 
-        var ext = GuessAudioExtension(plain);
+        var ext = GuessPayloadExtension(plain);
         var outPath = Path.Combine(audioDir, token + ext);
         if (File.Exists(outPath))
             outPath = Path.Combine(
@@ -227,6 +288,7 @@ public sealed class VoiceMemosAudioDownloader
         ICloudSession session,
         string contentHost,
         string mmcsAuth,
+        string zone,
         CancellationToken ct)
     {
         var url = $"{contentHost.TrimEnd('/')}/{session.Dsid}/authorizeGet";
@@ -239,8 +301,8 @@ public sealed class VoiceMemosAudioDownloader
         request.Headers.TryAddWithoutValidation("x-apple-mme-dsid", session.Dsid);
         request.Headers.TryAddWithoutValidation("x-apple-mmcs-proto-version", "4.0");
         request.Headers.TryAddWithoutValidation("x-apple-mmcs-dataclass", "com.apple.Dataclass.CloudKit");
-        request.Headers.TryAddWithoutValidation("X-CloudKit-Container", ContainerId);
-        request.Headers.TryAddWithoutValidation("X-CloudKit-Zones", SyncZone);
+        request.Headers.TryAddWithoutValidation("X-CloudKit-Container", TargetContainerId);
+        request.Headers.TryAddWithoutValidation("X-CloudKit-Zones", zone);
         request.Headers.TryAddWithoutValidation("x-apple-mmcs-auth", mmcsAuth);
         // Come Photos: CloudKitDaemon su content edge → 403. Serve icloud.content.
         request.Headers.TryAddWithoutValidation("User-Agent", AppleClientInfo.PhotosMmcsUserAgent);
@@ -277,6 +339,7 @@ public sealed class VoiceMemosAudioDownloader
     private async Task<string?> TryDownloadWithEdgeVariantsAsync(
         string outputFile,
         IReadOnlyList<SignedUrlChunk> chunks,
+        string zone,
         IProgress<string>? log,
         CancellationToken ct)
     {
@@ -305,7 +368,8 @@ public sealed class VoiceMemosAudioDownloader
                         chunks,
                         ct,
                         attempt,
-                        includeTryCache)
+                        includeTryCache,
+                        zone)
                     .ConfigureAwait(false);
                 if (attempt.Name is not "minimal+range" and not "photos+range")
                     log?.Report($"    edge GET OK via {attempt.Name}");
@@ -329,7 +393,8 @@ public sealed class VoiceMemosAudioDownloader
         IReadOnlyList<SignedUrlChunk> chunks,
         CancellationToken ct,
         EdgeAttempt attempt,
-        bool includeTryCache)
+        bool includeTryCache,
+        string zone)
     {
         var tmp = outputFile + ".partial";
         try
@@ -354,7 +419,7 @@ public sealed class VoiceMemosAudioDownloader
                         && range.End >= range.Start)
                         request.Headers.Range = new RangeHeaderValue(range.Start, range.End);
 
-                    ApplyVmEdgeHeaders(request, chunk.EdgeHeaders, attempt.Mode, includeTryCache);
+                    ApplyVmEdgeHeaders(request, chunk.EdgeHeaders, attempt.Mode, includeTryCache, zone);
 
                     using var response = await _http
                         .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
@@ -402,11 +467,12 @@ public sealed class VoiceMemosAudioDownloader
         }
     }
 
-    private static void ApplyVmEdgeHeaders(
+    private void ApplyVmEdgeHeaders(
         HttpRequestMessage request,
         EdgeDownloadHeaders? headers,
         EdgeHeaderMode mode,
-        bool includeTryCache)
+        bool includeTryCache,
+        string zone)
     {
         if (mode == EdgeHeaderMode.MinimalSigned)
         {
@@ -422,8 +488,8 @@ public sealed class VoiceMemosAudioDownloader
         BackupDownloadService.ApplyEdgeHeaders(
             request,
             headers,
-            cloudKitContainer: ContainerId,
-            cloudKitZone: SyncZone,
+            cloudKitContainer: TargetContainerId,
+            cloudKitZone: zone,
             includeTryCache: includeTryCache);
 
         request.Headers.Remove("X-MMe-Client-Info");
@@ -567,7 +633,7 @@ public sealed class VoiceMemosAudioDownloader
         }
     }
 
-    private static List<byte[]> BuildKekPool(
+    private List<byte[]> BuildKekPool(
         ICloudSession session,
         string containerDirectory,
         IProgress<string>? log)
@@ -636,7 +702,7 @@ public sealed class VoiceMemosAudioDownloader
             }
         }
 
-        log?.Report($"  VoiceMemos MMCS: KEK candidates={pool.Count} (zones={zones.Count})");
+        log?.Report($"  {LogTag}: KEK candidates={pool.Count} (zones={zones.Count})");
         return pool;
     }
 
@@ -705,7 +771,7 @@ public sealed class VoiceMemosAudioDownloader
         return -1;
     }
 
-    private static string GuessAudioExtension(byte[] plain)
+    private static string GuessPayloadExtension(byte[] plain)
     {
         if (plain.Length >= 12
             && plain[4] == (byte)'f'
@@ -725,6 +791,38 @@ public sealed class VoiceMemosAudioDownloader
             && plain[2] == (byte)'F'
             && plain[3] == (byte)'F')
             return ".wav";
+        if (plain.Length >= 3
+            && plain[0] == 0xFF
+            && plain[1] == 0xD8
+            && plain[2] == 0xFF)
+            return ".jpg";
+        if (plain.Length >= 8
+            && plain[0] == 0x89
+            && plain[1] == (byte)'P'
+            && plain[2] == (byte)'N'
+            && plain[3] == (byte)'G')
+            return ".png";
+        if (plain.Length >= 12
+            && plain[4] == (byte)'f'
+            && plain[5] == (byte)'t'
+            && plain[6] == (byte)'y'
+            && plain[7] == (byte)'p'
+            && (plain.AsSpan(8, 4).SequenceEqual("heic"u8)
+                || plain.AsSpan(8, 4).SequenceEqual("mif1"u8)
+                || plain.AsSpan(8, 4).SequenceEqual("msf1"u8)))
+            return ".heic";
+        if (plain.Length >= 5
+            && plain[0] == (byte)'%'
+            && plain[1] == (byte)'P'
+            && plain[2] == (byte)'D'
+            && plain[3] == (byte)'F')
+            return ".pdf";
+        if (plain.Length >= 4
+            && plain[0] == (byte)'P'
+            && plain[1] == (byte)'K'
+            && plain[2] == 0x03
+            && plain[3] == 0x04)
+            return ".zip";
         return ".bin";
     }
 
@@ -735,7 +833,7 @@ public sealed class VoiceMemosAudioDownloader
             sb.Append(char.IsLetterOrDigit(c) || c is '-' or '_' or ' ' ? c : '_');
         var s = sb.ToString().Trim();
         if (s.Length == 0)
-            return "memo";
+            return "asset";
         return s.Length > 60 ? s[..60].Trim() : s;
     }
 

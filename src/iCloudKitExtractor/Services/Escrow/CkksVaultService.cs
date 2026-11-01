@@ -42,11 +42,12 @@ public sealed record CkksVaultOpenResult(
 public sealed class CkksVaultService
 {
     /// <summary>
-    /// Manatee + PCS → chiavi account-wide; <c>Passwords</c> → login web (srvr/acct/v_Data);
-    /// LimitedPeersAllowed → altri vault.
+    /// Manatee + Engram → PCS (Messages/iMessage Manatee zones); PCS → Drive/ADP;
+    /// <c>Passwords</c> → login web; LimitedPeersAllowed → altri vault.
+    /// Engram è obbligatorio per <c>com.apple.messages.cloud</c> (HITB 2018 / CKKS PCS).
     /// </summary>
     public static readonly string[] DefaultViews =
-        ["Manatee", "ProtectedCloudStorage", "LimitedPeersAllowed", "Passwords"];
+        ["Manatee", "Engram", "ProtectedCloudStorage", "LimitedPeersAllowed", "Passwords"];
 
     private const int MaxSyncPages = 100;
 
@@ -829,7 +830,7 @@ public sealed class CkksVaultService
 
     /// <summary>
     /// Estrae PCS private keys reali (DER PCSPrivateKey / KeySet) da item
-    /// <c>com.apple.ProtectedCloudStorage</c> nelle view Manatee/PCS.
+    /// <c>com.apple.ProtectedCloudStorage</c> nelle view Manatee/Engram/PCS.
     /// Niente sliding-window: produceva centinaia di falsi positivi.
     /// </summary>
     private static List<PcsCompactPrivateKey> ExtractPcsFromItem(CkksVaultItem item)
@@ -842,10 +843,12 @@ public sealed class CkksVaultService
         var vwht = AsString(item.Attrs, "vwht") ?? "";
         var interesting =
             item.View.Equals("Manatee", StringComparison.OrdinalIgnoreCase)
+            || item.View.Equals("Engram", StringComparison.OrdinalIgnoreCase)
             || item.View.Equals("ProtectedCloudStorage", StringComparison.OrdinalIgnoreCase)
             || agrp.Equals("com.apple.ProtectedCloudStorage", StringComparison.OrdinalIgnoreCase)
             || sdmn.Equals("ProtectedCloudStorage", StringComparison.OrdinalIgnoreCase)
             || vwht.Equals("Manatee", StringComparison.OrdinalIgnoreCase)
+            || vwht.Equals("Engram", StringComparison.OrdinalIgnoreCase)
             || vwht.Equals("PCS-MasterKey", StringComparison.OrdinalIgnoreCase)
             || item.PcsService is not null
             || item.PcsPublicKey is { Length: > 0 };

@@ -367,7 +367,7 @@
                 <Setter Property="BorderBrush" Value="Transparent"/>
                 <Setter Property="BorderThickness" Value="0"/>
                 <Setter Property="Padding" Value="12,10"/>
-                <Setter Property="MinHeight" Value="240"/>
+                <Setter Property="MinHeight" Value="96"/>
                 <Setter Property="VerticalAlignment" Value="Stretch"/>
                 <Setter Property="VerticalContentAlignment" Value="Top"/>
                 <Setter Property="AcceptsReturn" Value="True"/>
@@ -410,7 +410,7 @@
                 <Setter Property="BorderThickness" Value="0"/>
                 <!-- Padding sul RTB clippa la scrollbar: usiamo solo PagePadding sul FlowDocument. -->
                 <Setter Property="Padding" Value="0"/>
-                <Setter Property="MinHeight" Value="200"/>
+                <Setter Property="MinHeight" Value="96"/>
                 <Setter Property="VerticalAlignment" Value="Stretch"/>
                 <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
                 <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
@@ -611,7 +611,12 @@
                                         Padding="4"
                                         Margin="0,0,0,14"
                                         Effect="{StaticResource SoftShadow}">
-                                    <TabPanel IsItemsHost="True" Background="Transparent"/>
+                                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                                  VerticalScrollBarVisibility="Disabled"
+                                                  CanContentScroll="False"
+                                                  Padding="0">
+                                        <TabPanel IsItemsHost="True" Background="Transparent"/>
+                                    </ScrollViewer>
                                 </Border>
                                 <Border Grid.Row="1"
                                         Background="{StaticResource SurfaceBrush}"
@@ -633,8 +638,8 @@
                 <Setter Property="FontSize" Value="13"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="Foreground" Value="{StaticResource MutedInkBrush}"/>
-                <Setter Property="Padding" Value="16,9"/>
-                <Setter Property="Margin" Value="2,0"/>
+                <Setter Property="Padding" Value="12,8"/>
+                <Setter Property="Margin" Value="1,0"/>
                 <Setter Property="Cursor" Value="Hand"/>
                 <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
                 <Setter Property="Template">

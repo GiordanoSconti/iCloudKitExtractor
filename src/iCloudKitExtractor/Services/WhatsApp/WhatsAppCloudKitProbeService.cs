@@ -265,15 +265,13 @@ public sealed class WhatsAppCloudKitProbeService
         foreach (var raw in strings)
         {
             var s = NormalizeZoneName(raw);
-            if (s.Length is < 2 or > 128)
+            if (!LooksLikeRealZoneName(s))
                 continue;
             if (IsDefaultZone(s))
                 continue;
             if (s.StartsWith('_') && s.Length == 33 && s.Skip(1).All(Uri.IsHexDigit))
                 continue; // owner / ck user
             if (GuidLike.IsMatch(s))
-                continue;
-            if (s.Contains(' ', StringComparison.Ordinal))
                 continue;
             if (s.Contains("error", StringComparison.OrdinalIgnoreCase)
                 || s.Contains("not exist", StringComparison.OrdinalIgnoreCase)
@@ -283,23 +281,59 @@ public sealed class WhatsAppCloudKitProbeService
                 continue;
             if (s is "SUCCESS" or "FAILURE" or "PARTIAL" or "Production")
                 continue;
-            if (s.Contains("Zone", StringComparison.OrdinalIgnoreCase)
-                || s.StartsWith('_')
-                || s.Contains('.', StringComparison.Ordinal)
-                || s.All(static c => char.IsLetterOrDigit(c) || c is '-' or '_' or '~'))
-            {
-                if (s.StartsWith("CKD", StringComparison.Ordinal))
-                    continue;
-                yield return s;
-            }
+            if (s.StartsWith("CKD", StringComparison.Ordinal))
+                continue;
+            yield return s;
         }
+    }
+
+    /// <summary>
+    /// Nome zona CloudKit plausibile (Messages/Drive/…). Scarta rumore binario
+    /// tipo <c>.91qX&gt;</c>, <c>GE{'{'}.</c>, <c>3u.q</c>.
+    /// </summary>
+    internal static bool LooksLikeRealZoneName(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s) || s.Length is < 3 or > 128)
+            return false;
+        if (s.Contains(' ', StringComparison.Ordinal) || s.Contains('\t'))
+            return false;
+        // Solo identifier-safe (niente { } < > # ecc.)
+        if (!s.All(static c => char.IsLetterOrDigit(c) || c is '.' or '_' or '-' or '~'))
+            return false;
+        // Deve contenere almeno una lettera.
+        if (!s.Any(char.IsLetter))
+            return false;
+
+        if (s.EndsWith("Zone", StringComparison.OrdinalIgnoreCase)
+            || s.EndsWith("_zone", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("metadata_zone", StringComparison.OrdinalIgnoreCase)
+            || s.StartsWith("CD_", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("PrimarySync", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // reverse-DNS: com.apple.… / bundle-style — segmenti alfanumerici, ≥2 punti.
+        if (s.Contains('.', StringComparison.Ordinal))
+        {
+            var parts = s.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+                return false;
+            if (!parts.All(static p => p.Length > 0 && p.All(char.IsLetterOrDigit)))
+                return false;
+            // Evita "3u.q" / "xO.Z": serve almeno un segmento ≥3 con lettere.
+            return parts.Any(static p => p.Length >= 3 && p.Any(char.IsLetter))
+                   && s.Length >= 8;
+        }
+
+        // Alfanumerico lungo senza punteggiatura (es. BeaconStore).
+        return s.Length >= 10
+               && s.All(static c => char.IsLetterOrDigit(c) || c is '-' or '_' or '~');
     }
 
     internal static string NormalizeZoneName(string raw)
     {
         var s = raw.Trim();
-        // Prefissi wire tipici: !owner, $uuid, &zone, spazi spurii dal scanner ASCII.
-        while (s.Length > 0 && s[0] is '!' or '$' or '&' or ' ' or '\t')
+        // Prefissi wire tipici: !owner, $uuid, &zone, #deleted-marker, spazi spurii.
+        while (s.Length > 0 && s[0] is '!' or '$' or '&' or '#' or ' ' or '\t')
             s = s[1..].TrimStart();
         return s;
     }

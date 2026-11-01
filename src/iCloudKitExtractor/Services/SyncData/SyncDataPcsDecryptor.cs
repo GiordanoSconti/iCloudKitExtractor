@@ -28,7 +28,8 @@ public static class SyncDataPcsDecryptor
         byte[] recordSyncPayload,
         string outputDirectory,
         string? containerHint = null,
-        IProgress<string>? log = null)
+        IProgress<string>? log = null,
+        string? zoneNameHint = null)
     {
         if (recordSyncPayload is not { Length: > 64 })
             return new DecryptSummary(0, 0, 0, "payload vuoto");
@@ -105,19 +106,18 @@ public static class SyncDataPcsDecryptor
         if (zones.Count == 0)
         {
             // Se nessuna PublicX del KeySet compare in zone/sync, il grind per-field
-            // è inutile (tipico BeaconStore/Manatee: identità CKKS fuori da Escrow).
+            // è inutile (tipico BeaconStore/Messages: identità CKKS fuori da Escrow).
             var publicHits = CountPublicXHits(zonesPayload, recordSyncPayload, seedKeys);
             if (publicHits == 0)
             {
+                var hint = PcsBlockedHint(containerHint);
                 log?.Report(
-                    "  PCS: nessun PublicX (Escrow/Manatee) nel payload " +
-                    "(zoneKeys=0, publicHits=0) — skip decrypt campi. " +
-                    "BeaconStore richiede CKKS OpenVault → view Manatee (PCS service 82).");
+                    "  PCS: nessun PublicX (Escrow/Manatee/Engram) nel payload " +
+                    $"(zoneKeys=0, publicHits=0) — skip decrypt campi. {hint}");
                 Directory.CreateDirectory(outputDirectory);
                 File.WriteAllText(
                     Path.Combine(outputDirectory, "decrypt_blocked.txt"),
-                    "zoneKeys=0 publicHits=0 — KeySet Escrow/Manatee non unwrapa ProtectionInfo. " +
-                    "Esegui Escrow OTBottle/Peer + CKKS OpenVault (Manatee).");
+                    "zoneKeys=0 publicHits=0 — seed PCS non unwrapa ProtectionInfo. " + hint);
                 return new DecryptSummary(
                     fields.Count, 0, 0,
                     $"bloccato: nessuna seed key matcha PI ({fields.Count} ciphertext)");
@@ -143,6 +143,12 @@ public static class SyncDataPcsDecryptor
         var total = flat.Count;
         var byName = flat.GroupBy(f => f.FieldName, StringComparer.Ordinal);
         var done = 0;
+        var consecutiveFail = 0;
+        var messagesContainer = !string.IsNullOrWhiteSpace(containerHint)
+            && containerHint.Contains("messages", StringComparison.OrdinalIgnoreCase);
+        // Messages: PI già unwrapped a livello zona — local PI ×230 seed è solo grind.
+        var skipLocal = keyToRecord.Count >= 16
+                        || (messagesContainer && zones.Count > 0);
         foreach (var group in byName)
         {
             var fieldName = group.Key;
@@ -163,7 +169,21 @@ public static class SyncDataPcsDecryptor
                         $"(ok={decrypted} fail={failed})");
                 }
 
-                var zoneHint = ZoneHintForContainer(containerHint);
+                // Con zoneKeys>0 ma 0 hit: AAD/recordName sbagliati — non bruciare 1600 campi.
+                if (zones.Count > 0 && consecutiveFail >= 24 && decrypted == 0)
+                {
+                    log?.Report(
+                        $"  PCS: abort dopo {consecutiveFail} fail consecutivi " +
+                        $"(zoneKeys={zones.Count}, 0 ok) — AAD/record name?");
+                    failed += total - done + 1;
+                    File.WriteAllLines(metaPath, lines);
+                    File.WriteAllLines(recordsPath, recordLines);
+                    return new DecryptSummary(
+                        fields.Count, 0, zones.Count,
+                        $"abort: 0 decrypt dopo {consecutiveFail} fail (zoneKeys={zones.Count})");
+                }
+
+                var zoneHint = zoneNameHint ?? ZoneHintForContainer(containerHint);
                 var nearName = ResolveRecordName(
                     recordSyncPayload, field.Offset, fieldName);
                 // Con keyToRecord già popolato dal full-PI scan (payload grandi),
@@ -178,14 +198,17 @@ public static class SyncDataPcsDecryptor
                     field.Offset,
                     zoneHint,
                     nearName,
-                    skipLocalPi: keyToRecord.Count >= 16,
+                    skipLocalPi: skipLocal,
                     keyToRecord: keyToRecord);
-                if (plain is not { Length: > 0 })
+                if (plain is null)
                 {
                     failInGroup++;
                     failed++;
+                    consecutiveFail++;
                     continue;
                 }
+
+                consecutiveFail = 0;
 
                 // Associazione CloudKit: il record è quello del PI la cui chiave apre
                 // il ciphertext — non il CPLMaster “più vicino” (sbaglia ~25% su CPL).
@@ -281,8 +304,10 @@ public static class SyncDataPcsDecryptor
             var tag = Path.GetFileNameWithoutExtension(sf);
             log?.Report($"  PCS file {i + 1}/{syncFiles.Length}: {tag} ({payload.Length:N0} B)");
             var outDir = Path.Combine(cryptoRoot, tag);
+            var zoneFromTag = TryParseZoneFromSyncTag(tag);
             var summary = DecryptPayload(
-                session, richestZones, payload, outDir, containerId, log);
+                session, richestZones, payload, outDir, containerId, log,
+                zoneNameHint: zoneFromTag);
             totalFields += summary.FieldCount;
             totalDecrypted += summary.DecryptedCount;
             maxZones = Math.Max(maxZones, summary.ZoneKeys);
@@ -529,7 +554,7 @@ public static class SyncDataPcsDecryptor
             foreach (var zone in localZones)
             {
                 var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
-                if (plain is { Length: > 0 })
+                if (plain is not null)
                     return (plain, zone);
             }
         }
@@ -543,7 +568,7 @@ public static class SyncDataPcsDecryptor
                 if (!ZoneMapsToRecord(keyToRecord, zone, recordName))
                     continue;
                 var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
-                if (plain is { Length: > 0 })
+                if (plain is not null)
                     return (plain, zone);
             }
         }
@@ -555,7 +580,7 @@ public static class SyncDataPcsDecryptor
                 && ZoneMapsToRecord(keyToRecord, zone, recordName))
                 continue; // già provata sopra
             var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
-            if (plain is { Length: > 0 })
+            if (plain is not null)
                 return (plain, zone);
         }
 
@@ -566,7 +591,7 @@ public static class SyncDataPcsDecryptor
             foreach (var zone in embedded)
             {
                 var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);
-                if (plain is { Length: > 0 })
+                if (plain is not null)
                     return (plain, zone);
             }
         }
@@ -577,8 +602,9 @@ public static class SyncDataPcsDecryptor
     private static byte[]? TryDecryptWithZone(
         ProtectionZoneKeys zone, byte[] ciphertext, string[] aadCandidates)
     {
+        // plain.Length==0 è successo GCM (campo vuoto) — non confondere con fail.
         var plain = PcsProtectionZone.TryDecryptField(zone, ciphertext, aadCandidates);
-        if (plain is { Length: > 0 })
+        if (plain is not null)
             return plain;
 
         // Fallback: stessa KDF su MasterKey (PCSKey 16 B) se DecryptKey non matcha key_id.
@@ -592,7 +618,7 @@ public static class SyncDataPcsDecryptor
                     Encoding.ASCII.GetBytes("encryption key key m"),
                     16);
                 plain = PcsProtectionZone.TryDecryptField(alt, ciphertext, aadCandidates);
-                if (plain is { Length: > 0 })
+                if (plain is not null)
                     return plain;
             }
             catch
@@ -662,11 +688,21 @@ public static class SyncDataPcsDecryptor
         var list = new List<string>();
 
         // Manatee / rustpush PCSEncryptor: "{zone}-{record}-{field}"
+        // Messages: record = "_"+32hex (MessageEncryptedV3).
+        void AddZoneRecordField(string zone, string record)
+        {
+            list.Add($"{zone}-{record}-{fieldName}");
+            if (record.StartsWith('_') && record.Length > 1)
+                list.Add($"{zone}-{record[1..]}-{fieldName}");
+        }
+
         if (!string.IsNullOrWhiteSpace(zoneName) && !string.IsNullOrWhiteSpace(recordName))
-            list.Add($"{zoneName}-{recordName}-{fieldName}");
+            AddZoneRecordField(zoneName, recordName);
         if (!string.IsNullOrWhiteSpace(recordName))
         {
             list.Add($"{recordName}-{fieldName}");
+            if (recordName.StartsWith('_') && recordName.Length > 1)
+                list.Add($"{recordName[1..]}-{fieldName}");
             // Zone di default Find My se non passata
             if (string.IsNullOrWhiteSpace(zoneName))
                 list.Add($"BeaconStore-{recordName}-{fieldName}");
@@ -690,6 +726,41 @@ public static class SyncDataPcsDecryptor
         return null;
     }
 
+    /// <summary>
+    /// <c>record_sync_messageManateeZone_p1</c> → <c>messageManateeZone</c>.
+    /// </summary>
+    private static string? TryParseZoneFromSyncTag(string tag)
+    {
+        const string prefix = "record_sync_";
+        if (!tag.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return null;
+        var rest = tag[prefix.Length..];
+        var pIdx = rest.LastIndexOf("_p", StringComparison.OrdinalIgnoreCase);
+        if (pIdx > 0
+            && pIdx + 2 < rest.Length
+            && rest[(pIdx + 2)..].All(char.IsDigit))
+            rest = rest[..pIdx];
+        return string.IsNullOrWhiteSpace(rest) ? null : rest;
+    }
+
+    private static string PcsBlockedHint(string? containerHint)
+    {
+        if (!string.IsNullOrWhiteSpace(containerHint)
+            && containerHint.Contains("messages", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Messages richiede CKKS OpenVault → view Engram + Manatee " +
+                   "(PCS identities per messageManateeZone/chatManateeZone).";
+        }
+
+        if (!string.IsNullOrWhiteSpace(containerHint)
+            && containerHint.Contains("searchparty", StringComparison.OrdinalIgnoreCase))
+        {
+            return "BeaconStore richiede CKKS OpenVault → view Manatee (PCS service 82).";
+        }
+
+        return "Esegui Escrow OTBottle/Peer + CKKS OpenVault (Manatee + Engram).";
+    }
+
     private static string? ResolveRecordName(byte[] payload, int fieldOffset, string fieldName)
     {
         var uuid = CplPhotosRecordParser.TryFindUuidForEncryptedField(
@@ -697,31 +768,64 @@ public static class SyncDataPcsDecryptor
         if (!string.IsNullOrWhiteSpace(uuid))
             return uuid;
 
-        // Fallback: GUID ASCII più vicino prima del campo (BeaconStore record names).
+        // Finestra prima del campo: GUID (BeaconStore) o "_"+32hex (Messages Manatee).
         var windowStart = Math.Max(0, fieldOffset - 1500);
         var windowLen = Math.Min(payload.Length - windowStart, fieldOffset - windowStart + 64);
-        if (windowLen < 36)
+        if (windowLen < 33)
             return null;
         var text = Encoding.ASCII.GetString(payload, windowStart, windowLen);
         string? best = null;
         var bestDist = int.MaxValue;
-        for (var i = 0; i + 36 <= text.Length; i++)
+
+        void Consider(int relativeIndex, int length)
         {
-            if (text[i + 8] != '-' || text[i + 13] != '-' || text[i + 18] != '-' || text[i + 23] != '-')
-                continue;
-            var cand = text.AsSpan(i, 36);
-            if (!LooksLikeGuid(cand))
-                continue;
-            var abs = windowStart + i;
+            var abs = windowStart + relativeIndex;
             var dist = fieldOffset - abs;
             if (dist < 0 || dist >= bestDist)
-                continue;
+                return;
             bestDist = dist;
-            best = cand.ToString();
+            best = text.Substring(relativeIndex, length);
+        }
+
+        for (var i = 0; i + 33 <= text.Length; i++)
+        {
+            // Messages MessageEncryptedV3: "_1f765d7f431869eb5832d3d65fc3eadd"
+            if (text[i] == '_' && i + 33 <= text.Length && LooksLikeHex32(text.AsSpan(i + 1, 32)))
+            {
+                // Evita match su coda di stringhe più lunghe: char prima non hex.
+                if (i > 0 && IsAsciiHex(text[i - 1]))
+                    continue;
+                Consider(i, 33);
+                continue;
+            }
+
+            if (i + 36 > text.Length)
+                continue;
+            if (text[i + 8] != '-' || text[i + 13] != '-' || text[i + 18] != '-' || text[i + 23] != '-')
+                continue;
+            if (!LooksLikeGuid(text.AsSpan(i, 36)))
+                continue;
+            Consider(i, 36);
         }
 
         return best;
     }
+
+    private static bool LooksLikeHex32(ReadOnlySpan<char> s)
+    {
+        if (s.Length != 32)
+            return false;
+        foreach (var c in s)
+        {
+            if (!IsAsciiHex(c))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsAsciiHex(char c) =>
+        c is (>= '0' and <= '9') or (>= 'a' and <= 'f') or (>= 'A' and <= 'F');
 
     private static bool LooksLikeGuid(ReadOnlySpan<char> s)
     {
@@ -868,6 +972,16 @@ public static class SyncDataPcsDecryptor
         if (containerId.Contains("CallHistory", StringComparison.OrdinalIgnoreCase)
             || containerId.Contains("callhistory", StringComparison.OrdinalIgnoreCase))
             return null; // niente filtro stretto finché non mappiamo i campi
+
+        if (containerId.Contains("messages", StringComparison.OrdinalIgnoreCase))
+        {
+            // HITB / CloudKit Messages: campi type=20 tipici in messageManateeZone.
+            return
+            [
+                "msgProto", "chatID", "dcId", "eCode", "flags", "guid",
+                "msgType", "sender", "svc", "time",
+            ];
+        }
 
         if (containerId.Contains("photos", StringComparison.OrdinalIgnoreCase))
         {

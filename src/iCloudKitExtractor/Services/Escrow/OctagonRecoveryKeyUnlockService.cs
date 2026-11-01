@@ -139,7 +139,8 @@ public sealed class OctagonRecoveryKeyUnlockService
             tlkByView, StringComparer.OrdinalIgnoreCase);
 
         // Solo view utili al decrypt RK → PCS/Keychain (no LimitedPeersAllowed noise).
-        var vaultViews = views ?? ["Manatee", "ProtectedCloudStorage", "Passwords"];
+        // Engram: identità PCS per Messages (messageManateeZone / chatManateeZone).
+        var vaultViews = views ?? ["Manatee", "Engram", "ProtectedCloudStorage", "Passwords"];
         var vaultDir = Path.Combine(outputDirectory, "ckks_vault");
         Directory.CreateDirectory(vaultDir);
         log?.Report($"  CKKS OpenVault ({tlkByView.Count} TLK, no re-fetch recoverable)…");
