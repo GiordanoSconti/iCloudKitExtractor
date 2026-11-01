@@ -162,7 +162,9 @@ Temporary public preview endpoint (leave the IKE **License** field empty on firs
 
 **https://www.icloudkitextractor.eu**
 
-> **Status — connectivity in preparation.** Reachability from the public Internet is being wired through **Cloudflare Tunnel** (see below). Until that path is live, the URL may time out from outside the lab LAN / when the ISP blocks inbound ports (CGNAT). Prefer self-host or contact for access if the preview is down.
+> **Status — currently active and running.** Published via **Cloudflare Tunnel** (see below). Prefer self-host or contact for access if the preview is temporarily down.
+
+> **Note — VPN / institutional access.** A **manual authorization** flow was added for VPNs recognized as institutions / universities: when such a network is detected, the operator can **allow** controlled access for subsequent requests or **deny** it. Commercial / anonymous VPNs remain subject to the acceptable-use rules below.
 
 #### How the preview is published (Cloudflare Tunnel)
 
