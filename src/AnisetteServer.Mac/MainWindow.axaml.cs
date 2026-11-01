@@ -227,11 +227,24 @@ public partial class MainWindow : Window
     private void SaveVpnAllow_OnClick(object? sender, RoutedEventArgs e)
     {
         CaptureSettingsFromUi();
+        var rawLines = (VpnAllowBox.Text ?? "")
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var skippedGeneric = rawLines.Count(l =>
+            !l.StartsWith('#')
+            && VpnHintProbe.IsGenericConsentToken(l)
+            && !VpnHintProbe.LooksLikeIpLiteral(l));
         _host.VpnConsent.SetAllowedFromText(VpnAllowBox.Text);
         _host.VpnConsent.SetRequireConsent(_settings.RequireVpnConsent);
         _settings.VpnConsentAllow = _host.VpnConsent.AllowedPatterns.ToList();
         _settings.Save();
-        StatusText.Text = $"VPN allowlist saved ({_settings.VpnConsentAllow.Count} pattern(s))";
+        VpnAllowBox.Text = string.Join(Environment.NewLine, _settings.VpnConsentAllow);
+        StatusText.Text = skippedGeneric > 0
+            ? $"VPN allowlist saved ({_settings.VpnConsentAllow.Count} entry(ies); skipped {skippedGeneric} generic token(s) — use IPs instead)"
+            : $"VPN allowlist saved ({_settings.VpnConsentAllow.Count} entry(ies))";
+        if (skippedGeneric > 0)
+            ErrorText.Text = "Generic tokens (proxy/vpn/…) were not saved. Add the client IP instead.";
+        else
+            ErrorText.Text = "";
         RefreshVpnConsentUi();
     }
 
@@ -246,16 +259,26 @@ public partial class MainWindow : Window
 
         var row = _connectionRows[i];
         var pattern = VpnHintProbe.SuggestConsentPattern(row.VpnHint, row.ClientIp);
-        if (_host.VpnConsent.TryAllow(pattern))
+        ApplyVpnAllow(pattern, preferIpFallback: row.ClientIp);
+    }
+
+    private void AllowSelectedVpnIp_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var i = ConnectionList.SelectedIndex;
+        if (i < 0 || i >= _connectionRows.Count)
         {
-            _settings.VpnConsentAllow = _host.VpnConsent.AllowedPatterns.ToList();
-            _settings.Save();
-            VpnAllowBox.Text = string.Join(Environment.NewLine, _settings.VpnConsentAllow);
-            StatusText.Text = $"VPN allowed: {pattern}";
-            ErrorText.Text = "";
+            ErrorText.Text = "Select a connection row first.";
+            return;
         }
 
-        RefreshVpnConsentUi();
+        var ip = VpnHintProbe.SuggestIpPattern(_connectionRows[i].ClientIp);
+        if (string.IsNullOrEmpty(ip))
+        {
+            ErrorText.Text = "Selected connection has no usable client IP.";
+            return;
+        }
+
+        ApplyVpnAllow(ip, preferIpFallback: null);
     }
 
     private void AllowPendingVpn_OnClick(object? sender, RoutedEventArgs e)
@@ -267,14 +290,58 @@ public partial class MainWindow : Window
             return;
         }
 
-        var pattern = _vpnPendingRows[i].SuggestedPattern;
+        var row = _vpnPendingRows[i];
+        ApplyVpnAllow(row.SuggestedPattern, preferIpFallback: row.ClientIp);
+    }
+
+    private void AllowPendingVpnIp_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var i = VpnPendingList.SelectedIndex;
+        if (i < 0 || i >= _vpnPendingRows.Count)
+        {
+            ErrorText.Text = "Select a pending VPN first.";
+            return;
+        }
+
+        var ip = VpnHintProbe.SuggestIpPattern(_vpnPendingRows[i].ClientIp);
+        if (string.IsNullOrEmpty(ip))
+        {
+            ErrorText.Text = "Pending row has no usable client IP.";
+            return;
+        }
+
+        ApplyVpnAllow(ip, preferIpFallback: null);
+    }
+
+    private void ApplyVpnAllow(string pattern, string? preferIpFallback)
+    {
+        if (VpnHintProbe.IsGenericConsentToken(pattern) && !VpnHintProbe.LooksLikeIpLiteral(pattern))
+        {
+            var ip = VpnHintProbe.SuggestIpPattern(preferIpFallback);
+            if (string.IsNullOrEmpty(ip))
+            {
+                ErrorText.Text =
+                    $"Refused generic pattern '{pattern}'. Select a row with a client IP and use Allow IP.";
+                return;
+            }
+
+            pattern = ip;
+        }
+
         if (_host.VpnConsent.TryAllow(pattern))
         {
             _settings.VpnConsentAllow = _host.VpnConsent.AllowedPatterns.ToList();
             _settings.Save();
             VpnAllowBox.Text = string.Join(Environment.NewLine, _settings.VpnConsentAllow);
-            StatusText.Text = $"VPN allowed: {pattern}";
+            StatusText.Text = VpnHintProbe.LooksLikeIpLiteral(pattern)
+                ? $"VPN allowed by IP: {pattern}"
+                : $"VPN allowed: {pattern}";
             ErrorText.Text = "";
+        }
+        else
+        {
+            ErrorText.Text =
+                $"Could not add '{pattern}' (duplicate, too generic, or invalid). Prefer a client IP.";
         }
 
         RefreshVpnConsentUi();
@@ -302,7 +369,12 @@ public partial class MainWindow : Window
 
         _vpnPendingRows = _host.VpnConsent.Pending.ToList();
         VpnPendingList.ItemsSource = _vpnPendingRows
-            .Select(p => $"{p.Hits}×  {p.ClientIp,-15}  suggest={p.SuggestedPattern}  {p.VpnHint}")
+            .Select(p =>
+            {
+                var ip = VpnHintProbe.SuggestIpPattern(p.ClientIp);
+                var ipBit = string.IsNullOrEmpty(ip) ? "" : $"  ip={ip}";
+                return $"{p.Hits}×  {p.ClientIp,-15}  suggest={p.SuggestedPattern}{ipBit}  {p.VpnHint}";
+            })
             .ToList();
     }
 

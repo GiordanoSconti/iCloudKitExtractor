@@ -137,15 +137,40 @@ public sealed class VpnConsentStore
             if (_allowed.Count == 0)
                 return false;
 
-            var hay = $"{clientIp}\n{vpnHint}";
+            var ip = (clientIp ?? "").Trim();
+            var hint = vpnHint ?? "";
             foreach (var p in _allowed)
             {
-                if (hay.Contains(p, StringComparison.OrdinalIgnoreCase))
+                // Ignore legacy ultra-generic entries (would open every "proxy" client).
+                if (VpnHintProbe.IsGenericConsentToken(p) && !VpnHintProbe.LooksLikeIpLiteral(p))
+                    continue;
+
+                // IP literals match only the client address (not every "proxy" hint).
+                if (VpnHintProbe.LooksLikeIpLiteral(p))
+                {
+                    if (IpEquals(ip, p))
+                        return true;
+                    continue;
+                }
+
+                if (hint.Contains(p, StringComparison.OrdinalIgnoreCase))
                     return true;
             }
         }
 
         return false;
+    }
+
+    private static bool IpEquals(string clientIp, string pattern)
+    {
+        if (string.IsNullOrWhiteSpace(clientIp) || string.IsNullOrWhiteSpace(pattern))
+            return false;
+        var a = clientIp.Trim();
+        var b = pattern.Trim();
+        var slash = b.IndexOf('/');
+        if (slash > 0)
+            b = b[..slash];
+        return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
     }
 
     public void RememberDenied(string clientIp, string vpnHint)
@@ -178,6 +203,10 @@ public sealed class VpnConsentStore
     {
         var p = (raw ?? "").Trim();
         if (p.Length < 2 || p.StartsWith('#'))
+            return false;
+        // Refuse ultra-generic tokens — they would allow every VPN labeled "proxy"/"vpn".
+        // Operators should allow the client IP instead.
+        if (VpnHintProbe.IsGenericConsentToken(p) && !VpnHintProbe.LooksLikeIpLiteral(p))
             return false;
         if (_allowed.Any(x => string.Equals(x, p, StringComparison.OrdinalIgnoreCase)))
             return false;

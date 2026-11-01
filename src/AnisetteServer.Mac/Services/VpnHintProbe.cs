@@ -38,9 +38,52 @@ public static partial class VpnHintProbe
                || h.Contains("warp", StringComparison.Ordinal);
     }
 
-    /// <summary>Best pattern to paste into the consent allowlist (provider token or IP).</summary>
+    /// <summary>
+    /// Tokens too broad for an allowlist entry (would admit every "proxy"/"vpn" client).
+    /// Prefer <see cref="SuggestIpPattern"/> instead.
+    /// </summary>
+    private static readonly HashSet<string> GenericConsentTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "proxy", "vpn", "host", "tor", "warp", "openvpn", "ovpn", "anonymizer",
+        "likely-vpn", "likely-vpn/proxy", "unknown", "local", "private",
+    };
+
+    public static bool IsGenericConsentToken(string? pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+            return true;
+        var p = pattern.Trim().Trim('.');
+        return GenericConsentTokens.Contains(p)
+               || p.Equals("host", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool LooksLikeIpLiteral(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        var s = value.Trim();
+        // Strip optional CIDR for recognition; matching is exact-IP for now.
+        var slash = s.IndexOf('/');
+        if (slash > 0)
+            s = s[..slash];
+        return IPAddress.TryParse(s, out _);
+    }
+
+    /// <summary>Client IP for IP-scoped allowlist entries (empty if unknown).</summary>
+    public static string SuggestIpPattern(string? clientIp)
+    {
+        if (string.IsNullOrWhiteSpace(clientIp) || clientIp is "-" or "?")
+            return "";
+        return clientIp.Trim();
+    }
+
+    /// <summary>
+    /// Best pattern for the consent allowlist: named provider when specific,
+    /// otherwise the client IP (never a generic "proxy"/"vpn" token).
+    /// </summary>
     public static string SuggestConsentPattern(string? vpnHint, string? clientIp)
     {
+        var ip = SuggestIpPattern(clientIp);
         var hint = vpnHint ?? "";
         // likely-vpn/proxy (mullvad · host…)
         var open = hint.IndexOf('(', StringComparison.Ordinal);
@@ -50,20 +93,25 @@ public static partial class VpnHintProbe
             var inner = hint[(open + 1)..close];
             var token = inner.Split('·', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
                 .FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(token)
-                && !token.Equals("host", StringComparison.OrdinalIgnoreCase))
-                return token.Trim().Trim('.');
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                var clean = token.Trim().Trim('.');
+                if (!IsGenericConsentToken(clean))
+                    return clean;
+            }
         }
 
         foreach (var t in ProviderTokens)
         {
             var clean = t.Trim('.');
-            if (clean.Length >= 3 && hint.Contains(clean, StringComparison.OrdinalIgnoreCase))
+            if (clean.Length >= 3
+                && !IsGenericConsentToken(clean)
+                && hint.Contains(clean, StringComparison.OrdinalIgnoreCase))
                 return clean;
         }
 
-        if (!string.IsNullOrWhiteSpace(clientIp) && clientIp is not ("-" or "?"))
-            return clientIp.Trim();
+        if (!string.IsNullOrEmpty(ip))
+            return ip;
         return hint.Length <= 40 ? hint : hint[..40];
     }
 
