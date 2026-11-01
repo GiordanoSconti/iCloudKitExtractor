@@ -20,12 +20,18 @@ public partial class MainWindow : Window
             if (AutoRefreshConnectionsCheck.IsChecked == true)
                 RefreshConnections();
         });
+        _host.VpnConsent.Changed += () => Dispatcher.UIThread.Post(RefreshVpnConsentUi);
         // Bind LicensePaths to the OS data root before any SQLite / key access.
         _settings.ApplyToEnvironment();
+        var dataRoot = string.IsNullOrWhiteSpace(_settings.DataRoot)
+            ? MiddlewareSettings.DefaultDataRoot()
+            : _settings.DataRoot!;
+        _host.VpnConsent.Configure(dataRoot, _settings.RequireVpnConsent, _settings.VpnConsentAllow);
         LoadSettingsIntoUi();
         RefreshStatus();
         RefreshLicenses();
         RefreshConnections();
+        RefreshVpnConsentUi();
     }
 
     private void LoadSettingsIntoUi()
@@ -40,6 +46,8 @@ public partial class MainWindow : Window
         DataRootBox.Text = string.IsNullOrWhiteSpace(_settings.DataRoot)
             ? MiddlewareSettings.DefaultDataRoot()
             : _settings.DataRoot;
+        RequireVpnConsentCheck.IsChecked = _settings.RequireVpnConsent;
+        VpnAllowBox.Text = string.Join(Environment.NewLine, _settings.VpnConsentAllow);
     }
 
     private void CaptureSettingsFromUi()
@@ -52,6 +60,12 @@ public partial class MainWindow : Window
         _settings.TimeoutSec = (int)(TimeoutBox.Value ?? 60);
         _settings.ListenUrls = ListenBox.Text?.Trim() ?? "http://0.0.0.0:6971";
         _settings.DataRoot = DataRootBox.Text?.Trim();
+        _settings.RequireVpnConsent = RequireVpnConsentCheck.IsChecked == true;
+        _settings.VpnConsentAllow = (VpnAllowBox.Text ?? "")
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => s.Length > 0 && !s.StartsWith('#'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private void RefreshStatus()
@@ -198,8 +212,103 @@ public partial class MainWindow : Window
     }
 
     private List<ConnectionLogEntry> _connectionRows = new();
+    private List<VpnConsentPending> _vpnPendingRows = new();
 
     private void RefreshConnections_OnClick(object? sender, RoutedEventArgs e) => RefreshConnections();
+
+    private void RequireVpnConsent_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var on = RequireVpnConsentCheck.IsChecked == true;
+        _host.VpnConsent.SetRequireConsent(on);
+        _settings.RequireVpnConsent = on;
+        _settings.Save();
+    }
+
+    private void SaveVpnAllow_OnClick(object? sender, RoutedEventArgs e)
+    {
+        CaptureSettingsFromUi();
+        _host.VpnConsent.SetAllowedFromText(VpnAllowBox.Text);
+        _host.VpnConsent.SetRequireConsent(_settings.RequireVpnConsent);
+        _settings.VpnConsentAllow = _host.VpnConsent.AllowedPatterns.ToList();
+        _settings.Save();
+        StatusText.Text = $"VPN allowlist saved ({_settings.VpnConsentAllow.Count} pattern(s))";
+        RefreshVpnConsentUi();
+    }
+
+    private void AllowSelectedVpn_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var i = ConnectionList.SelectedIndex;
+        if (i < 0 || i >= _connectionRows.Count)
+        {
+            ErrorText.Text = "Select a connection row first.";
+            return;
+        }
+
+        var row = _connectionRows[i];
+        var pattern = VpnHintProbe.SuggestConsentPattern(row.VpnHint, row.ClientIp);
+        if (_host.VpnConsent.TryAllow(pattern))
+        {
+            _settings.VpnConsentAllow = _host.VpnConsent.AllowedPatterns.ToList();
+            _settings.Save();
+            VpnAllowBox.Text = string.Join(Environment.NewLine, _settings.VpnConsentAllow);
+            StatusText.Text = $"VPN allowed: {pattern}";
+            ErrorText.Text = "";
+        }
+
+        RefreshVpnConsentUi();
+    }
+
+    private void AllowPendingVpn_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var i = VpnPendingList.SelectedIndex;
+        if (i < 0 || i >= _vpnPendingRows.Count)
+        {
+            ErrorText.Text = "Select a pending VPN first.";
+            return;
+        }
+
+        var pattern = _vpnPendingRows[i].SuggestedPattern;
+        if (_host.VpnConsent.TryAllow(pattern))
+        {
+            _settings.VpnConsentAllow = _host.VpnConsent.AllowedPatterns.ToList();
+            _settings.Save();
+            VpnAllowBox.Text = string.Join(Environment.NewLine, _settings.VpnConsentAllow);
+            StatusText.Text = $"VPN allowed: {pattern}";
+            ErrorText.Text = "";
+        }
+
+        RefreshVpnConsentUi();
+    }
+
+    private void ClearVpnPending_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _host.VpnConsent.ClearPending();
+        RefreshVpnConsentUi();
+    }
+
+    private void RefreshVpnConsentUi()
+    {
+        RequireVpnConsentCheck.IsChecked = _host.VpnConsent.RequireConsent;
+        var allowed = _host.VpnConsent.AllowedPatterns;
+        // Don't clobber edits unless store differs substantially
+        var boxText = string.Join(Environment.NewLine, allowed);
+        if (!string.Equals(NormalizeMultiline(VpnAllowBox.Text), NormalizeMultiline(boxText), StringComparison.Ordinal))
+        {
+            // Only sync from store when box matches settings file baseline or is empty
+            if (string.IsNullOrWhiteSpace(VpnAllowBox.Text)
+                || NormalizeMultiline(VpnAllowBox.Text) == NormalizeMultiline(string.Join(Environment.NewLine, _settings.VpnConsentAllow)))
+                VpnAllowBox.Text = boxText;
+        }
+
+        _vpnPendingRows = _host.VpnConsent.Pending.ToList();
+        VpnPendingList.ItemsSource = _vpnPendingRows
+            .Select(p => $"{p.Hits}×  {p.ClientIp,-15}  suggest={p.SuggestedPattern}  {p.VpnHint}")
+            .ToList();
+    }
+
+    private static string NormalizeMultiline(string? s) =>
+        string.Join("\n", (s ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
 
     private void ClearConnections_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -220,10 +329,12 @@ public partial class MainWindow : Window
         else if (_connectionRows.Count > 0 && ConnectionList.SelectedIndex < 0)
             ConnectionList.SelectedIndex = 0;
 
+        var denied = _connectionRows.Count(c => c.Outcome == "VPN_DENIED");
         ConnectionLogHint.Text =
-            $"{_connectionRows.Count} event(s) · abuse >{AbuseRateLimiter.BurstLimit} req / {AbuseRateLimiter.BurstWindow.TotalSeconds:0}s → block {AbuseRateLimiter.BlockDuration.TotalHours:0}h"
-            + " · full headers in detail + data/connection-requests.log";
+            $"{_connectionRows.Count} event(s) · vpn_denied={denied} · abuse >{AbuseRateLimiter.BurstLimit}/10s"
+            + " · data/connection-requests.log + data/vpn-consent.json";
         ShowSelectedConnectionHeaders();
+        RefreshVpnConsentUi();
     }
 
     private void ShowSelectedConnectionHeaders()

@@ -24,6 +24,49 @@ public static partial class VpnHintProbe
         "m247", "cdn77", "netcup",
     ];
 
+    public static bool LooksLikeVpnOrProxy(string? hint)
+    {
+        if (string.IsNullOrWhiteSpace(hint))
+            return false;
+        var h = hint.ToLowerInvariant();
+        if (h.StartsWith("local/private"))
+            return false;
+        return h.Contains("likely-vpn", StringComparison.Ordinal)
+               || h.Contains("vpn", StringComparison.Ordinal)
+               || h.Contains("proxy", StringComparison.Ordinal)
+               || h.Contains("tor", StringComparison.Ordinal)
+               || h.Contains("warp", StringComparison.Ordinal);
+    }
+
+    /// <summary>Best pattern to paste into the consent allowlist (provider token or IP).</summary>
+    public static string SuggestConsentPattern(string? vpnHint, string? clientIp)
+    {
+        var hint = vpnHint ?? "";
+        // likely-vpn/proxy (mullvad · host…)
+        var open = hint.IndexOf('(', StringComparison.Ordinal);
+        var close = hint.IndexOf(')', StringComparison.Ordinal);
+        if (open >= 0 && close > open)
+        {
+            var inner = hint[(open + 1)..close];
+            var token = inner.Split('·', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(token)
+                && !token.Equals("host", StringComparison.OrdinalIgnoreCase))
+                return token.Trim().Trim('.');
+        }
+
+        foreach (var t in ProviderTokens)
+        {
+            var clean = t.Trim('.');
+            if (clean.Length >= 3 && hint.Contains(clean, StringComparison.OrdinalIgnoreCase))
+                return clean;
+        }
+
+        if (!string.IsNullOrWhiteSpace(clientIp) && clientIp is not ("-" or "?"))
+            return clientIp.Trim();
+        return hint.Length <= 40 ? hint : hint[..40];
+    }
+
     public static async Task<string> ClassifyAsync(
         IPAddress? ip,
         string? userAgent,

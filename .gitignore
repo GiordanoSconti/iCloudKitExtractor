@@ -62,6 +62,13 @@ data/tls/
 # Local release build trees (publish via GitHub Releases, not git)
 _release/
 
+# WIP — Apple Traffic Probe (hold back from publish for now)
+src/AppleTrafficProbe.Mac/
+docs/APPLE_TRAFFIC_PROBE.md
+docs/ATPROBE_PACKAGE.md
+scripts/ios_apple_traffic/
+scripts/sign_apple_traffic_probe.ps1
+
 # Office lock / temp files
 ~$*
 **/~$*

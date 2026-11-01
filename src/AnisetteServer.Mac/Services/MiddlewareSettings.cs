@@ -30,6 +30,14 @@ public sealed class MiddlewareSettings
     [JsonPropertyName("dataRoot")]
     public string? DataRoot { get; set; }
 
+    /// <summary>When true, VPN/proxy-like clients need a matching allowlist pattern.</summary>
+    [JsonPropertyName("requireVpnConsent")]
+    public bool RequireVpnConsent { get; set; } = true;
+
+    /// <summary>Manual VPN consent patterns (provider token, IP, or hint substring).</summary>
+    [JsonPropertyName("vpnConsentAllow")]
+    public List<string> VpnConsentAllow { get; set; } = new();
+
     public static string DefaultConfigPath()
     {
         var dir = DefaultDataRoot();

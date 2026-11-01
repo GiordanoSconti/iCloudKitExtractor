@@ -26,6 +26,7 @@ public sealed class MiddlewareHost : IAsyncDisposable
     public string LastMintSummary { get; private set; } = "";
     public ConnectionLogStore ConnectionLog { get; } = new();
     public AbuseRateLimiter AbuseLimiter { get; } = new();
+    public VpnConsentStore VpnConsent { get; } = new();
     public event Action? Changed;
 
     public async Task StartAsync(MiddlewareSettings settings)
@@ -74,6 +75,7 @@ public sealed class MiddlewareHost : IAsyncDisposable
             ? MiddlewareSettings.DefaultDataRoot()
             : Path.GetFullPath(settings.DataRoot);
         ConnectionLog.SetFileLogPath(Path.Combine(dataRoot, "data", "connection-requests.log"));
+        VpnConsent.Configure(dataRoot, settings.RequireVpnConsent, settings.VpnConsentAllow);
 
         var wantsHttps = settings.ListenUrls.Contains("https://", StringComparison.OrdinalIgnoreCase);
         if (wantsHttps)
@@ -104,6 +106,7 @@ public sealed class MiddlewareHost : IAsyncDisposable
                 sp.GetRequiredService<LicenseDatabase>()));
         builder.Services.AddSingleton(ConnectionLog);
         builder.Services.AddSingleton(AbuseLimiter);
+        builder.Services.AddSingleton(VpnConsent);
         builder.Services.AddSingleton<IAnisetteProvider>(_ =>
             new FridaIphoneAnisetteProvider(new FridaAnisetteOptions
             {

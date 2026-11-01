@@ -16,15 +16,18 @@ public sealed class ConnectionGuardMiddleware
     private readonly RequestDelegate _next;
     private readonly ConnectionLogStore _log;
     private readonly AbuseRateLimiter _limiter;
+    private readonly VpnConsentStore _vpnConsent;
 
     public ConnectionGuardMiddleware(
         RequestDelegate next,
         ConnectionLogStore log,
-        AbuseRateLimiter limiter)
+        AbuseRateLimiter limiter,
+        VpnConsentStore vpnConsent)
     {
         _next = next;
         _log = log;
         _limiter = limiter;
+        _vpnConsent = vpnConsent;
     }
 
     public async Task InvokeAsync(HttpContext ctx)
@@ -65,6 +68,29 @@ public sealed class ConnectionGuardMiddleware
         catch
         {
             vpnHint = viaTunnel ? "unknown · via Cloudflare Tunnel/proxy" : "unknown";
+        }
+
+        var skipVpnGate = skipAbuse; // loopback + /health
+        if (!skipVpnGate && !_vpnConsent.IsAllowed(ip, vpnHint))
+        {
+            _vpnConsent.RememberDenied(ip, vpnHint);
+            var suggested = VpnHintProbe.SuggestConsentPattern(vpnHint, ip);
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await ctx.Response.WriteAsJsonAsync(new
+            {
+                ok = false,
+                error = "vpn_consent_required",
+                detail = "This VPN/proxy is not on the operator allowlist. Approve it in Anisette Middleware → Connections → VPN consent.",
+                client_ip = ip,
+                vpn = vpnHint,
+                suggested_pattern = suggested,
+            }).ConfigureAwait(false);
+
+            _log.Add(MakeEntry(
+                ip, method, path, query, scheme, host,
+                StatusCodes.Status403Forbidden, "VPN_DENIED",
+                vpnHint, ua, forwarded, allHeaders));
+            return;
         }
 
         if (!skipAbuse)
@@ -180,6 +206,7 @@ public sealed class ConnectionGuardMiddleware
         {
             >= 200 and < 300 => "OK",
             401 => "UNAUTHORIZED",
+            403 => "VPN_DENIED",
             429 => "RATE_LIMITED",
             503 => "UPSTREAM",
             _ => $"HTTP_{code}",
