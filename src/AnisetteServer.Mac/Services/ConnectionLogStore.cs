@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 
 namespace AnisetteServer.Mac.Services;
 
@@ -7,11 +8,16 @@ public sealed record ConnectionLogEntry(
     string ClientIp,
     string Method,
     string Path,
+    string? Query,
+    string? Scheme,
+    string? Host,
     int StatusCode,
     string Outcome,
     string VpnHint,
     string? UserAgent,
-    string? Forwarded);
+    string? Forwarded,
+    /// <summary>All request headers as multiline <c>Name: value</c> (Cloudflare + client).</summary>
+    string AllHeaders);
 
 /// <summary>In-memory ring of inbound connection events for the UI panel.</summary>
 public sealed class ConnectionLogStore
@@ -19,11 +25,20 @@ public sealed class ConnectionLogStore
     private readonly object _gate = new();
     private readonly LinkedList<ConnectionLogEntry> _entries = new();
     private readonly int _capacity;
+    private string? _fileLogPath;
 
     public ConnectionLogStore(int capacity = 500) =>
         _capacity = Math.Clamp(capacity, 50, 5000);
 
     public event Action? Changed;
+
+    /// <summary>Optional append-only file under the middleware data root.</summary>
+    public void SetFileLogPath(string? path)
+    {
+        _fileLogPath = string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
+        if (_fileLogPath is not null)
+            Directory.CreateDirectory(Path.GetDirectoryName(_fileLogPath)!);
+    }
 
     public void Add(ConnectionLogEntry entry)
     {
@@ -34,6 +49,7 @@ public sealed class ConnectionLogStore
                 _entries.RemoveLast();
         }
 
+        TryAppendFile(entry);
         Changed?.Invoke();
     }
 
@@ -48,6 +64,32 @@ public sealed class ConnectionLogStore
         lock (_gate)
             _entries.Clear();
         Changed?.Invoke();
+    }
+
+    private void TryAppendFile(ConnectionLogEntry e)
+    {
+        var path = _fileLogPath;
+        if (path is null)
+            return;
+
+        try
+        {
+            var sb = new StringBuilder(512 + (e.AllHeaders?.Length ?? 0));
+            sb.AppendLine("====");
+            sb.AppendLine($"{e.AtUtc:o}  {e.Method} {e.Scheme}://{e.Host}{e.Path}{e.Query}");
+            sb.AppendLine($"client_ip={e.ClientIp}  status={e.StatusCode}  outcome={e.Outcome}");
+            sb.AppendLine($"vpn={e.VpnHint}");
+            if (!string.IsNullOrEmpty(e.Forwarded))
+                sb.AppendLine($"forwarded_summary={e.Forwarded}");
+            sb.AppendLine("-- headers --");
+            sb.AppendLine(e.AllHeaders);
+            sb.AppendLine();
+            File.AppendAllText(path, sb.ToString());
+        }
+        catch
+        {
+            // UI log must not fail the request path
+        }
     }
 }
 

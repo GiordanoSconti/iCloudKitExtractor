@@ -121,13 +121,14 @@
                         VerticalAlignment="Center"/>
             </StackPanel>
             <TextBlock Opacity="0.65" TextWrapping="Wrap" FontSize="12"
-                       Text="Inbound log · VPN/proxy hints (rDNS + known provider tokens) · abuse: &gt;10 requests / 10s per IP → HTTP 429 for 1 hour. True loopback and /health skip rate-limit; Cloudflare Tunnel uses CF-Connecting-IP / X-Forwarded-For as client IP (licenses + limits)."/>
+                       Text="Full request headers (incl. Cloudflare CF-*) · VPN hints · abuse &gt;10/10s → 429/1h. Loopback senza CF/XFF e /health senza rate-limit. File log: data/connection-requests.log"/>
             <TextBlock x:Name="ConnectionLogHint" Opacity="0.75" FontSize="12" Text="0 events"/>
           </StackPanel>
 
           <ListBox Grid.Row="1" x:Name="ConnectionList"
                    Margin="0,10,0,10"
-                   SelectionMode="Single">
+                   SelectionMode="Single"
+                   SelectionChanged="ConnectionList_OnSelectionChanged">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="sys:String">
                 <TextBlock TextWrapping="Wrap" FontFamily="Consolas,Menlo,monospace" FontSize="12"
@@ -136,8 +137,17 @@
             </ListBox.ItemTemplate>
           </ListBox>
 
-          <TextBlock Grid.Row="2" x:Name="ConnectionSelectedDetail" Opacity="0.8" TextWrapping="Wrap"
-                     FontSize="12" Margin="0,4,0,0"/>
+          <ScrollViewer Grid.Row="2" MaxHeight="220" Margin="0,4,0,0">
+            <TextBox x:Name="ConnectionSelectedDetail"
+                     IsReadOnly="True"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     FontFamily="Consolas,Menlo,monospace"
+                     FontSize="11"
+                     BorderThickness="1"
+                     MinHeight="80"
+                     PlaceholderText="Select a connection to view all request headers"/>
+          </ScrollViewer>
         </Grid>
       </TabItem>
     </TabControl>

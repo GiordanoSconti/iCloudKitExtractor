@@ -1,15 +1,18 @@
 using System.Net;
+using System.Text;
 using iCloudKitExtractor.AnisetteLicense;
 using Microsoft.AspNetCore.Http;
 
 namespace AnisetteServer.Mac.Services;
 
 /// <summary>
-/// Logs inbound connections (VPN hints) and enforces per-IP burst abuse limits.
+/// Logs inbound connections (full request headers, VPN hints) and enforces per-IP burst abuse limits.
 /// Uses Cloudflare / proxy client IP when TCP peer is loopback (Tunnel).
 /// </summary>
 public sealed class ConnectionGuardMiddleware
 {
+    private const int MaxHeadersChars = 24_000;
+
     private readonly RequestDelegate _next;
     private readonly ConnectionLogStore _log;
     private readonly AbuseRateLimiter _limiter;
@@ -34,19 +37,21 @@ public sealed class ConnectionGuardMiddleware
         ctx.Items[InboundClientAddress.TunnelItemsKey] = viaTunnel;
 
         var path = ctx.Request.Path.Value ?? "/";
+        var query = ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : null;
         var method = ctx.Request.Method;
+        var scheme = ctx.Request.Scheme;
+        var host = ctx.Request.Host.Value;
         var ua = ctx.Request.Headers.UserAgent.ToString();
         var forwarded = InboundClientAddress.ForwardedHeadersSummary(Header);
+        var allHeaders = CaptureAllHeaders(ctx);
 
         // /health + true local loopback skip abuse; Tunnel clients are rate-limited by real IP.
         var skipAbuse = string.Equals(path, "/health", StringComparison.OrdinalIgnoreCase)
                         || InboundClientAddress.IsTrustedLocalLoopback(ctx.Connection.RemoteIpAddress, Header);
 
-        IPAddress? classifyIp = null;
-        if (IPAddress.TryParse(ip, out var parsed))
-            classifyIp = parsed;
-        else
-            classifyIp = ctx.Connection.RemoteIpAddress;
+        IPAddress? classifyIp = IPAddress.TryParse(ip, out var parsed)
+            ? parsed
+            : ctx.Connection.RemoteIpAddress;
 
         string vpnHint;
         try
@@ -78,32 +83,96 @@ public sealed class ConnectionGuardMiddleware
                     client_ip = ip,
                 }).ConfigureAwait(false);
 
-                _log.Add(new ConnectionLogEntry(
-                    DateTimeOffset.UtcNow,
-                    ip,
-                    method,
-                    path,
-                    StatusCodes.Status429TooManyRequests,
-                    "RATE_LIMITED",
-                    vpnHint,
-                    Truncate(ua, 80),
-                    Truncate(forwarded, 120)));
+                _log.Add(MakeEntry(
+                    ip, method, path, query, scheme, host,
+                    StatusCodes.Status429TooManyRequests, "RATE_LIMITED",
+                    vpnHint, ua, forwarded, allHeaders));
                 return;
             }
         }
 
         await _next(ctx).ConfigureAwait(false);
 
-        _log.Add(new ConnectionLogEntry(
+        _log.Add(MakeEntry(
+            ip, method, path, query, scheme, host,
+            ctx.Response.StatusCode, OutcomeFor(ctx.Response.StatusCode),
+            vpnHint, ua, forwarded, allHeaders));
+    }
+
+    private static ConnectionLogEntry MakeEntry(
+        string ip,
+        string method,
+        string path,
+        string? query,
+        string? scheme,
+        string? host,
+        int status,
+        string outcome,
+        string vpnHint,
+        string? ua,
+        string? forwarded,
+        string allHeaders) =>
+        new(
             DateTimeOffset.UtcNow,
             ip,
             method,
             path,
-            ctx.Response.StatusCode,
-            OutcomeFor(ctx.Response.StatusCode),
+            query,
+            scheme,
+            host,
+            status,
+            outcome,
             vpnHint,
-            Truncate(ua, 80),
-            Truncate(forwarded, 120)));
+            Truncate(ua, 200),
+            Truncate(forwarded, 500),
+            allHeaders);
+
+    /// <summary>Dump every request header (Cloudflare CF-*, X-Forwarded-*, client, etc.).</summary>
+    internal static string CaptureAllHeaders(HttpContext ctx)
+    {
+        var sb = new StringBuilder();
+        // Stable-ish order: Cloudflare / proxy first, then the rest alphabetically.
+        var names = ctx.Request.Headers.Keys
+            .OrderBy(n => CloudflareSortKey(n))
+            .ThenBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var name in names)
+        {
+            var values = ctx.Request.Headers[name];
+            var value = values.Count == 0 ? "" : string.Join(", ", values.ToArray());
+            sb.Append(name);
+            sb.Append(": ");
+            sb.Append(value);
+            sb.AppendLine();
+            if (sb.Length >= MaxHeadersChars)
+            {
+                sb.AppendLine("… (headers truncated)");
+                break;
+            }
+        }
+
+        // Extra connection metadata useful behind Tunnel.
+        sb.AppendLine($"X-IKE-Remote-Tcp: {ctx.Connection.RemoteIpAddress}");
+        sb.AppendLine($"X-IKE-Local-Tcp: {ctx.Connection.LocalIpAddress}:{ctx.Connection.LocalPort}");
+        sb.AppendLine($"X-IKE-Protocol: {ctx.Request.Protocol}");
+        if (ctx.Request.Headers.Count == 0)
+            sb.AppendLine("(no HTTP headers)");
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static int CloudflareSortKey(string name)
+    {
+        if (name.StartsWith("CF-", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("Cf-", StringComparison.OrdinalIgnoreCase))
+            return 0;
+        if (name.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("Forwarded", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("True-Client-IP", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("Via", StringComparison.OrdinalIgnoreCase))
+            return 1;
+        return 2;
     }
 
     private static string OutcomeFor(int code) =>

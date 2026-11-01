@@ -197,6 +197,8 @@ public partial class MainWindow : Window
         IssuedBundleBox.SelectionEnd = IssuedBundleBox.Text?.Length ?? 0;
     }
 
+    private List<ConnectionLogEntry> _connectionRows = new();
+
     private void RefreshConnections_OnClick(object? sender, RoutedEventArgs e) => RefreshConnections();
 
     private void ClearConnections_OnClick(object? sender, RoutedEventArgs e)
@@ -205,24 +207,65 @@ public partial class MainWindow : Window
         RefreshConnections();
     }
 
+    private void ConnectionList_OnSelectionChanged(object? sender, SelectionChangedEventArgs e) =>
+        ShowSelectedConnectionHeaders();
+
     private void RefreshConnections()
     {
-        var snap = _host.ConnectionLog.Snapshot();
-        ConnectionList.ItemsSource = snap.Select(FormatConnection).ToList();
+        var selected = ConnectionList.SelectedIndex;
+        _connectionRows = _host.ConnectionLog.Snapshot().ToList();
+        ConnectionList.ItemsSource = _connectionRows.Select(FormatConnection).ToList();
+        if (selected >= 0 && selected < _connectionRows.Count)
+            ConnectionList.SelectedIndex = selected;
+        else if (_connectionRows.Count > 0 && ConnectionList.SelectedIndex < 0)
+            ConnectionList.SelectedIndex = 0;
+
         ConnectionLogHint.Text =
-            $"{snap.Count} event(s) · abuse >{AbuseRateLimiter.BurstLimit} req / {AbuseRateLimiter.BurstWindow.TotalSeconds:0}s → block {AbuseRateLimiter.BlockDuration.TotalHours:0}h";
-        ConnectionSelectedDetail.Text = snap.Count == 0
-            ? "No inbound connections yet."
-            : snap[0].VpnHint.StartsWith("likely-vpn", StringComparison.OrdinalIgnoreCase)
-                ? $"Latest VPN/proxy hint: {snap[0].ClientIp} → {snap[0].VpnHint}"
-                : $"Latest: {snap[0].ClientIp} → {snap[0].VpnHint}";
+            $"{_connectionRows.Count} event(s) · abuse >{AbuseRateLimiter.BurstLimit} req / {AbuseRateLimiter.BurstWindow.TotalSeconds:0}s → block {AbuseRateLimiter.BlockDuration.TotalHours:0}h"
+            + " · full headers in detail + data/connection-requests.log";
+        ShowSelectedConnectionHeaders();
+    }
+
+    private void ShowSelectedConnectionHeaders()
+    {
+        var i = ConnectionList.SelectedIndex;
+        if (i < 0 || i >= _connectionRows.Count)
+        {
+            ConnectionSelectedDetail.Text = _connectionRows.Count == 0
+                ? "No inbound connections yet."
+                : "Select a row to view all request headers (Cloudflare CF-*, X-Forwarded-*, …).";
+            return;
+        }
+
+        var e = _connectionRows[i];
+        ConnectionSelectedDetail.Text =
+            $"{e.AtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}  {e.Method} {e.Scheme}://{e.Host}{e.Path}{e.Query}\n" +
+            $"client_ip={e.ClientIp}  [{e.Outcome}/{e.StatusCode}]  vpn={e.VpnHint}\n" +
+            $"-- headers --\n{e.AllHeaders}";
     }
 
     private static string FormatConnection(ConnectionLogEntry e)
     {
         var ua = string.IsNullOrEmpty(e.UserAgent) ? "-" : Truncate(e.UserAgent, 40);
-        var vpn = e.VpnHint;
-        return $"{e.AtUtc.ToLocalTime():HH:mm:ss}  {e.ClientIp,-15}  {e.Method} {e.Path}  [{e.Outcome}/{e.StatusCode}]  vpn={vpn}  ua={ua}";
+        var cfRay = ExtractHeaderLine(e.AllHeaders, "CF-RAY")
+                    ?? ExtractHeaderLine(e.AllHeaders, "Cf-Ray");
+        var cfBit = cfRay is null ? "" : $"  cf-ray={Truncate(cfRay, 28)}";
+        return $"{e.AtUtc.ToLocalTime():HH:mm:ss}  {e.ClientIp,-15}  {e.Method} {e.Path}  [{e.Outcome}/{e.StatusCode}]  vpn={e.VpnHint}{cfBit}  ua={ua}";
+    }
+
+    private static string? ExtractHeaderLine(string? all, string name)
+    {
+        if (string.IsNullOrEmpty(all))
+            return null;
+        var prefix = name + ":";
+        foreach (var line in all.Split('\n'))
+        {
+            var t = line.TrimEnd('\r');
+            if (t.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return t[(prefix.Length)..].Trim();
+        }
+
+        return null;
     }
 
     protected override async void OnClosed(EventArgs e)

@@ -70,6 +70,11 @@ public sealed class MiddlewareHost : IAsyncDisposable
         settings.ApplyToEnvironment();
         settings.Save();
 
+        var dataRoot = string.IsNullOrWhiteSpace(settings.DataRoot)
+            ? MiddlewareSettings.DefaultDataRoot()
+            : Path.GetFullPath(settings.DataRoot);
+        ConnectionLog.SetFileLogPath(Path.Combine(dataRoot, "data", "connection-requests.log"));
+
         var wantsHttps = settings.ListenUrls.Contains("https://", StringComparison.OrdinalIgnoreCase);
         if (wantsHttps)
         {
