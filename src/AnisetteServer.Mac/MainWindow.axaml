@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:sys="using:System"
         mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
         x:Class="AnisetteServer.Mac.MainWindow"
         Width="980" Height="720"
@@ -68,18 +69,23 @@
 
       <TabItem Header="Licenses">
         <Grid RowDefinitions="Auto,*,Auto" Margin="0,12,0,0">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="Refresh" Click="RefreshLicenses_OnClick" Padding="12,6"/>
-            <Button Content="Disable" Click="DisableLicense_OnClick" Padding="12,6"/>
-            <Button Content="Enable" Click="EnableLicense_OnClick" Padding="12,6"/>
-            <Button Content="Remove" Click="DeleteLicense_OnClick" Padding="12,6"/>
+          <StackPanel Spacing="6">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Refresh" Click="RefreshLicenses_OnClick" Padding="12,6"/>
+              <Button Content="Disable" Click="DisableLicense_OnClick" Padding="12,6"/>
+              <Button Content="Enable" Click="EnableLicense_OnClick" Padding="12,6"/>
+              <Button Content="Remove" Click="DeleteLicense_OnClick" Padding="12,6"/>
+            </StackPanel>
+            <TextBlock x:Name="LicenseDbHint" Opacity="0.65" TextWrapping="Wrap" FontSize="12"
+                       Text="License DB: (not loaded)"/>
           </StackPanel>
 
           <ListBox Grid.Row="1" x:Name="LicenseList"
                    Margin="0,10,0,10"
                    SelectionMode="Single">
+            <!-- Compiled bindings need an explicit String DataType or the list renders empty on Windows. -->
             <ListBox.ItemTemplate>
-              <DataTemplate>
+              <DataTemplate x:DataType="sys:String">
                 <TextBlock TextWrapping="Wrap"
                            Text="{Binding}"/>
               </DataTemplate>
@@ -102,6 +108,36 @@
               </StackPanel>
             </StackPanel>
           </Border>
+        </Grid>
+      </TabItem>
+
+      <TabItem Header="Connections">
+        <Grid RowDefinitions="Auto,*,Auto" Margin="0,12,0,0">
+          <StackPanel Spacing="6">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Refresh" Click="RefreshConnections_OnClick" Padding="12,6"/>
+              <Button Content="Clear" Click="ClearConnections_OnClick" Padding="12,6"/>
+              <CheckBox x:Name="AutoRefreshConnectionsCheck" Content="Auto-refresh" IsChecked="True"
+                        VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Opacity="0.65" TextWrapping="Wrap" FontSize="12"
+                       Text="Inbound log · VPN/proxy hints (rDNS + known provider tokens) · abuse: &gt;10 requests / 10s per IP → HTTP 429 for 1 hour. True loopback and /health skip rate-limit; Cloudflare Tunnel uses CF-Connecting-IP / X-Forwarded-For as client IP (licenses + limits)."/>
+            <TextBlock x:Name="ConnectionLogHint" Opacity="0.75" FontSize="12" Text="0 events"/>
+          </StackPanel>
+
+          <ListBox Grid.Row="1" x:Name="ConnectionList"
+                   Margin="0,10,0,10"
+                   SelectionMode="Single">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="sys:String">
+                <TextBlock TextWrapping="Wrap" FontFamily="Consolas,Menlo,monospace" FontSize="12"
+                           Text="{Binding}"/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <TextBlock Grid.Row="2" x:Name="ConnectionSelectedDetail" Opacity="0.8" TextWrapping="Wrap"
+                     FontSize="12" Margin="0,4,0,0"/>
         </Grid>
       </TabItem>
     </TabControl>

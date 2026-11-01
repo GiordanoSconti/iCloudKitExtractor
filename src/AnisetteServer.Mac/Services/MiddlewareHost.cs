@@ -24,6 +24,8 @@ public sealed class MiddlewareHost : IAsyncDisposable
     public string StatusText { get; private set; } = "Stopped";
     public string LastError { get; private set; } = "";
     public string LastMintSummary { get; private set; } = "";
+    public ConnectionLogStore ConnectionLog { get; } = new();
+    public AbuseRateLimiter AbuseLimiter { get; } = new();
     public event Action? Changed;
 
     public async Task StartAsync(MiddlewareSettings settings)
@@ -95,6 +97,8 @@ public sealed class MiddlewareHost : IAsyncDisposable
                 LicensePaths.PrivateKeyPath,
                 LicensePaths.PublicKeyPath,
                 sp.GetRequiredService<LicenseDatabase>()));
+        builder.Services.AddSingleton(ConnectionLog);
+        builder.Services.AddSingleton(AbuseLimiter);
         builder.Services.AddSingleton<IAnisetteProvider>(_ =>
             new FridaIphoneAnisetteProvider(new FridaAnisetteOptions
             {
@@ -110,6 +114,7 @@ public sealed class MiddlewareHost : IAsyncDisposable
         Changed?.Invoke();
 
         var app = builder.Build();
+        app.UseMiddleware<ConnectionGuardMiddleware>();
         app.UseMiddleware<LicenseAuthMiddleware>();
 
         app.MapGet("/health", (IAnisetteProvider anisette) =>

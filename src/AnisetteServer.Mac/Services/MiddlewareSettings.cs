@@ -42,24 +42,44 @@ public sealed class MiddlewareSettings
         if (!string.IsNullOrEmpty(env))
             return Path.GetFullPath(env);
 
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        // macOS Application Support; also works under Windows %USERPROFILE% for lab tests.
-        var mac = Path.Combine(home, "Library", "Application Support", "ForensisLab", "AnisetteMiddleware");
-        if (OperatingSystem.IsMacOS() || Directory.Exists(Path.Combine(home, "Library")))
-            return mac;
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "ForensisLab",
-            "AnisetteMiddleware");
+        // Strict OS roots — do not infer macOS from a %USERPROFILE%\Library folder on Windows.
+        if (OperatingSystem.IsMacOS())
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            return Path.Combine(home, "Library", "Application Support", "ForensisLab", "AnisetteMiddleware");
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "ForensisLab",
+                "AnisetteMiddleware");
+        }
+
+        // Linux / other: XDG-style under ~/.local/share
+        var xdg = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(xdg))
+            xdg = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+        return Path.Combine(xdg, "ForensisLab", "AnisetteMiddleware");
     }
 
-    public void ApplyToEnvironment()
+    /// <summary>
+    /// Point <see cref="LicensePaths"/> at this middleware data root (keys + SQLite).
+    /// Call before any license UI / Kestrel host touches the DB.
+    /// </summary>
+    public static void EnsureLicenseEnvironment(string? dataRoot = null)
     {
-        var root = string.IsNullOrWhiteSpace(DataRoot) ? DefaultDataRoot() : Path.GetFullPath(DataRoot);
+        var root = string.IsNullOrWhiteSpace(dataRoot) ? DefaultDataRoot() : Path.GetFullPath(dataRoot);
         Directory.CreateDirectory(root);
         Directory.CreateDirectory(Path.Combine(root, "keys"));
         Directory.CreateDirectory(Path.Combine(root, "data"));
         Environment.SetEnvironmentVariable("ANISETTE_LICENSE_ROOT", root);
+    }
+
+    public void ApplyToEnvironment()
+    {
+        EnsureLicenseEnvironment(string.IsNullOrWhiteSpace(DataRoot) ? null : DataRoot);
         Environment.SetEnvironmentVariable("FRIDA_ANISETTE_HOST", FridaHost);
         Environment.SetEnvironmentVariable("FRIDA_ANISETTE_PROCESS", FridaProcess);
         Environment.SetEnvironmentVariable("FRIDA_ANISETTE_PYTHON", Python);

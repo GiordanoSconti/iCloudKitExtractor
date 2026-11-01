@@ -259,8 +259,8 @@ public sealed class ICloudSyncDataProbeService
             var zones = new HashSet<string>(StringComparer.Ordinal);
             long totalBytes = 0;
 
-            // zone/retrieve su default + _defaultZone (come / CloudDocs).
-            foreach (var zoneHint in new[] { "default", "_defaultZone", binding.ContainerId })
+            // zone/retrieve solo su zone di sistema CloudKit (niente nomi inventati).
+            foreach (var zoneHint in new[] { "default", "_defaultZone" })
             {
                 ct.ThrowIfCancellationRequested();
                 await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
@@ -313,29 +313,24 @@ public sealed class ICloudSyncDataProbeService
             zones.RemoveWhere(IsDefaultZoneName);
             zones.RemoveWhere(static z => !IsPlausibleCustomZone(z));
 
-            if (zones.Count == 0 && IsCallHistoryContainer(binding.ContainerId))
+            if (zones.Count == 0)
             {
-                foreach (var z in CallHistoryFallbackZones)
-                    zones.Add(z);
-                log?.Report(
-                    "  Calls: nessuna zone da sync — provo zone note " +
-                    $"({string.Join(", ", CallHistoryFallbackZones)})");
-                if (zoneSyncReason is not null
+                if (IsCallHistoryContainer(binding.ContainerId)
+                    && zoneSyncReason is not null
                     && zoneSyncReason.Contains("Optional feature", StringComparison.OrdinalIgnoreCase))
                 {
                     log?.Report(
-                        "  nota Calls: ckm4qn70 = flag CloudKit «optional feature» sul container, " +
-                        "non il toggle iCloud.com. Serve Phone & FaceTime ON sul device " +
-                        "(Settings → iCloud → See All) e almeno una chiamata dopo l'attivazione.");
+                        "  Calls: CloudKit «optional feature disabled» (ckm4qn70) — nessuna zona da server. " +
+                        "Niente zone inventate. Phone & FaceTime ON ≠ Call History su CloudKit. " +
+                        "Alternativa: storico nel backup dispositivo iCloud.");
                 }
-            }
-
-            if (zones.Count == 0)
-            {
-                log?.Report(
-                    zoneSyncReason is not null
-                        ? $"  nessuna custom zone per record/sync — motivo: {zoneSyncReason}"
-                        : "  nessuna custom zone per record/sync (zone/retrieve e zone/sync senza zone utili)");
+                else
+                {
+                    log?.Report(
+                        zoneSyncReason is not null
+                            ? $"  nessuna custom zone per record/sync — motivo: {zoneSyncReason}"
+                            : "  nessuna custom zone per record/sync (zone/retrieve e zone/sync senza zone utili)");
+                }
             }
             else
             {
@@ -505,13 +500,6 @@ public sealed class ICloudSyncDataProbeService
         await File.WriteAllLinesAsync(Path.Combine(outDir, $"{tag}_strings.txt"), strings, ct);
     }
 
-    private static readonly string[] CallHistoryFallbackZones =
-    [
-        "CallHistory",
-        "com.apple.callhistory.cloudkit.zone",
-        "Sharing",
-    ];
-
     private static bool IsCallHistoryContainer(string containerId) =>
         containerId.Contains("CallHistory", StringComparison.OrdinalIgnoreCase)
         || containerId.Contains("callhistory", StringComparison.OrdinalIgnoreCase);
@@ -550,8 +538,6 @@ public sealed class ICloudSyncDataProbeService
         if (zone.Contains('.')
             || zone.EndsWith("Zone", StringComparison.OrdinalIgnoreCase)
             || zone.EndsWith("_zone", StringComparison.OrdinalIgnoreCase)
-            || zone.Equals("CallHistory", StringComparison.OrdinalIgnoreCase)
-            || zone.Equals("Sharing", StringComparison.OrdinalIgnoreCase)
             || zone.Equals("PrimarySync", StringComparison.OrdinalIgnoreCase)
             || zone.StartsWith("CD_", StringComparison.OrdinalIgnoreCase)
             || zone.StartsWith("metadata", StringComparison.OrdinalIgnoreCase))

@@ -15,9 +15,17 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _host.Changed += () => Dispatcher.UIThread.Post(RefreshStatus);
+        _host.ConnectionLog.Changed += () => Dispatcher.UIThread.Post(() =>
+        {
+            if (AutoRefreshConnectionsCheck.IsChecked == true)
+                RefreshConnections();
+        });
+        // Bind LicensePaths to the OS data root before any SQLite / key access.
+        _settings.ApplyToEnvironment();
         LoadSettingsIntoUi();
         RefreshStatus();
         RefreshLicenses();
+        RefreshConnections();
     }
 
     private void LoadSettingsIntoUi()
@@ -92,15 +100,19 @@ public partial class MainWindow : Window
         {
             CaptureSettingsFromUi();
             _settings.ApplyToEnvironment();
-            using var db = new LicenseDatabase(LicensePaths.DatabasePath);
+            var dbPath = LicensePaths.DatabasePath;
+            using var db = new LicenseDatabase(dbPath);
             _licenseRows = db.ListAll().ToList();
-            LicenseList.ItemsSource = _licenseRows
-                .Select(FormatRow)
-                .ToList();
+            // Materialize a new list so Avalonia always refreshes the ItemsSource.
+            LicenseList.ItemsSource = _licenseRows.Select(FormatRow).ToList();
+            LicenseDbHint.Text =
+                $"{_licenseRows.Count} license(s) · {dbPath}"
+                + " · loopback free only without CF/XFF headers; Cloudflare Tunnel clients auto-issue";
         }
         catch (Exception ex)
         {
             ErrorText.Text = ex.Message;
+            LicenseDbHint.Text = "License DB error: " + ex.Message;
         }
     }
 
@@ -183,6 +195,34 @@ public partial class MainWindow : Window
         IssuedBundleBox.Focus();
         IssuedBundleBox.SelectionStart = 0;
         IssuedBundleBox.SelectionEnd = IssuedBundleBox.Text?.Length ?? 0;
+    }
+
+    private void RefreshConnections_OnClick(object? sender, RoutedEventArgs e) => RefreshConnections();
+
+    private void ClearConnections_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _host.ConnectionLog.Clear();
+        RefreshConnections();
+    }
+
+    private void RefreshConnections()
+    {
+        var snap = _host.ConnectionLog.Snapshot();
+        ConnectionList.ItemsSource = snap.Select(FormatConnection).ToList();
+        ConnectionLogHint.Text =
+            $"{snap.Count} event(s) · abuse >{AbuseRateLimiter.BurstLimit} req / {AbuseRateLimiter.BurstWindow.TotalSeconds:0}s → block {AbuseRateLimiter.BlockDuration.TotalHours:0}h";
+        ConnectionSelectedDetail.Text = snap.Count == 0
+            ? "No inbound connections yet."
+            : snap[0].VpnHint.StartsWith("likely-vpn", StringComparison.OrdinalIgnoreCase)
+                ? $"Latest VPN/proxy hint: {snap[0].ClientIp} → {snap[0].VpnHint}"
+                : $"Latest: {snap[0].ClientIp} → {snap[0].VpnHint}";
+    }
+
+    private static string FormatConnection(ConnectionLogEntry e)
+    {
+        var ua = string.IsNullOrEmpty(e.UserAgent) ? "-" : Truncate(e.UserAgent, 40);
+        var vpn = e.VpnHint;
+        return $"{e.AtUtc.ToLocalTime():HH:mm:ss}  {e.ClientIp,-15}  {e.Method} {e.Path}  [{e.Outcome}/{e.StatusCode}]  vpn={vpn}  ua={ua}";
     }
 
     protected override async void OnClosed(EventArgs e)

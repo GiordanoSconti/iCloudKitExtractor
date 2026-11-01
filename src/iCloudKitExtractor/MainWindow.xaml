@@ -921,11 +921,26 @@
                                             MinWidth="260" Margin="0,0,10,8"
                                             Click="FindMyItemsQueryButton_Click"
                                             ToolTip="ckAppInit searchparty → BeaconStore + PCS KeySet Escrow (sola lettura). Richiede Unlock EscrowedKeys."/>
+                                    <Button x:Name="CloudKitContainerProbeButton"
+                                            Content="CloudKit — probe container (ckAppInit)"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="280" Margin="0,0,10,8"
+                                            Click="CloudKitContainerProbeButton_Click"
+                                            ToolTip="Prova ckAppInit su container catalogo + candidati (Calendar, Reminders, Wallet, …). Sola lettura; ripristina i token sessione."/>
                                     <Button Content="Copia risposta"
                                             Style="{StaticResource GhostButtonStyle}"
                                             MinWidth="120" Margin="0,0,10,8"
                                             Click="CopyExploratoryServicesResult_Click"/>
                                 </WrapPanel>
+                                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,4,0,4"
+                                           Text="Opzionale — container extra (uno per riga) da includere nel probe CloudKit:"/>
+                                <TextBox x:Name="CloudKitContainerProbeExtraTextBox"
+                                         MinHeight="48" MaxHeight="88"
+                                         AcceptsReturn="True"
+                                         TextWrapping="NoWrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         Margin="0,0,0,8"
+                                         ToolTip="Es. com.apple.mio.container — lasciato vuoto = solo lista predefinita"/>
                                 <TextBlock x:Name="ExploratoryServicesStatusText"
                                            Style="{StaticResource HintTextStyle}"
                                            Text="In attesa — effettua il login."/>
@@ -1187,7 +1202,7 @@
                         <Border Style="{StaticResource SectionCardStyle}">
                             <StackPanel>
                                 <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14"
-                                           Text="Dopo login: Photos (ON di default), Account Info e Voice Memos sono recuperabili; le altre categorie Sync Data compaiono come (presto) e restano disabilitate."/>
+                                           Text="Dopo login: Photos (ON di default), Account Info, Voice Memos e Calls sono recuperabili; le altre categorie Sync Data compaiono come (presto) e restano disabilitate. Calls: attiva Phone &amp; FaceTime in iCloud e sblocca Escrow/Octagon."/>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
                                     <TextBlock Text="Cartella output" Style="{StaticResource FieldLabelStyle}" Width="120"/>
                                     <TextBox x:Name="SyncDataOutputTextBox" Width="420" Margin="0,0,10,0"/>

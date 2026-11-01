@@ -1,11 +1,12 @@
-using System.Net;
 using iCloudKitExtractor.AnisetteLicense;
 using Microsoft.AspNetCore.Http;
 
 namespace iCloudKitExtractor.AnisetteServer.Licensed.Licensing;
 
 /// <summary>
-/// Loopback → free. /health → free.
+/// Trusted local loopback (no tunnel headers) → free.
+/// /health → free.
+/// Cloudflare Tunnel / proxy (TCP may be 127.0.0.1 but CF-Connecting-IP present) → remote rules.
 /// Remote: Bearer Package-C/token, or first-connection auto-issue (once per fingerprint).
 /// </summary>
 public sealed class LicenseAuthMiddleware
@@ -35,7 +36,15 @@ public sealed class LicenseAuthMiddleware
             return;
         }
 
-        if (IsLoopback(ctx.Connection.RemoteIpAddress))
+        string? Header(string name) => ctx.Request.Headers[name].ToString();
+        var clientIp = InboundClientAddress.Resolve(ctx.Connection.RemoteIpAddress, Header);
+        ctx.Items[InboundClientAddress.ItemsKey] = clientIp;
+        ctx.Items[InboundClientAddress.TunnelItemsKey] =
+            InboundClientAddress.HasTunnelOrProxyHeaders(Header)
+            || InboundClientAddress.TryGetForwardedClientIp(Header) is not null;
+
+        // Only skip licensing for true local clients — not Cloudflare Tunnel to localhost.
+        if (InboundClientAddress.IsTrustedLocalLoopback(ctx.Connection.RemoteIpAddress, Header))
         {
             await _next(ctx);
             return;
@@ -63,12 +72,11 @@ public sealed class LicenseAuthMiddleware
             return;
         }
 
-        // No Bearer: auto-issue once using fingerprint headers.
+        // No Bearer: auto-issue once using fingerprint headers (works behind Tunnel too).
         var machineId = ctx.Request.Headers[ClientFingerprint.HeaderMachineId].ToString();
         var hostname = ctx.Request.Headers[ClientFingerprint.HeaderHostname].ToString();
         var os = ctx.Request.Headers[ClientFingerprint.HeaderOs].ToString();
         var appInstance = ctx.Request.Headers[ClientFingerprint.HeaderAppInstance].ToString();
-        var clientIp = ctx.Connection.RemoteIpAddress?.ToString();
 
         var auto = _issuer.TryAutoIssue(clientIp, machineId, hostname, os, appInstance);
         if (auto.Ok && !string.IsNullOrEmpty(auto.BundleBase64))
@@ -88,17 +96,7 @@ public sealed class LicenseAuthMiddleware
             error = auto.Error ?? "license_required",
             detail = auto.Detail ?? "Authorization Bearer license required",
             license_id = auto.LicenseId,
+            client_ip = clientIp,
         });
-    }
-
-    private static bool IsLoopback(IPAddress? ip)
-    {
-        if (ip is null)
-            return false;
-        if (IPAddress.IsLoopback(ip))
-            return true;
-        if (ip.IsIPv4MappedToIPv6)
-            return IPAddress.IsLoopback(ip.MapToIPv4());
-        return false;
     }
 }

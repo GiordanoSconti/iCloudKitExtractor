@@ -40,9 +40,10 @@ public static class SyncDataCategoryCatalog
             []),
         new("calls", "Calls", null,
         [
-            new("com.apple.CallHistory", "com.apple.callhistory.sync-helper"),
-            // CallHistorySyncHelper entitlement: service map → cloud-storage.
+            // Prefer cloud-storage (CallHistorySyncHelper entitlement map). Legacy
+            // com.apple.CallHistory often returns ckm4qn70 «optional feature disabled».
             new("com.apple.callhistory.cloud-storage", "com.apple.callhistory.sync-helper"),
+            new("com.apple.CallHistory", "com.apple.callhistory.sync-helper"),
         ]),
         new("filevault", "FileVault2 token", null,
             []),
@@ -128,11 +129,12 @@ public static class SyncDataCategoryCatalog
         ContainersForSelection(selectedIds).Count > 0;
 
     /// <summary>
-    /// Categorie recuperabili in UI. Photos, Account Info, Voice Memos.
+    /// Categorie recuperabili in UI. Photos, Account Info, Voice Memos, Calls.
     /// Le altre restano «(presto)» disabilitate.
     /// </summary>
     public static bool IsRecoverable(Category cat) =>
         string.Equals(cat.Id, PhotosId, StringComparison.OrdinalIgnoreCase)
         || string.Equals(cat.Id, AccountInfoId, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(cat.Id, "voicememos", StringComparison.OrdinalIgnoreCase);
+        || string.Equals(cat.Id, "voicememos", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(cat.Id, "calls", StringComparison.OrdinalIgnoreCase);
 }

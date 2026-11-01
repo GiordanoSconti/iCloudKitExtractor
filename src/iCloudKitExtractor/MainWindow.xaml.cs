@@ -23,6 +23,7 @@ using iCloudKitExtractor.Services.FindMy;
 using iCloudKitExtractor.Services.Mail;
 using iCloudKitExtractor.Services.Push;
 using iCloudKitExtractor.Services.Ids;
+using iCloudKitExtractor.Services.CloudKit;
 using MailKit;
 using Microsoft.Win32;
 using System.Diagnostics;
@@ -3918,6 +3919,48 @@ public partial class MainWindow : Window
     private static string TrimUiStatus(string s, int max) =>
         string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s[..max] + "…");
 
+    private async void CloudKitContainerProbeButton_Click(object sender, RoutedEventArgs e)
+    {
+        var extrasRaw = CloudKitContainerProbeExtraTextBox?.Text;
+        await RunExploratoryQueryAsync(
+            "CloudKitContainers",
+            CloudKitContainerProbeButton,
+            async session =>
+            {
+                await TryRefreshAnisetteForExploratoryAsync(session).ConfigureAwait(false);
+                var candidates = BuildCloudKitProbeCandidates(extrasRaw);
+                var progress = new Progress<string>(msg =>
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        if (ExploratoryServicesStatusText is not null)
+                            ExploratoryServicesStatusText.Text =
+                                "CloudKitContainers: " + TrimUiStatus(msg, 120);
+                    }));
+                return await new CloudKitContainerProbeService(Orchestrator)
+                    .ProbeAsync(session, candidates, progress)
+                    .ConfigureAwait(false);
+            });
+    }
+
+    private static List<CloudKitContainerProbeService.Candidate> BuildCloudKitProbeCandidates(
+        string? extrasRaw)
+    {
+        var list = new List<CloudKitContainerProbeService.Candidate>(
+            CloudKitContainerProbeService.DefaultCandidates);
+        if (string.IsNullOrWhiteSpace(extrasRaw))
+            return list;
+
+        foreach (var line in extrasRaw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var id = line.Trim();
+            if (id.Length == 0 || id.StartsWith('#'))
+                continue;
+            list.Add(new CloudKitContainerProbeService.Candidate(id, "custom", InCatalog: false));
+        }
+
+        return list;
+    }
+
     private async void SharedStreamsQueryButton_Click(object sender, RoutedEventArgs e)
     {
         await RunExploratoryQueryAsync(
@@ -4301,9 +4344,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Elenco completo: solo Photos + Account Info selezionabili; resto «(presto)».
+        // Elenco: recuperabili vs «(presto)».
         SyncDataServicesHintText.Text =
-            "Attivi: Photos, Account Info, Voice Memos; le altre sono in arrivo (presto).";
+            "Attivi: Photos, Account Info, Voice Memos, Calls; le altre sono in arrivo (presto). " +
+            "Calls richiede Phone & FaceTime in iCloud sul device e Unlock Escrow/Octagon per PCS.";
 
         foreach (var cat in SyncDataCategoryCatalog.All)
         {

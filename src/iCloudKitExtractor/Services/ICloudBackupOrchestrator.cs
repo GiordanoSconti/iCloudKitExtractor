@@ -539,6 +539,17 @@ public sealed class ICloudBackupOrchestrator
         CancellationToken ct = default) =>
         SendCkAppInitAsync(session, containerId, log, ct);
 
+    /// <summary>
+    /// ckAppInit una sola volta senza Relogin/retry (per probe esplorativi).
+    /// Restituisce lo status HTTP; 200 = OK (sessione aggiornata con token scoped).
+    /// </summary>
+    public Task<int> TryCkAppInitOnceAsync(
+        ICloudSession session,
+        string containerId,
+        IProgress<string>? log = null,
+        CancellationToken ct = default) =>
+        TrySendCkAppInitAsync(session, containerId, log, ct);
+
     private async Task SendCkAppInitAsync(
         ICloudSession session,
         string containerId,

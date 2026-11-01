@@ -42,7 +42,7 @@ public sealed class CloudKitGatewayClient
         CancellationToken ct,
         RestoreSessionState? restore = null,
         CloudKitContainerBinding? container = null) =>
-        PostAsync(session, "https://gateway.icloud.com/ckdatabase/api/client/record/retrieve",
+        PostAsync(session, ClientApiPath("record/retrieve"),
             "CKDFetchRecordsOperation-Private", body, ct, restoreState: restore, container: container);
 
     public Task<byte[]> RecordRetrieveWscPreAuthAsync(
@@ -50,7 +50,7 @@ public sealed class CloudKitGatewayClient
         byte[] body,
         CancellationToken ct,
         RestoreSessionState? restore = null) =>
-        PostAsync(session, "https://gateway.icloud.com/ckdatabase/api/client/record/retrieve",
+        PostAsync(session, ClientApiPath("record/retrieve"),
             "CKDFetchRecordsOperation-Private-WscPreAuth", body, ct,
             decompressGzip: true, restoreState: restore, retryTransient: false);
 
@@ -59,7 +59,7 @@ public sealed class CloudKitGatewayClient
         byte[] body,
         CancellationToken ct,
         RestoreSessionState? restore = null) =>
-        PostAsync(session, "https://gateway.icloud.com/ckdatabase/api/client/record/save",
+        PostAsync(session, ClientApiPath("record/save"),
             "CKDModifyRecordsOperation-Private", body, ct, restoreState: restore);
 
     public Task<byte[]> QueryRetrieveAsync(
@@ -68,7 +68,7 @@ public sealed class CloudKitGatewayClient
         CancellationToken ct,
         RestoreSessionState? restore = null,
         CloudKitContainerBinding? container = null) =>
-        PostAsync(session, "https://gateway.icloud.com/ckdatabase/api/client/query/retrieve",
+        PostAsync(session, ClientApiPath("query/retrieve"),
             "CKDQueryOperation-Private", body, ct, restoreState: restore, container: container);
 
     public Task<byte[]> ZoneChangesAsync(
@@ -76,7 +76,7 @@ public sealed class CloudKitGatewayClient
         byte[] body,
         CancellationToken ct,
         CloudKitContainerBinding? container = null) =>
-        PostAsync(session, "https://gateway.icloud.com/ckdatabase/api/client/zone/sync",
+        PostAsync(session, ClientApiPath("zone/sync"),
             "CKDFetchDatabaseChangesOperation", body, ct, container: container);
 
     /// <summary>
@@ -89,7 +89,7 @@ public sealed class CloudKitGatewayClient
         CancellationToken ct,
         RestoreSessionState? restore = null,
         CloudKitContainerBinding? container = null) =>
-        PostAsync(session, "https://gateway.icloud.com/ckdatabase/api/client/record/retrieve",
+        PostAsync(session, ClientApiPath("record/retrieve"),
             "CKDFetchRecordZonesOperation", body, ct, restoreState: restore, container: container);
 
     /// <summary>
@@ -101,7 +101,7 @@ public sealed class CloudKitGatewayClient
         CancellationToken ct,
         RestoreSessionState? restore = null,
         CloudKitContainerBinding? container = null) =>
-        PostAsync(session, "https://gateway.icloud.com/ckdatabase/api/client/zone/retrieve",
+        PostAsync(session, ClientApiPath("zone/retrieve"),
             "CKDFetchRecordZonesOperation", body, ct, restoreState: restore, container: container);
 
     public Task<byte[]> RecordChangesAsync(
@@ -109,7 +109,7 @@ public sealed class CloudKitGatewayClient
         byte[] body,
         CancellationToken ct,
         CloudKitContainerBinding? container = null) =>
-        PostAsync(session, "https://gateway.icloud.com/ckdatabase/api/client/record/sync",
+        PostAsync(session, ClientApiPath("record/sync"),
             "CKDFetchRecordZoneChangesOperation", body, ct, container: container);
 
     /// <summary>PreAuth ubchunk su query/retrieve (risposta gzip, header X-CloudKit-PreAuth-Get).</summary>
@@ -118,13 +118,17 @@ public sealed class CloudKitGatewayClient
         byte[] body,
         CancellationToken ct,
         RestoreSessionState? restore = null) =>
-        PostAsync(session, "https://gateway.icloud.com/ckdatabase/api/client/query/retrieve",
+        PostAsync(session, ClientApiPath("query/retrieve"),
             "CKDQueryOperation-Private-WscPreAuth", body, ct,
             decompressGzip: true, restoreState: restore, retryTransient: false);
 
+    /// <summary>Relative CloudKit client path (resolved against session gateway / partition).</summary>
+    private static string ClientApiPath(string operation) =>
+        "/api/client/" + operation.TrimStart('/');
+
     private async Task<byte[]> PostAsync(
         ICloudSession session,
-        string url,
+        string clientApiPath,
         string operationKey,
         byte[] body,
         CancellationToken ct,
@@ -136,6 +140,7 @@ public sealed class CloudKitGatewayClient
         Exception? lastError = null;
         var transientAttempt = 0;
         var unauthRefresh = 0;
+        var url = ResolveClientApiUrl(session, clientApiPath);
 
         while (true)
         {
@@ -217,6 +222,54 @@ public sealed class CloudKitGatewayClient
 
     private static bool IsRetryableStatus(int status) =>
         status is 429 or 502 or 503 or 504;
+
+    /// <summary>
+    /// Prefer <c>cloudKitDatabaseGatewayUrl</c> / partition host from ckAppInit
+    /// (e.g. <c>https://p49-ckdatabase.icloud.com:443</c>) over the generic
+    /// <c>gateway.icloud.com</c> front door — some containers 503 on the generic host.
+    /// </summary>
+    internal static string ResolveClientApiUrl(ICloudSession session, string clientApiPath)
+    {
+        var path = clientApiPath.StartsWith('/') ? clientApiPath : "/" + clientApiPath;
+        if (!path.StartsWith("/api/client/", StringComparison.OrdinalIgnoreCase)
+            && !path.StartsWith("/ckdatabase/", StringComparison.OrdinalIgnoreCase))
+            path = "/api/client/" + path.TrimStart('/');
+
+        var baseGw = session.CloudKitGatewayUrl?.Trim().TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseGw)
+            && !string.IsNullOrWhiteSpace(session.Partition))
+        {
+            baseGw = $"https://{session.Partition.Trim()}-ckdatabase.icloud.com";
+        }
+
+        if (string.IsNullOrWhiteSpace(baseGw)
+            || baseGw.Contains("gateway.icloud.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var viaGateway = path.StartsWith("/ckdatabase/", StringComparison.OrdinalIgnoreCase)
+                ? path
+                : "/ckdatabase" + path;
+            return "https://gateway.icloud.com" + viaGateway;
+        }
+
+        if (!baseGw.Contains("://", StringComparison.Ordinal))
+            baseGw = "https://" + baseGw;
+
+        var uri = new Uri(baseGw);
+        var root = $"{uri.Scheme}://{uri.Authority}";
+        // pXX-ckdatabase.icloud.com → /api/client/...
+        if (uri.Host.Contains("ckdatabase", StringComparison.OrdinalIgnoreCase))
+        {
+            var apiPath = path.StartsWith("/ckdatabase/", StringComparison.OrdinalIgnoreCase)
+                ? path["/ckdatabase".Length..]
+                : path;
+            return root + apiPath;
+        }
+
+        var withCk = path.StartsWith("/ckdatabase/", StringComparison.OrdinalIgnoreCase)
+            ? path
+            : "/ckdatabase" + path;
+        return root + withCk;
+    }
 
     private static HttpRequestMessage BuildRequest(
         ICloudSession session,
