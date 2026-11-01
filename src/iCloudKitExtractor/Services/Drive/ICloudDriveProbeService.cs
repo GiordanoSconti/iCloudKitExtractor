@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Protocol;
 using iCloudKitExtractor.Services.Backup;
+using iCloudKitExtractor.Services.Forensics;
 using iCloudKitExtractor.Services.WhatsApp;
 
 namespace iCloudKitExtractor.Services.Drive;
@@ -748,6 +749,7 @@ public sealed class ICloudDriveProbeService
                     zoneFetch = Path.GetFileName(plainRoot),
                     relativePath = rel.Replace('\\', '/'),
                     bytes = new FileInfo(path).Length,
+                    sha256 = OutputHashManifest.TryComputeSha256Hex(path),
                 });
             }
         }
@@ -755,6 +757,7 @@ public sealed class ICloudDriveProbeService
         var manifest = new
         {
             generatedAt = DateTimeOffset.Now.ToString("O"),
+            algorithm = "SHA-256",
             captureRef = "capture_icloud_drive_20260905_072447",
             zones = zoneSummaries,
             fileCount = files.Count,
@@ -766,6 +769,7 @@ public sealed class ICloudDriveProbeService
             JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }),
             ct);
         log?.Report($"  manifest → {Path.GetFileName(pathOut)} ({files.Count} file plaintext)");
+        await OutputHashManifest.WriteForDirectoryAsync(outDir, log, ct).ConfigureAwait(false);
         // #region agent log
         AgentLog("H-IF5", "ICloudDriveProbeService.cs:manifest", "manifest_written", new
         {

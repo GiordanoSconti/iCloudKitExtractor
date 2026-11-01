@@ -26,6 +26,7 @@ tmp_*/
 ike_out*/
 *viewer-payload/
 **/__pycache__/
+scripts/_release_sha256_preview/
 
 ## Native build trees
 native/**/build/

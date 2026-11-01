@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using iCloudKitExtractor.Services.Forensics;
 using MailKit;
 using MimeKit;
 
@@ -75,6 +76,7 @@ public static class ImapMailExportService
         }
 
         await WriteLogAsync(root, folderFullName, written, failed, errors, ct).ConfigureAwait(false);
+        await WriteHashManifestQuietAsync(root, progress, ct).ConfigureAwait(false);
         return new ExportResult(root, written, failed, errors);
     }
 
@@ -158,7 +160,33 @@ public static class ImapMailExportService
         }
 
         await WriteLogAsync(root, "(all folders)", written, failed, errors, ct).ConfigureAwait(false);
+        await WriteHashManifestQuietAsync(root, progress, ct).ConfigureAwait(false);
         return new ExportResult(root, written, failed, errors);
+    }
+
+    private static async Task WriteHashManifestQuietAsync(
+        string root,
+        IProgress<string>? progress,
+        CancellationToken ct)
+    {
+        try
+        {
+            progress?.Report("Calcolo firme HASH (SHA-256)…");
+            await OutputHashManifest
+                .WriteForDirectoryAsync(
+                    root,
+                    progress is null ? null : new Progress<string>(s => progress.Report(s)),
+                    ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            /* integrity is best-effort */
+        }
     }
 
     private static async Task WriteLogAsync(

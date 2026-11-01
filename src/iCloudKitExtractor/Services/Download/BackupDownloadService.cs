@@ -11,6 +11,7 @@ using iCloudKitExtractor.Protocol;
 using iCloudKitExtractor.Services;
 using iCloudKitExtractor.Services.Backup;
 using iCloudKitExtractor.Services.Escrow;
+using iCloudKitExtractor.Services.Forensics;
 using iCloudKitExtractor.Services.Http;
 
 namespace iCloudKitExtractor.Services.Download;
@@ -461,6 +462,8 @@ public sealed class BackupDownloadService
         {
             await WriteItunesSidecarsAtEndOfSnapshotAsync(
                 session, job, log, ct).ConfigureAwait(false);
+            await WriteOutputHashManifestAsync(snapshotRoot, progress, log, ct)
+                .ConfigureAwait(false);
             progress?.Report(new DownloadProgressReport
             {
                 Status = $"Catalogo Manifest OK ({catalog.FileRecordNames.Count:N0} file, {catalog.Source}" +
@@ -3026,6 +3029,8 @@ public sealed class BackupDownloadService
                 $"(falliti={uiFailed:N0}, cifrati={uiCipher:N0}, staged={stagedChunks}, " +
                 $"MMCS={mmcsOk}, AES={fileDecryptOk}) → Backup/"
         });
+        await WriteOutputHashManifestAsync(snapshotRoot, progress, log, ct)
+            .ConfigureAwait(false);
         }
         finally
         {
@@ -7580,6 +7585,53 @@ public sealed class BackupDownloadService
         };
         var json = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(manifestPath, json, ct);
+    }
+
+    /// <summary>
+    /// SHA-256 of the clean iTunes <c>Backup/</c> tree → <c>HASHES.sha256</c> + <c>integrity.json</c>.
+    /// </summary>
+    private static async Task WriteOutputHashManifestAsync(
+        string snapshotRoot,
+        IProgress<DownloadProgressReport>? progress,
+        IProgress<string>? log,
+        CancellationToken ct)
+    {
+        try
+        {
+            var clean = IkeBackupOutputPaths.ResolveCleanBackupDirectory(snapshotRoot);
+            if (!Directory.Exists(clean))
+            {
+                log?.Report("HASH: Backup/ assente — skip firme.");
+                return;
+            }
+
+            progress?.Report(new DownloadProgressReport
+            {
+                Status = "Calcolo firme HASH (SHA-256)…",
+                AppendToLog = true,
+            });
+            log?.Report("Calcolo firme HASH (SHA-256) su Backup/…");
+            var result = await OutputHashManifest
+                .WriteForDirectoryAsync(clean, log, ct)
+                .ConfigureAwait(false);
+            if (result.FileCount > 0)
+            {
+                progress?.Report(new DownloadProgressReport
+                {
+                    Status =
+                        $"HASH OK: {result.FileCount:N0} file → {OutputHashManifest.Sha256FileName}",
+                    AppendToLog = true,
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            log?.Report($"HASH: errore {ex.Message}");
+        }
     }
 
     /// <summary>

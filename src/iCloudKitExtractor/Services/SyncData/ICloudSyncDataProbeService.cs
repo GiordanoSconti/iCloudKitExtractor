@@ -4,6 +4,7 @@ using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Protocol;
 using iCloudKitExtractor.Services.Backup;
 using iCloudKitExtractor.Services.Escrow;
+using iCloudKitExtractor.Services.Forensics;
 using iCloudKitExtractor.Services.WhatsApp;
 
 namespace iCloudKitExtractor.Services.SyncData;
@@ -167,6 +168,20 @@ public sealed class ICloudSyncDataProbeService
 
             var ok = containerResults.Count(static r => r.Ok);
             WriteRunLog($"Sync Data completato: {ok}/{containerResults.Count} container OK → {outDir}");
+            try
+            {
+                WriteRunLog("Calcolo firme HASH (SHA-256)…");
+                await OutputHashManifest.WriteForDirectoryAsync(
+                        outDir,
+                        new Progress<string>(WriteRunLog),
+                        ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                WriteRunLog($"HASH: {ex.Message}");
+            }
+
             progress?.Report(new SyncDataProgressReport(
                 $"Completato: {ok}/{containerResults.Count} container OK", 100));
             return new SyncDataProbeResult(outDir, containerResults, runLogPath);
