@@ -158,7 +158,7 @@
                         Click="RequireVpnConsent_OnClick"/>
               <StackPanel Grid.Column="0" Grid.Row="2" Spacing="6">
                 <TextBlock Opacity="0.7" FontSize="12" TextWrapping="Wrap"
-                           Text="Allowed entries (one per line): provider name (mullvad) or client IP (203.0.113.5). Generic tokens like proxy/vpn are rejected — use the IP when the hint is only “proxy”."/>
+                           Text="vpn= shows tipo (proxy/host/unknown) + identity. Allowlist the identity (hostname/provider) or the client IP — not the tipo word. Matching uses extracted identity (and parent domain). Generic tokens proxy/vpn/host/unknown are rejected."/>
                 <TextBox x:Name="VpnAllowBox" AcceptsReturn="True" TextWrapping="Wrap"
                          MinHeight="90" FontFamily="Consolas,Menlo,monospace" FontSize="12"
                          PlaceholderText="mullvad&#x0a;203.0.113.10&#x0a;# uni-kassel egress IP — one per line"/>

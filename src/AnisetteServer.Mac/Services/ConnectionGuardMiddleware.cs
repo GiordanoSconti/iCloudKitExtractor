@@ -62,8 +62,10 @@ public sealed class ConnectionGuardMiddleware
             vpnHint = await VpnHintProbe
                 .ClassifyAsync(classifyIp, ua, forwarded, ctx.RequestAborted)
                 .ConfigureAwait(false);
+            // Do not put the word "proxy" in the Tunnel tag — LooksLikeVpnOrProxy would
+            // treat every Tunnel client as VPN and require allowlist membership.
             if (viaTunnel && !vpnHint.Contains("tunnel", StringComparison.OrdinalIgnoreCase))
-                vpnHint += " · via Cloudflare Tunnel/proxy";
+                vpnHint += " · via Cloudflare Tunnel";
         }
         catch
         {

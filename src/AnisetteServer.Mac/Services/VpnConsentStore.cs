@@ -124,40 +124,46 @@ public sealed class VpnConsentStore
         return true;
     }
 
-    /// <summary>True if this client may pass the VPN consent gate.</summary>
+    /// <summary>
+    /// True if this client may pass the VPN consent gate.
+    /// Order: (1) IP explicitly on the consented allowlist → allow;
+    /// (2) non-VPN traffic → allow; (3) VPN/proxy-like → allow only if pattern matches allowlist.
+    /// </summary>
     public bool IsAllowed(string? clientIp, string? vpnHint)
     {
         if (!RequireConsent)
             return true;
-        if (!VpnHintProbe.LooksLikeVpnOrProxy(vpnHint))
-            return true; // non-VPN traffic not gated here
+
+        var ip = (clientIp ?? "").Trim();
+        // Ignore Tunnel decoration ("… · via Cloudflare Tunnel") for classification / name match.
+        var hint = VpnHintProbe.StripTunnelDecoration(vpnHint);
 
         lock (_gate)
         {
-            if (_allowed.Count == 0)
-                return false;
-
-            var ip = (clientIp ?? "").Trim();
-            var hint = vpnHint ?? "";
+            // Consented IP always wins — operator added this client to the allowlist.
             foreach (var p in _allowed)
             {
-                // Ignore legacy ultra-generic entries (would open every "proxy" client).
-                if (VpnHintProbe.IsGenericConsentToken(p) && !VpnHintProbe.LooksLikeIpLiteral(p))
-                    continue;
+                if (VpnHintProbe.LooksLikeIpLiteral(p) && IpEquals(ip, p))
+                    return true;
+            }
 
-                // IP literals match only the client address (not every "proxy" hint).
+            // Consented identity (hostname / provider after vpn=tipo …) — match extracted ids.
+            foreach (var p in _allowed)
+            {
                 if (VpnHintProbe.LooksLikeIpLiteral(p))
-                {
-                    if (IpEquals(ip, p))
-                        return true;
                     continue;
-                }
-
-                if (hint.Contains(p, StringComparison.OrdinalIgnoreCase))
+                if (VpnHintProbe.IsGenericConsentToken(p))
+                    continue;
+                if (VpnHintProbe.IdentityMatchesAllowPattern(p, hint))
                     return true;
             }
         }
 
+        // Clear residential traffic (no proxy/host/unknown tipo) is not gated.
+        if (!VpnHintProbe.NeedsConsentGate(hint))
+            return true;
+
+        // VPN/proxy/host/unknown: must already have matched above; otherwise deny.
         return false;
     }
 
@@ -170,7 +176,22 @@ public sealed class VpnConsentStore
         var slash = b.IndexOf('/');
         if (slash > 0)
             b = b[..slash];
-        return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+        if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Normalize IPv4-mapped IPv6 (:ffff:x.x.x.x) vs dotted IPv4.
+        if (System.Net.IPAddress.TryParse(a, out var ipA)
+            && System.Net.IPAddress.TryParse(b, out var ipB))
+        {
+            if (ipA.IsIPv4MappedToIPv6)
+                ipA = ipA.MapToIPv4();
+            if (ipB.IsIPv4MappedToIPv6)
+                ipB = ipB.MapToIPv4();
+            return ipA.Equals(ipB);
+        }
+
+        return false;
     }
 
     public void RememberDenied(string clientIp, string vpnHint)

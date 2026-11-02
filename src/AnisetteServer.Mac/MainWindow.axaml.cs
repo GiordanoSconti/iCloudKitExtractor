@@ -64,6 +64,7 @@ public partial class MainWindow : Window
         _settings.VpnConsentAllow = (VpnAllowBox.Text ?? "")
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(s => s.Length > 0 && !s.StartsWith('#'))
+            .Where(s => VpnHintProbe.LooksLikeIpLiteral(s) || !VpnHintProbe.IsGenericConsentToken(s))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -372,8 +373,10 @@ public partial class MainWindow : Window
             .Select(p =>
             {
                 var ip = VpnHintProbe.SuggestIpPattern(p.ClientIp);
+                var ids = VpnHintProbe.ExtractIdentities(p.VpnHint);
+                var idBit = ids.Count == 0 ? "" : $"  id={string.Join("|", ids.Take(3))}";
                 var ipBit = string.IsNullOrEmpty(ip) ? "" : $"  ip={ip}";
-                return $"{p.Hits}×  {p.ClientIp,-15}  suggest={p.SuggestedPattern}{ipBit}  {p.VpnHint}";
+                return $"{p.Hits}×  {p.ClientIp,-15}  suggest={p.SuggestedPattern}{idBit}{ipBit}  {p.VpnHint}";
             })
             .ToList();
     }

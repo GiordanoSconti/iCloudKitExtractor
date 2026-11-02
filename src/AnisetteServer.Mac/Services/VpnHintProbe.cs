@@ -28,14 +28,139 @@ public static partial class VpnHintProbe
     {
         if (string.IsNullOrWhiteSpace(hint))
             return false;
-        var h = hint.ToLowerInvariant();
-        if (h.StartsWith("local/private"))
+        // Tunnel path alone must not force the VPN consent gate (every CF client would need allowlisting).
+        var h = StripTunnelDecoration(hint).ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(h) || h.StartsWith("local/private"))
             return false;
         return h.Contains("likely-vpn", StringComparison.Ordinal)
                || h.Contains("vpn", StringComparison.Ordinal)
                || h.Contains("proxy", StringComparison.Ordinal)
                || h.Contains("tor", StringComparison.Ordinal)
                || h.Contains("warp", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Clients whose <c>vpn=</c> line is <c>proxy/host/unknown … identity</c> must pass the allowlist
+    /// (identity or IP). Plain residential reverse-DNS without those types is not gated.
+    /// </summary>
+    public static bool NeedsConsentGate(string? hint)
+    {
+        var h = StripTunnelDecoration(hint);
+        if (string.IsNullOrWhiteSpace(h) || h.StartsWith("local/private", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (LooksLikeVpnOrProxy(h))
+            return true;
+        // "host foo.example.edu" / "unknown" — tipo dopo vpn= che l'operatore autorizza per identità/IP.
+        if (h.StartsWith("host ", StringComparison.OrdinalIgnoreCase)
+            || h.Equals("host", StringComparison.OrdinalIgnoreCase)
+            || h.StartsWith("unknown", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Removes Cloudflare Tunnel decoration appended by ConnectionGuard so consent
+    /// matching uses the real VPN/host classification.
+    /// </summary>
+    public static string StripTunnelDecoration(string? hint)
+    {
+        if (string.IsNullOrWhiteSpace(hint))
+            return "";
+        var h = hint.Trim();
+        // "… · via Cloudflare Tunnel/proxy" or "… · via Cloudflare Tunnel"
+        const string marker = " · via Cloudflare Tunnel";
+        var idx = h.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0)
+            h = h[..idx].TrimEnd();
+        // Also strip header extras: " · X-Forwarded-For/Via present"
+        var extra = h.IndexOf(" · X-Forwarded-For", StringComparison.OrdinalIgnoreCase);
+        if (extra >= 0)
+            h = h[..extra].TrimEnd();
+        var ua = h.IndexOf(" · UA mentions", StringComparison.OrdinalIgnoreCase);
+        if (ua >= 0)
+            h = h[..ua].TrimEnd();
+        if (h.Equals("via Cloudflare Tunnel/proxy", StringComparison.OrdinalIgnoreCase)
+            || h.Equals("via Cloudflare Tunnel", StringComparison.OrdinalIgnoreCase))
+            return "";
+        return h;
+    }
+
+    /// <summary>
+    /// Identities from <c>vpn=tipo identità</c> / <c>likely-vpn/proxy (id · host)</c> for allowlist match.
+    /// </summary>
+    public static IReadOnlyList<string> ExtractIdentities(string? vpnHint)
+    {
+        var hint = StripTunnelDecoration(vpnHint);
+        var list = new List<string>();
+        void Add(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s))
+                return;
+            var clean = s.Trim().TrimEnd('…', '.', ',', ';', ')').Trim();
+            // Strip UTF-8 ellipsis if present as single char
+            clean = clean.TrimEnd('\u2026').Trim();
+            if (clean.Length < 2 || IsGenericConsentToken(clean))
+                return;
+            if (list.Any(x => string.Equals(x, clean, StringComparison.OrdinalIgnoreCase)))
+                return;
+            list.Add(clean);
+        }
+
+        if (string.IsNullOrWhiteSpace(hint))
+            return list;
+
+        // likely-vpn/proxy (mullvad · host.example.com) or (host · host.example.com)
+        var open = hint.IndexOf('(', StringComparison.Ordinal);
+        var close = hint.IndexOf(')', StringComparison.Ordinal);
+        if (open >= 0 && close > open)
+        {
+            var inner = hint[(open + 1)..close];
+            foreach (var part in inner.Split(['·', '|', ','], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                Add(part.Trim().Trim('.'));
+        }
+
+        // "host foo.example.edu" / "proxy foo" / "unknown" (no id)
+        foreach (var prefix in new[] { "host ", "proxy ", "vpn ", "unknown " })
+        {
+            if (!hint.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+            Add(hint[prefix.Length..].Trim());
+        }
+
+        // Bare domains in the hint (fallback).
+        foreach (Match m in DomainInHintRegex().Matches(hint))
+            Add(m.Value);
+
+        return list;
+    }
+
+    /// <summary>True if allowlist <paramref name="pattern"/> matches hint text or extracted identities.</summary>
+    public static bool IdentityMatchesAllowPattern(string pattern, string? vpnHint)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+            return false;
+        var p = pattern.Trim().TrimEnd('…', '\u2026');
+        if (p.Length < 2 || (IsGenericConsentToken(p) && !LooksLikeIpLiteral(p)))
+            return false;
+
+        var hint = StripTunnelDecoration(vpnHint);
+        if (hint.Contains(p, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        foreach (var id in ExtractIdentities(hint))
+        {
+            if (string.Equals(id, p, StringComparison.OrdinalIgnoreCase))
+                return true;
+            // Suffix / parent domain: allow "uni-kassel.de" vs "vpn.uni-kassel.de"
+            if (id.EndsWith("." + p, StringComparison.OrdinalIgnoreCase)
+                || p.EndsWith("." + id, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (id.Contains(p, StringComparison.OrdinalIgnoreCase)
+                || p.Contains(id, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -78,29 +203,29 @@ public static partial class VpnHintProbe
     }
 
     /// <summary>
-    /// Best pattern for the consent allowlist: named provider when specific,
-    /// otherwise the client IP (never a generic "proxy"/"vpn" token).
+    /// Best pattern for the consent allowlist: provider or host <b>identity</b> after
+    /// <c>vpn=tipo</c>, never a generic "proxy"/"vpn"/"host" token.
     /// </summary>
     public static string SuggestConsentPattern(string? vpnHint, string? clientIp)
     {
         var ip = SuggestIpPattern(clientIp);
-        var hint = vpnHint ?? "";
-        // likely-vpn/proxy (mullvad · host…)
-        var open = hint.IndexOf('(', StringComparison.Ordinal);
-        var close = hint.IndexOf(')', StringComparison.Ordinal);
-        if (open >= 0 && close > open)
+        var ids = ExtractIdentities(vpnHint);
+        // Prefer provider-looking token, then hostname identity, then IP.
+        foreach (var id in ids)
         {
-            var inner = hint[(open + 1)..close];
-            var token = inner.Split('·', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                .FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(token))
-            {
-                var clean = token.Trim().Trim('.');
-                if (!IsGenericConsentToken(clean))
-                    return clean;
-            }
+            if (id.Contains('.', StringComparison.Ordinal) && !LooksLikeIpLiteral(id))
+                continue; // hostnames second pass
+            if (!IsGenericConsentToken(id))
+                return id;
         }
 
+        foreach (var id in ids)
+        {
+            if (!IsGenericConsentToken(id))
+                return id;
+        }
+
+        var hint = StripTunnelDecoration(vpnHint);
         foreach (var t in ProviderTokens)
         {
             var clean = t.Trim('.');
@@ -210,4 +335,7 @@ public static partial class VpnHintProbe
 
     [GeneratedRegex(@"\b(vpn|proxy|tor|exit|relay)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex VpnLikeHostRegex();
+
+    [GeneratedRegex(@"\b(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DomainInHintRegex();
 }
