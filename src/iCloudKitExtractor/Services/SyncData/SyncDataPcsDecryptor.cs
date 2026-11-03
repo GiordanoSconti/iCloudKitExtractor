@@ -645,9 +645,10 @@ public static class SyncDataPcsDecryptor
     private static byte[]? TryDecryptWithZone(
         ProtectionZoneKeys zone, byte[] ciphertext, string[] aadCandidates)
     {
-        // EnumerateFieldDecryptKeys: DecryptKey + Master/KDF + nested wrap-ref + nested PCS.
+        // Expanded: DecryptKey + Master/KDF + nested wrap-ref + nested PCS (Messages).
         // plain.Length==0 è successo GCM (campo vuoto) — non confondere con fail.
-        return PcsProtectionZone.TryDecryptField(zone, ciphertext, aadCandidates);
+        // Non usare TryDecryptField(zone) (solo DecryptKey): serve al path backup veloce.
+        return PcsProtectionZone.TryDecryptFieldExpanded(zone, ciphertext, aadCandidates);
     }
 
     private static List<ProtectionZoneKeys> BuildLocalZones(

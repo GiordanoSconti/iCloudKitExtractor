@@ -1055,7 +1055,28 @@ public static class PcsProtectionZone
         }
     }
 
+    /// <summary>
+    /// Path veloce (pre-Messages): solo <see cref="ProtectionZoneKeys.DecryptKey"/>.
+    /// Usato da backupProperties / metadata / keybag / Domain — non espandere nested
+    /// <c>04 10</c> qui (GCM fail × zone × AAD = minuti). Per Manatee Messages usare
+    /// <see cref="TryDecryptFieldExpanded"/>.
+    /// </summary>
     public static byte[]? TryDecryptField(
+        ProtectionZoneKeys zone,
+        ReadOnlySpan<byte> ciphertext,
+        params string[] identifiers)
+    {
+        if (zone.DecryptKey is not { Length: >= 16 })
+            return null;
+        return TryDecryptField(zone.DecryptKey, ciphertext, identifiers);
+    }
+
+    /// <summary>
+    /// Come <see cref="TryDecryptField(ProtectionZoneKeys, ReadOnlySpan{byte}, string[])"/>
+    /// ma con <see cref="EnumerateFieldDecryptKeys"/> (master/KDF/nested symm).
+    /// Solo Sync Data Messages / probe — non sul path backup MMCS.
+    /// </summary>
+    public static byte[]? TryDecryptFieldExpanded(
         ProtectionZoneKeys zone,
         ReadOnlySpan<byte> ciphertext,
         params string[] identifiers)
