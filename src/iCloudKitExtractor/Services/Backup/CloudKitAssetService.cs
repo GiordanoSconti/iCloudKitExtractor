@@ -1139,6 +1139,10 @@ public sealed class CloudKitAssetService
     private const int PrivilegedBatchChunkSize = 12;
     /// <summary>Chunk PrivilegedBatch in parallelo per Domain (solo se pace=0).</summary>
     private const int PrivilegedBatchParallelism = 2;
+    /// <summary>
+    /// Cap globale PB tra Domain paralleli (8 FL × PB = flood → X-Apple-Error-Info).
+    /// </summary>
+    private static readonly SemaphoreSlim PrivilegedBatchGlobalGate = new(2, 2);
     /// <summary>Soglia oltre la quale il fallback per-seed è troppo costoso (401).</summary>
     private const int PrivilegedBatchPerSeedMaxTotal = 48;
     /// <summary>Pace di base (Anisette ok): 0 — solo back-off dopo 401.</summary>
@@ -1153,6 +1157,29 @@ public sealed class CloudKitAssetService
 
     private async Task<(IReadOnlyList<BackupAsset> Assets, byte[]? Payload, bool HitUnauthorized)>
         QueryPrivilegedBatchChunkAsync(
+        ICloudSession session,
+        IReadOnlyList<string> chunk,
+        string? dumpDir,
+        IProgress<string>? log,
+        CancellationToken ct,
+        int paceMs,
+        bool allowPerSeedFallback)
+    {
+        await PrivilegedBatchGlobalGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await QueryPrivilegedBatchChunkCoreAsync(
+                    session, chunk, dumpDir, log, ct, paceMs, allowPerSeedFallback)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            PrivilegedBatchGlobalGate.Release();
+        }
+    }
+
+    private async Task<(IReadOnlyList<BackupAsset> Assets, byte[]? Payload, bool HitUnauthorized)>
+        QueryPrivilegedBatchChunkCoreAsync(
         ICloudSession session,
         IReadOnlyList<string> chunk,
         string? dumpDir,
@@ -1240,6 +1267,20 @@ public sealed class CloudKitAssetService
 
         if (CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err))
         {
+            // X-Apple-Error-Info / throttle: per-seed × N Domain = storm (wave 60+ a 0 auth).
+            var throttle = LooksLikeCloudKitThrottle(err);
+            if (throttle)
+            {
+                NoteGatewayUnauthorized();
+                log?.Report(
+                    $"  PrivilegedBatch ×{chunk.Count}: {err ?? "throttle"} — " +
+                    "niente per-seed (backoff)");
+                await Task.Delay(
+                        Math.Max(Volatile.Read(ref _gatewayPaceMs), 500), ct)
+                    .ConfigureAwait(false);
+                return ([], payload, hit401);
+            }
+
             if (!allowPerSeedFallback)
             {
                 log?.Report(
@@ -2621,6 +2662,14 @@ public sealed class CloudKitAssetService
         var ms = Volatile.Read(ref _gatewayPaceMs);
         return ms > 0 ? Task.Delay(ms, ct) : Task.CompletedTask;
     }
+
+    private static bool LooksLikeCloudKitThrottle(string? err) =>
+        !string.IsNullOrWhiteSpace(err)
+        && (err.Contains("X-Apple-Error-Info", StringComparison.OrdinalIgnoreCase)
+            || err.Contains("throttl", StringComparison.OrdinalIgnoreCase)
+            || err.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
+            || err.Contains("try again", StringComparison.OrdinalIgnoreCase)
+            || err.Contains("RetryAfter", StringComparison.OrdinalIgnoreCase));
 
     private void NoteGatewayUnauthorized()
     {

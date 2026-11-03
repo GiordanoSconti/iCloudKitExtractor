@@ -9284,8 +9284,20 @@ public sealed class BackupDownloadService
             if (stillNeed == 0)
                 break;
 
-            // Seed della wave ancora senza auth (chunk 401 skip / EN size sbagliato):
-            // rimetti in coda, altrimenti restano sticky fino al retry finale.
+            // gained==0 (Error-Info / vuoto): NON riaccodare la stessa wave —
+            // altrimenti wave 50–64 × Domain paralleli = flood X-Apple-Error-Info.
+            // Il retry finale sotto gestisce i missing una sola volta (max 2 pass).
+            if (gained == 0)
+            {
+                log?.Report(
+                    $"  wave {wave}: 0 auth — non riaccodo {waveSeeds.Count} seed " +
+                    $"(restano in coda {pendingSeeds.Count}; retry finale se serve)");
+                if (pendingSeeds.Count == 0)
+                    break;
+                continue;
+            }
+
+            // Seed wave parziale: solo quelli ancora senza auth (size/EN sbagliato).
             var unfinishedWaveSeeds = new List<string>();
             foreach (var asset in need)
             {
@@ -9350,8 +9362,8 @@ public sealed class BackupDownloadService
             // (es. 900+ ready / 200+ skip) restavano senza MmcsAuth. Continua le wave.
         }
 
-        // Retry dedicato: solo seed degli asset ancora senza auth (dopo wave + remount).
-        for (var retry = 0; retry < 4; retry++)
+        // Retry dedicato (max 2): niente loop infinito su Error-Info.
+        for (var retry = 0; retry < 2; retry++)
         {
             var missing = need.Where(static a => !HasUsableMmcsAuth(a.MmcsAuth)).ToList();
             if (missing.Count == 0 || _assets.AnisetteRefreshBlocked)
