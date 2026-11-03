@@ -6889,7 +6889,9 @@ public sealed class BackupDownloadService
         {
             if (payload is not { Length: > 64 })
                 return;
-            foreach (var zone in PcsProtectionZone.TryUnwrapAll(payload, pool))
+            // Mai light: RecordPayload Domain / S: × Escrow seed = minuti di ECDH 0xFF.
+            foreach (var zone in PcsProtectionZone.TryUnwrapAll(
+                         payload, pool, includeLight: false))
                 ConsiderZone(zone, source);
         }
 
@@ -6924,16 +6926,22 @@ public sealed class BackupDownloadService
                 foreach (var (master, source) in _assets.MastersForMmcsZone(assetZone))
                     BootMaster(master, source);
 
-                // Re-unwrap payload etichettato (HEAD: light default ON) — una tantum.
+                var swBoot = System.Diagnostics.Stopwatch.StartNew();
+                log?.Report(
+                    $"  MMCS KEK: harvest master (DER-only) zones=" +
+                    $"{_assets.BootstrapZonesPayload?.Length ?? 0} B, " +
+                    $"S:={_assets.BootstrapSnapshotPayload?.Length ?? 0} B, seeds={seeds.Count}…");
+
+                // Re-unwrap DER-only (light su S: ~500 KB × 66 seed = minuti al 1° FL).
                 if (_assets.BootstrapZonesPayload is { Length: > 64 })
                 {
                     foreach (var z in PcsProtectionZone.TryUnwrapAllIterative(
-                                 _assets.BootstrapZonesPayload, seeds))
+                                 _assets.BootstrapZonesPayload, seeds, includeLight: false))
                         BootZone(z, "zones-iter");
                 }
 
                 foreach (var z in PcsProtectionZone.TryUnwrapAllIterative(
-                             _assets.BootstrapSnapshotPayload ?? [], pool))
+                             _assets.BootstrapSnapshotPayload ?? [], pool, includeLight: false))
                     BootZone(z, "snapshot-S");
 
                 _cachedMmcsMasters = boot
@@ -6951,7 +6959,8 @@ public sealed class BackupDownloadService
                     $"(prefer={assetZone}, zones={_assets.BootstrapZonesPayload?.Length ?? 0} B, " +
                     $"S:={_assets.BootstrapSnapshotPayload?.Length ?? 0} B, " +
                     $"diskLabeled={_assets.CachedZoneMasters.Count}, seeds={seeds.Count}, " +
-                    $"pool={pool.Count}, shareZones={bootZones.Count})");
+                    $"pool={pool.Count}, shareZones={bootZones.Count}, " +
+                    $"{swBoot.ElapsedMilliseconds} ms)");
             }
             else if (_cachedMmcsBootPool is { Count: > 0 })
             {
@@ -6976,7 +6985,8 @@ public sealed class BackupDownloadService
                     ConsiderZone(zone, "record-PI");
                 else
                 {
-                    foreach (var z in PcsProtectionZone.TryUnwrapAll(der, pool))
+                    foreach (var z in PcsProtectionZone.TryUnwrapAll(
+                                 der, pool, includeLight: false))
                         ConsiderZone(z, "record-PI-scan");
                 }
             }
@@ -7129,7 +7139,8 @@ public sealed class BackupDownloadService
                 {
                     if (payload is not { Length: > 64 })
                         return;
-                    zones.AddRange(PcsProtectionZone.TryUnwrapAllIterative(payload, pool));
+                    zones.AddRange(PcsProtectionZone.TryUnwrapAllIterative(
+                        payload, pool, includeLight: false));
                 }
 
                 AbsorbBoot(_assets.BootstrapZonesPayload);
@@ -7140,7 +7151,8 @@ public sealed class BackupDownloadService
             {
                 if (payload is not { Length: > 64 })
                     return;
-                zones.AddRange(PcsProtectionZone.TryUnwrapAllIterative(payload, pool));
+                zones.AddRange(PcsProtectionZone.TryUnwrapAllIterative(
+                    payload, pool, includeLight: false));
             }
 
             AbsorbRecord(asset.RecordPayload);

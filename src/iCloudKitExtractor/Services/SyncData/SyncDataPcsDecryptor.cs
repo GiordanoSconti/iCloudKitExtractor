@@ -64,7 +64,9 @@ public static class SyncDataPcsDecryptor
         {
             // rustpush: zone PI → nested EC; then record_protection_info decode →
             // default_record_keys (master + nest symm 04 10) for field GCM.
-            var fromZones = PcsProtectionZone.TryUnwrapAll(zonesPayload, seedKeys);
+            // Messages/SyncData: light ON (Backup lo tiene sempre OFF).
+            var fromZones = PcsProtectionZone.TryUnwrapAll(
+                zonesPayload, seedKeys, includeLight: true);
             if (fromZones.Count > 0)
             {
                 zones.AddRange(fromZones);
@@ -73,7 +75,8 @@ public static class SyncDataPcsDecryptor
 
             for (var round = 0; round < 3; round++)
             {
-                var more = PcsProtectionZone.TryUnwrapAll(zonesPayload, poolKeys);
+                var more = PcsProtectionZone.TryUnwrapAll(
+                    zonesPayload, poolKeys, includeLight: true);
                 var added = 0;
                 foreach (var z in more)
                 {
@@ -104,7 +107,8 @@ public static class SyncDataPcsDecryptor
         }
         else
         {
-            fromRecords = PcsProtectionZone.TryUnwrapAllIterative(recordSyncPayload, poolKeys);
+            fromRecords = PcsProtectionZone.TryUnwrapAllIterative(
+                recordSyncPayload, poolKeys, includeLight: true);
             IndexZonesByNearbyMaster(recordSyncPayload, fromRecords, keyToRecord);
         }
 
@@ -627,10 +631,11 @@ public static class SyncDataPcsDecryptor
                 return (plain, zone);
         }
 
-        // 3) PI light nel ciphertext (solo se poche zone globali).
+        // 3) PI light nel ciphertext (solo se poche zone globali) — Sync Data only.
         if (ciphertext.Length >= 32 && zones.Count < 64)
         {
-            var embedded = PcsProtectionZone.TryUnwrapAll(ciphertext, poolKeys);
+            var embedded = PcsProtectionZone.TryUnwrapAll(
+                ciphertext, poolKeys, includeLight: true);
             foreach (var zone in embedded)
             {
                 var plain = TryDecryptWithZone(zone, ciphertext, aadCandidates);

@@ -183,7 +183,7 @@ public static class BackupAssetMetadataDecryptor
         byte[] payload,
         BackupAsset asset,
         List<PcsCompactPrivateKey> seedKeys,
-        bool includeLight = true)
+        bool includeLight = false)
     {
         var zones = new List<ProtectionZoneKeys>();
         var pool = new List<PcsCompactPrivateKey>(seedKeys);

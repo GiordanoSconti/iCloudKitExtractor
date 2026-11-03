@@ -233,14 +233,15 @@ public static class PcsProtectionZone
 
     /// <summary>
     /// Unwrap di tutti i candidati DER ProtectionInfo nel payload (zone PI + recordProtectionInfo).
-    /// zone/retrieve per WhatsApp espone tipicamente 2–3 appl[1] vicino alla zona.
+    /// <paramref name="includeLight"/> default <c>false</c>: lo scan 0xFF×N seed è costoso
+    /// e serve solo Sync Data (Messages / Photos CPL). Backup / Ford / IKM / keybag = DER-only.
     /// </summary>
     public static List<ProtectionZoneKeys> TryUnwrapAll(
         ReadOnlySpan<byte> protectionInfoPayload,
         IReadOnlyList<PcsCompactPrivateKey> seedKeys,
         string? protectionInfoTag = null,
         IReadOnlyList<PcsCompactPrivateKey>? lightKeys = null,
-        bool includeLight = true,
+        bool includeLight = false,
         bool includeDer = true)
     {
         // Try*: mai propagare (scan CPL multi-MB può colpire TLV/span malformati → AOR).
@@ -338,13 +339,14 @@ public static class PcsProtectionZone
     /// Unwrap iterativo: le nested keys di un PI (MasterKeySet) aprono altri PI
     /// nello stesso payload (CreateWithExported chain). Es. PI mbksync 572 B
     /// → nested → PI ~401 B (_defaultZone content) → master per wrap fileList.
+    /// Default <paramref name="includeLight"/> = <c>false</c> (Backup-safe).
     /// </summary>
     public static List<ProtectionZoneKeys> TryUnwrapAllIterative(
         ReadOnlySpan<byte> protectionInfoPayload,
         IReadOnlyList<PcsCompactPrivateKey> seedKeys,
         string? protectionInfoTag = null,
         int maxRounds = 4,
-        bool includeLight = true)
+        bool includeLight = false)
     {
         var payload = protectionInfoPayload.ToArray();
         var pool = seedKeys.ToList();
@@ -353,7 +355,7 @@ public static class PcsProtectionZone
 
         for (var round = 0; round < maxRounds; round++)
         {
-            // Backup mbksync/catalog: solo DER (light 0xFF×N seed = minuti su ADP).
+            // Default DER-only: light 0xFF×N seed = minuti su backup/S:/EN.
             var found = TryUnwrapAll(
                 payload, pool, protectionInfoTag, includeLight: includeLight);
             var added = 0;

@@ -1692,7 +1692,7 @@ public sealed class CloudKitAssetService
     private static List<(ProtectionZoneKeys Zone, string ZoneName)> UnwrapZonesLabeled(
         byte[] zonesPayload,
         IReadOnlyList<PcsCompactPrivateKey> seeds,
-        bool includeLight = true)
+        bool includeLight = false)
     {
         var results = new List<(ProtectionZoneKeys, string)>();
         var seen = new HashSet<string>(StringComparer.Ordinal);

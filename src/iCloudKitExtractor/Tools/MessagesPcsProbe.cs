@@ -84,7 +84,8 @@ public static class MessagesPcsProbe
         // decode(zone_keys) → default_record_keys (PCSKey) for field GCM.
         if (zonesPayload is { Length: > 0 })
         {
-            var round0 = PcsProtectionZone.TryUnwrapAll(zonesPayload, seed);
+            var round0 = PcsProtectionZone.TryUnwrapAll(
+                zonesPayload, seed, includeLight: true);
             zones.AddRange(round0);
             pool = PcsProtectionZone.MergeKeys(seed, round0);
             L($"zones round0 (seed): {round0.Count} pool={pool.Count}");
@@ -92,7 +93,8 @@ public static class MessagesPcsProbe
             // Re-scan with nested MasterKeySet → record_protection_info.
             for (var round = 1; round <= 3; round++)
             {
-                var more = PcsProtectionZone.TryUnwrapAll(zonesPayload, pool);
+                var more = PcsProtectionZone.TryUnwrapAll(
+                    zonesPayload, pool, includeLight: true);
                 var added = 0;
                 foreach (var z in more)
                 {

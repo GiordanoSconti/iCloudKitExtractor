@@ -134,7 +134,8 @@ public sealed class PhotosMediaMetaCache
             zones = [];
             if (zonePayload is { Length: > 32 })
             {
-                var fromZone = PcsProtectionZone.TryUnwrapAll(zonePayload, seedKeys, lightKeys: seedKeys);
+                var fromZone = PcsProtectionZone.TryUnwrapAll(
+                    zonePayload, seedKeys, lightKeys: seedKeys, includeLight: true);
                 zones.AddRange(fromZone);
                 pool = PcsProtectionZone.MergeKeys(seedKeys, fromZone);
             }
@@ -145,11 +146,12 @@ public sealed class PhotosMediaMetaCache
                 log?.Report(
                     $"  BuildRecordMetadata: unwrap pagina {pi + 1}/{assetPages.Count} " +
                     $"({assetPages[pi].Length:N0} B)…");
-                // Come SyncDataPcsDecryptor: no light brute su multi-MB CPL.
+                // Pagine piccole: light OK. Multi-MB → UnwrapPhotosPageFast (light indexed).
                 var page = assetPages[pi];
                 var fromPage = page.Length >= 200_000
                     ? UnwrapPhotosPageFast(page, pool)
-                    : PcsProtectionZone.TryUnwrapAll(page, pool, lightKeys: seedKeys);
+                    : PcsProtectionZone.TryUnwrapAll(
+                        page, pool, lightKeys: seedKeys, includeLight: true);
                 zones.AddRange(fromPage);
                 pool = PcsProtectionZone.MergeKeys(pool, fromPage);
             }
@@ -213,7 +215,8 @@ public sealed class PhotosMediaMetaCache
                         var start = Math.Max(0, field.Offset - 6144);
                         var len = Math.Min(page.Length - start, 12288);
                         localZones = PcsProtectionZone.TryUnwrapAll(
-                            page.AsSpan(start, len), seedKeys, lightKeys: seedKeys);
+                            page.AsSpan(start, len), seedKeys, lightKeys: seedKeys,
+                            includeLight: true);
                         localZonesByUuid[uuid] = localZones;
                     }
 

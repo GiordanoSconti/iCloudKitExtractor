@@ -632,8 +632,10 @@ public sealed class PhotosCloudSyncService
             var pool = new List<PcsCompactPrivateKey>(seedKeys);
             var zones = new List<ProtectionZoneKeys>();
             if (zonePayload is { Length: > 32 })
-                zones.AddRange(PcsProtectionZone.TryUnwrapAll(zonePayload, seedKeys));
-            zones.AddRange(PcsProtectionZone.TryUnwrapAll(albumsPayload, pool));
+                zones.AddRange(PcsProtectionZone.TryUnwrapAll(
+                    zonePayload, seedKeys, includeLight: true));
+            zones.AddRange(PcsProtectionZone.TryUnwrapAll(
+                albumsPayload, pool, includeLight: true));
             pool = PcsProtectionZone.MergeKeys(pool, zones);
 
             var fields = CloudKitEncryptedFieldScanner.Scan(albumsPayload, ["albumNameEnc"]);
@@ -696,7 +698,8 @@ public sealed class PhotosCloudSyncService
                 return plain;
         }
 
-        foreach (var zone in PcsProtectionZone.TryUnwrapAll(ciphertext, seedKeys))
+        foreach (var zone in PcsProtectionZone.TryUnwrapAll(
+                     ciphertext, seedKeys, includeLight: true))
         {
             var plain = PcsProtectionZone.TryDecryptField(zone, ciphertext, aad);
             if (plain is { Length: > 0 })
@@ -1426,7 +1429,7 @@ public sealed class PhotosCloudSyncService
         {
             var fromZone = await Task.Run(
                     () => PcsProtectionZone.TryUnwrapAll(
-                        zonePayload, seedKeys, lightKeys: seedKeys),
+                        zonePayload, seedKeys, lightKeys: seedKeys, includeLight: true),
                     ct)
                 .ConfigureAwait(false);
             if (fromZone.Count > 0)
