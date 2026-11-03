@@ -979,9 +979,8 @@ public sealed class CloudKitAssetService
         var lastProgressLog = 0;
         var throttleAbort = 0;
         var refreshGate = new SemaphoreSlim(1, 1);
-        // Sempre 1 slot locale: il parallelismo tra Domain è già sul download;
-        // più chunk in coda = flood non appena Apple riapre.
-        using var parallelGate = new SemaphoreSlim(1, 1);
+        // Chunk paralleli per Domain (il gate globale cap ancora tra Domain).
+        using var parallelGate = new SemaphoreSlim(PrivilegedBatchParallelism);
         var tasks = new List<Task>();
 
         async Task<bool> RefreshAnisetteAsync(string reason)
@@ -1143,7 +1142,7 @@ public sealed class CloudKitAssetService
                                 log?.Report(
                                     $"  PrivilegedBatch progresso {done}/{chunkCount} " +
                                     $"auth={assets.Count} pace={Volatile.Read(ref _gatewayPaceMs)}ms " +
-                                    $"parallel=1 abort={Volatile.Read(ref throttleAbort)}");
+                                    $"parallel={PrivilegedBatchParallelism} abort={Volatile.Read(ref throttleAbort)}");
                             }
                         }
 
@@ -1170,7 +1169,7 @@ public sealed class CloudKitAssetService
                                         throttleAbort = Volatile.Read(ref throttleAbort),
                                         paceMs = Volatile.Read(ref _gatewayPaceMs),
                                         bagCount = assets.Count,
-                                        parallel = 1,
+                                        parallel = PrivilegedBatchParallelism,
                                         chunkSize = PrivilegedBatchChunkSize,
                                     },
                                 });
@@ -1273,10 +1272,10 @@ public sealed class CloudKitAssetService
     /// <summary>Chunk PrivilegedBatch in parallelo per Domain (solo se pace=0 / no cooldown).</summary>
     private const int PrivilegedBatchParallelism = 2;
     /// <summary>
-    /// Cap globale PB tra Domain paralleli: 1 = niente flood query/retrieve
-    /// (8 FL × PB paralleli → X-Apple-Error-Info). MMCS/edge restano paralleli.
+    /// Cap globale PB tra Domain paralleli (chunk×Domain). 2 = throughput
+    /// moderato; il «throttle» X-Apple-Error-Info era un falso positivo MMCS.
     /// </summary>
-    private static readonly SemaphoreSlim PrivilegedBatchGlobalGate = new(1, 1);
+    private static readonly SemaphoreSlim PrivilegedBatchGlobalGate = new(2, 2);
     /// <summary>Evita deadlock se PerSeed/TryResolve è già sotto il gate.</summary>
     private static readonly AsyncLocal<bool> PrivilegedBatchGateHeld = new();
     /// <summary>Soglia oltre la quale il fallback per-seed è troppo costoso (401).</summary>
@@ -2838,8 +2837,8 @@ public sealed class CloudKitAssetService
     /// <summary>TickCount64: fino a qui non azzerare pace dopo Error-Info.</summary>
     private long _gatewayThrottleUntilMs;
     /// <summary>Finestra in cui tenere un floor di pace dopo throttle Apple.</summary>
-    private const int GatewayThrottleHoldMs = 90_000;
-    private const int GatewayThrottleFloorMs = 400;
+    private const int GatewayThrottleHoldMs = 30_000;
+    private const int GatewayThrottleFloorMs = 150;
     /// <summary>1 = refresh Anisette fallito; ritenta dopo cooldown.</summary>
     private int _anisetteRefreshFailed;
     private long _anisetteRefreshFailedAtMs;

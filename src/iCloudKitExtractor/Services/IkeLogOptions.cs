@@ -169,6 +169,12 @@ public static class IkeLogOptions
             @"fail\s*=\s*0(?:/\d+)?",
             "okcount",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        // "abort=0" in PrivilegedBatch progresso — contatore, non ABORT.
+        scan = System.Text.RegularExpressions.Regex.Replace(
+            scan,
+            @"\babort\s*=\s*\d+",
+            "abortcount",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
         return HasLogErrorToken(scan)
                || HasHttpResponseStatusError(scan)

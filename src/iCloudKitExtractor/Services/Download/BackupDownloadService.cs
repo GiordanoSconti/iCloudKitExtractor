@@ -29,10 +29,10 @@ public sealed class BackupDownloadService
         new(BackupEdgeDownloadParallelism, BackupEdgeDownloadParallelism);
 
     /// <summary>
-    /// Un solo Domain alla volta su PrivilegedBatch / query/retrieve auth —
-    /// 8 Domain × PB → X-Apple-Error-Info. MMCS/edge restano paralleli.
+    /// Cap Domain in PrivilegedBatch auth (allineato a domainParallel default).
+    /// Il blocco a 1 era per un falso positivo X-Apple-Error-Info.
     /// </summary>
-    private static readonly SemaphoreSlim GlobalFlistAuthGate = new(1, 1);
+    private static readonly SemaphoreSlim GlobalFlistAuthGate = new(8, 8);
 
     /// <summary>
     /// Cache sessione: MmcsAuth già harvestati (PB) per digest signature 40-char.

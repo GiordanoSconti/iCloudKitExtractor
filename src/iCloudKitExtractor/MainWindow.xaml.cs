@@ -1070,6 +1070,10 @@ public partial class MainWindow : Window
                 | System.Text.RegularExpressions.RegexOptions.CultureInvariant))
             return DownloadLogKind.Info;
 
+        // PrivilegedBatch progresso … abort=0 — campo contatore, non token ABORT.
+        if (line.Contains("PrivilegedBatch progresso", StringComparison.OrdinalIgnoreCase))
+            return DownloadLogKind.Info;
+
         // Successi / traffico normale (path tipo ApiErrors.bundle NON sono errori).
         if (ContainsAny(line,
                 "verifyDigest=ok",
@@ -1092,11 +1096,16 @@ public partial class MainWindow : Window
             && !IkeLogOptions.HasHttpResponseStatusError(line))
             return DownloadLogKind.Info;
 
-        // "fail=0" / "fail=0/1296" non sono errori (es. MMCS ok=1296 fail=0/1296).
+        // "fail=0" / "abort=0" (contatori progresso) non sono token ERROR/ABORT.
         var scan = System.Text.RegularExpressions.Regex.Replace(
             line,
             @"fail\s*=\s*0(?:/\d+)?",
             "okcount",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        scan = System.Text.RegularExpressions.Regex.Replace(
+            scan,
+            @"\babort\s*=\s*\d+",
+            "abortcount",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
         // Errori: token interi (evita ApiErrors / ErrorHandler / RevolutErrors).
