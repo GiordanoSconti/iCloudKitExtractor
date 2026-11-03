@@ -155,9 +155,31 @@ public static class CloudKitResponseParser
         return false;
     }
 
+    /// <summary>
+    /// Nomi header HTTP/MMCS spesso embedded nei template edge (es. nel body
+    /// PrivilegedBatch OK compare la stringa <c>X-Apple-Error-Info</c> come
+    /// chiave header da inviare a content, non come errore CloudKit).
+    /// </summary>
+    private static bool IsAppleHttpHeaderName(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s) || s.Length > 64 || s.Contains(' '))
+            return false;
+        return s.StartsWith("X-Apple-", StringComparison.OrdinalIgnoreCase)
+               || s.StartsWith("x-apple-", StringComparison.OrdinalIgnoreCase)
+               || s.StartsWith("x-cloudkit-", StringComparison.OrdinalIgnoreCase)
+               || s.Equals("Accept", StringComparison.OrdinalIgnoreCase)
+               || s.Equals("Range", StringComparison.OrdinalIgnoreCase)
+               || s.Equals("Host", StringComparison.OrdinalIgnoreCase)
+               || s.Equals("Date", StringComparison.OrdinalIgnoreCase)
+               || s.Equals("Server", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool IsHumanCloudKitError(string s)
     {
         if (s.Length < 8)
+            return false;
+        // Mai trattare il solo nome header come reason (falso positivo PB/MMCS).
+        if (IsAppleHttpHeaderName(s))
             return false;
         return s.Contains("error", StringComparison.OrdinalIgnoreCase)
             || s.Contains("notFound", StringComparison.OrdinalIgnoreCase)
@@ -632,6 +654,61 @@ public static class CloudKitResponseParser
             .Distinct(StringComparer.Ordinal)
             .Take(max)
             .ToList();
+    }
+
+    /// <summary>
+    /// Diagnostica errori opachi (X-Apple-Error-Info): size, hex, chiavi <c>ck*</c>,
+    /// tutte le stringhe ASCII/UTF-8 utili. Per capire se c’è reason/id oltre al nome header.
+    /// </summary>
+    public static string FormatErrorPayloadDiagnostics(byte[]? payload, int maxStrings = 48)
+    {
+        if (payload is not { Length: > 0 })
+            return "payload=vuoto";
+
+        var strings = ExtractDiagnosticStrings(payload, maxStrings);
+        var ckKeys = strings
+            .Where(static s =>
+                s.Length is >= 5 and <= 24
+                && s.StartsWith("ck", StringComparison.OrdinalIgnoreCase)
+                && s.Skip(2).All(char.IsLetterOrDigit))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToList();
+        var interesting = strings
+            .Where(static s =>
+                s.Contains("error", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("throttl", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("retry", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("rate", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("limit", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("quota", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("fail", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("denied", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("forbidden", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("Apple", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("CloudKit", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("try again", StringComparison.OrdinalIgnoreCase))
+            .Take(16)
+            .ToList();
+        var hexLen = Math.Min(payload.Length, 96);
+        var hex = Convert.ToHexString(payload.AsSpan(0, hexLen));
+        if (payload.Length > hexLen)
+            hex += "…";
+
+        static string JoinClip(IReadOnlyList<string> items, int maxItem = 96)
+        {
+            if (items.Count == 0)
+                return "—";
+            return string.Join(" | ", items.Select(s =>
+                s.Length <= maxItem ? s : s[..maxItem] + "…"));
+        }
+
+        return
+            $"len={payload.Length} " +
+            $"ck=[{JoinClip(ckKeys, 32)}] " +
+            $"hit=[{JoinClip(interesting, 120)}] " +
+            $"all=[{JoinClip(strings.Take(24).ToList(), 80)}] " +
+            $"hex={hex}";
     }
 
     private static IEnumerable<string> CollectStrings(byte[] payload)

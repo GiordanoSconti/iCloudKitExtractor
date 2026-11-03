@@ -1420,13 +1420,14 @@ public sealed class CloudKitAssetService
         if (CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err))
         {
             // X-Apple-Error-Info / throttle: niente per-seed (moltiplica le richieste).
-            var throttle = LooksLikeCloudKitThrottle(err);
+            var throttle = LooksLikeCloudKitThrottle(err, payload);
             if (throttle)
             {
                 NoteGatewayUnauthorized();
                 log?.Report(
                     $"  PrivilegedBatch ×{chunk.Count}: {err ?? "throttle"} — " +
                     "niente per-seed (backoff)");
+                LogPrivilegedBatchThrottleDiagnostics(chunk, payload, err, dumpDir, log);
                 await Task.Delay(
                         Math.Max(Volatile.Read(ref _gatewayPaceMs), 500), ct)
                     .ConfigureAwait(false);
@@ -1566,10 +1567,12 @@ public sealed class CloudKitAssetService
         IReadOnlyList<string>? queriedSeeds = null)
     {
         var assets = new Dictionary<string, BackupAsset>(StringComparer.Ordinal);
-        if (payload.Length == 0
-            || CloudKitResponseParser.IsCloudKitErrorPayload(payload, out _))
+        if (payload.Length == 0)
             return [];
 
+        // Harvest PRIMA del gate errore: i template edge MMCS includono la stringa
+        // "X-Apple-Error-Info" come nome header → IsCloudKitErrorPayload faceva
+        // falso positivo e buttava CAog/MA: validi (dump 5871 B con 3×CAog).
         foreach (var a in ParseAssetsFromPayload(payload))
         {
             a.ZoneName = DefaultZone;
@@ -1601,7 +1604,14 @@ public sealed class CloudKitAssetService
         if (queriedSeeds is { Count: > 0 })
             BindQueriedSeedsOntoHarvest(assets, queriedSeeds);
 
-        return assets.Values.ToList();
+        if (assets.Count > 0)
+            return assets.Values.ToList();
+
+        // Solo se non abbiamo harvested nulla: valuta errore CloudKit reale.
+        if (CloudKitResponseParser.IsCloudKitErrorPayload(payload, out _))
+            return [];
+
+        return [];
     }
 
     /// <summary>
@@ -2844,13 +2854,120 @@ public sealed class CloudKitAssetService
         return ms > 0 ? Task.Delay(ms, ct) : Task.CompletedTask;
     }
 
-    private static bool LooksLikeCloudKitThrottle(string? err) =>
-        !string.IsNullOrWhiteSpace(err)
-        && (err.Contains("X-Apple-Error-Info", StringComparison.OrdinalIgnoreCase)
-            || err.Contains("throttl", StringComparison.OrdinalIgnoreCase)
+    private static bool LooksLikeCloudKitThrottle(string? err, byte[]? payload = null)
+    {
+        // Body con CAog pronti = risposta PB OK (il nome header X-Apple-Error-Info
+        // può comparire nei template edge). Non è throttle.
+        if (payload is { Length: > 200 }
+            && MmcsAuthBuilder.ExtractAllReadyMadeAuths(payload).Count > 0)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(err))
+            return false;
+
+        // La sola label "X-Apple-Error-Info" non basta (falso positivo MMCS).
+        if (err.Trim().Equals("X-Apple-Error-Info", StringComparison.OrdinalIgnoreCase))
+            return payload is null || payload.Length < 200;
+
+        return err.Contains("throttl", StringComparison.OrdinalIgnoreCase)
             || err.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
             || err.Contains("try again", StringComparison.OrdinalIgnoreCase)
-            || err.Contains("RetryAfter", StringComparison.OrdinalIgnoreCase));
+            || err.Contains("RetryAfter", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Log/dump completo su Error-Info: header HTTP ultima risposta + stringhe/ck*/hex body.
+    /// </summary>
+    private void LogPrivilegedBatchThrottleDiagnostics(
+        IReadOnlyList<string> chunk,
+        byte[]? payload,
+        string? errLabel,
+        string? dumpDir,
+        IProgress<string>? log)
+    {
+        try
+        {
+            var last = _gateway.LastResponse;
+            if (last is not null)
+            {
+                var hdr = last.Headers.Count == 0
+                    ? "(nessun X-Apple-/Retry-After)"
+                    : string.Join("; ", last.Headers.Select(static kv => $"{kv.Key}={kv.Value}"));
+                log?.Report(
+                    $"  PB throttle HTTP: status={last.StatusCode} op={last.Operation} " +
+                    $"bodyLen={last.BodyLength} url={last.Url}");
+                log?.Report($"  PB throttle headers: {hdr}");
+            }
+            else
+            {
+                log?.Report("  PB throttle HTTP: (LastResponse assente)");
+            }
+
+            var diag = CloudKitResponseParser.FormatErrorPayloadDiagnostics(payload);
+            log?.Report($"  PB throttle body: label={errLabel ?? "?"} {diag}");
+
+            var seedSample = string.Join(", ", chunk.Take(4).Select(static s =>
+                s.Length > 72 ? s[..72] + "…" : s));
+            log?.Report(
+                $"  PB throttle seeds ×{chunk.Count}: {seedSample}" +
+                (chunk.Count > 4 ? "…" : ""));
+
+            string? dumpPath = null;
+            if (payload is { Length: > 0 })
+            {
+                var dir = dumpDir;
+                if (string.IsNullOrWhiteSpace(dir))
+                {
+                    dir = Path.Combine(
+                        Path.GetTempPath(), "iCloudKitExtractor", "pb_throttle");
+                }
+
+                Directory.CreateDirectory(dir);
+                dumpPath = Path.Combine(
+                    dir,
+                    $"pb_throttle_{DateTime.UtcNow:yyyyMMdd_HHmmss_fff}_{payload.Length}.bin");
+                File.WriteAllBytes(dumpPath, payload);
+                log?.Report($"  PB throttle dump → {dumpPath}");
+            }
+
+            // #region agent log
+            try
+            {
+                var line = JsonSerializer.Serialize(new Dictionary<string, object?>
+                {
+                    ["sessionId"] = "7dabb5",
+                    ["runId"] = "pb-throttle-diag",
+                    ["hypothesisId"] = "H-PB-ERRINFO",
+                    ["location"] = "LogPrivilegedBatchThrottleDiagnostics",
+                    ["message"] = "privileged_batch_throttle",
+                    ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    ["data"] = new
+                    {
+                        errLabel,
+                        seeds = chunk.Count,
+                        seedSample = chunk.Take(6).ToArray(),
+                        payloadLen = payload?.Length ?? 0,
+                        dumpPath,
+                        httpStatus = last?.StatusCode,
+                        httpOp = last?.Operation,
+                        httpUrl = last?.Url,
+                        headers = last?.Headers,
+                        bodyDiag = diag,
+                    },
+                });
+                if (IkeLogOptions.ShouldWriteAgentDiag)
+                    IkeLogOptions.AppendAgentNdjson(
+                        @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
+                        line);
+            }
+            catch { /* ignore */ }
+            // #endregion
+        }
+        catch (Exception ex)
+        {
+            log?.Report($"  PB throttle diag skip: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
 
     private void NoteGatewayUnauthorized()
     {

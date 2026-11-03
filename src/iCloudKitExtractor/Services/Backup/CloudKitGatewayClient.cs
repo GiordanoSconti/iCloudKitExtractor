@@ -20,8 +20,19 @@ public sealed class CloudKitGatewayClient
     private readonly HttpClient _http;
     private int _consecutiveUnauthorized;
     private UnauthorizedRefreshDelegate? _onUnauthorized;
+    private LastResponseInfo? _lastResponse;
 
     public CloudKitGatewayClient(HttpClient http) => _http = http;
+
+    /// <summary>Ultima risposta CloudKit (status/header utili) — diagnostica Error-Info.</summary>
+    public LastResponseInfo? LastResponse => _lastResponse;
+
+    public sealed record LastResponseInfo(
+        int StatusCode,
+        string Operation,
+        string Url,
+        int BodyLength,
+        IReadOnlyDictionary<string, string> Headers);
 
     /// <summary>
     /// Dopo refresh Anisette/token: azzera il circuit breaker 401 così KA/LA/MA possono riprendere.
@@ -160,6 +171,7 @@ public sealed class CloudKitGatewayClient
             {
                 _consecutiveUnauthorized = 0;
                 var payload = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+                CaptureLastResponse(response, operationKey, url, payload.Length);
                 if (!decompressGzip)
                     return payload;
 
@@ -170,6 +182,7 @@ public sealed class CloudKitGatewayClient
             }
 
             var status = (int)response.StatusCode;
+            CaptureLastResponse(response, operationKey, url, bodyLength: -1);
             if (status == 401)
             {
                 _consecutiveUnauthorized++;
@@ -269,6 +282,66 @@ public sealed class CloudKitGatewayClient
             ? path
             : "/ckdatabase" + path;
         return root + withCk;
+    }
+
+    private static readonly string[] DiagnosticHeaderNames =
+    [
+        "X-Apple-Error-Info",
+        "X-Apple-Request-UUID",
+        "X-Apple-Request-Debug",
+        "X-Responding-Instance",
+        "Retry-After",
+        "X-Apple-Edge-Info",
+        "X-Apple-User-Activity",
+        "apple-seq",
+        "apple-tk",
+        "Server",
+        "Date",
+        "x-apple-request-uuid",
+    ];
+
+    private void CaptureLastResponse(
+        HttpResponseMessage response,
+        string operationKey,
+        string url,
+        int bodyLength)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in DiagnosticHeaderNames)
+        {
+            if (response.Headers.TryGetValues(name, out var values)
+                || response.Content.Headers.TryGetValues(name, out values))
+            {
+                var joined = string.Join(",", values);
+                if (!string.IsNullOrWhiteSpace(joined))
+                    map[name] = joined.Length > 240 ? joined[..240] + "…" : joined;
+            }
+        }
+
+        // Qualsiasi altro header X-Apple-* non in lista (max 8).
+        var extra = 0;
+        foreach (var h in response.Headers)
+        {
+            if (extra >= 8)
+                break;
+            if (!h.Key.StartsWith("X-Apple", StringComparison.OrdinalIgnoreCase)
+                && !h.Key.StartsWith("apple-", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (map.ContainsKey(h.Key))
+                continue;
+            var joined = string.Join(",", h.Value);
+            if (string.IsNullOrWhiteSpace(joined))
+                continue;
+            map[h.Key] = joined.Length > 240 ? joined[..240] + "…" : joined;
+            extra++;
+        }
+
+        _lastResponse = new LastResponseInfo(
+            (int)response.StatusCode,
+            operationKey,
+            url,
+            bodyLength,
+            map);
     }
 
     private static HttpRequestMessage BuildRequest(
