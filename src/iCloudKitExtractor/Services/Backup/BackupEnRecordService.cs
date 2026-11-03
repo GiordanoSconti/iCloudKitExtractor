@@ -172,14 +172,20 @@ public sealed class BackupEnRecordService
                 await Task.Delay(400, ct).ConfigureAwait(false);
         }
 
-        // Parse/decrypt Domain: CPU pesante su multi-MB — thread pool, non UI.
+        // Parse/decrypt Domain: CPU su multi-MB — thread pool. Log attivo (prima era null
+        // → UI ferma su «EN: batch N OK» per minuti senza indizio).
         var zonesForParse = zonesPayload ?? TryLoadZonesPayload(outputDirectory);
+        var totalEnBytes = payloads.Sum(static p => (long)p.Length);
+        log?.Report(
+            $"  EN: parse+PCS Domain su {payloads.Count} batch ({totalEnBytes:N0} B), " +
+            "unwrap DER-only…");
+        var swParse = System.Diagnostics.Stopwatch.StartNew();
         var parseResult = await Task.Run(() =>
         {
             var mergedLocal = MergePayloads(payloads);
             var catalogLocal = UbChunkCatalogParser.Parse(mergedLocal);
             var (domainsLocal, pcsSummaryLocal) = DomainPcsFieldDecryptor.ParseDomainsDecrypted(
-                session, zonesForParse, payloads, outputDirectory, log: null);
+                session, zonesForParse, payloads, outputDirectory, log);
             var fileListsLocal = domainsLocal
                 .Select(static d => d.FileList)
                 .Where(static f => f is not null)
@@ -190,6 +196,8 @@ public sealed class BackupEnRecordService
                 flistLocal = ParseFlistHintsFromCatalogSeeds(catalogLocal);
             return (mergedLocal, catalogLocal, domainsLocal, pcsSummaryLocal, fileListsLocal, flistLocal);
         }, ct).ConfigureAwait(false);
+        swParse.Stop();
+        log?.Report($"  EN: parse+PCS Domain completato in {swParse.ElapsedMilliseconds} ms");
 
         var catalog = parseResult.catalogLocal;
         var domains = parseResult.domainsLocal;

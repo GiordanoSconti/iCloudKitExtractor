@@ -109,7 +109,8 @@ public static class BackupAssetMetadataDecryptor
             return Pending("metadata decrypt pending — KeySet senza chiavi private");
 
         var ct = BackupKeybagPcsUnlock.ExtractEncryptedBytesValue(rawCt);
-        var zones = BuildDecryptZones(payload, asset, seedKeys, includeLight: !manateeFast);
+        // Mai light: per-asset × Escrow seed su ciphertext = ECDH inutili in serie.
+        var zones = BuildDecryptZones(payload, asset, seedKeys, includeLight: false);
 
         byte[]? plain = null;
         foreach (var zone in zones)
@@ -123,7 +124,7 @@ public static class BackupAssetMetadataDecryptor
         if (plain is null)
         {
             var embedded = PcsProtectionZone.TryUnwrapAll(
-                ct, seedKeys, includeLight: !manateeFast);
+                ct, seedKeys, includeLight: false);
             foreach (var zone in embedded)
             {
                 plain = PcsProtectionZone.TryDecryptField(

@@ -104,8 +104,9 @@ public static class SnapshotBackupPropertiesDecryptor
             });
         // #endregion
 
-        //  CreatePcsShareProtection / zone unwrap UNA volta (non per ogni snapshot).
-        // Manatee: includeLight:false (light 0xFF ×100 = minuti). Escrow: light default.
+        // CreatePcsShareProtection / zone unwrap UNA volta (non per ogni snapshot).
+        // Mai light 0xFF qui: Escrow KeySet (~60+ keys) × byte 0xFF = secondi/minuti
+        // (bench locale: 66 seed su 15 KB → ~7 s light vs ~5 ms DER-only). BP usa DER.
         var zoneKeys = new List<ProtectionZoneKeys>();
         var poolKeys = new List<PcsCompactPrivateKey>(seedKeys);
         if (mbksyncZonesPayload is { Length: > 64 })
@@ -115,7 +116,7 @@ public static class SnapshotBackupPropertiesDecryptor
             // #endregion
             var swZone = System.Diagnostics.Stopwatch.StartNew();
             zoneKeys = PcsProtectionZone.TryUnwrapAllIterative(
-                mbksyncZonesPayload, seedKeys, includeLight: !manateeFast);
+                mbksyncZonesPayload, seedKeys, includeLight: false);
             poolKeys = PcsProtectionZone.MergeKeys(seedKeys, zoneKeys);
             if (zoneKeys.Count > 0 && manateeFast)
                 PcsSessionSeedKeys.RememberFromZones(session, zoneKeys, seedKeys);
@@ -185,7 +186,7 @@ public static class SnapshotBackupPropertiesDecryptor
             // #endregion
             var swCat = System.Diagnostics.Stopwatch.StartNew();
             var fromCatalog = PcsProtectionZone.TryUnwrapAllIterative(
-                catalog, poolKeys, maxRounds: 3, includeLight: !manateeFast);
+                catalog, poolKeys, maxRounds: 3, includeLight: false);
             swCat.Stop();
             // #region agent log
             AgentBpLog(
@@ -481,9 +482,11 @@ public static class SnapshotBackupPropertiesDecryptor
                 ["data"] = data,
                 ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
-            File.AppendAllText(
-                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
-                line + Environment.NewLine);
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "iCloudKitExtractor");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "debug-bp.log"), line + Environment.NewLine);
         }
         catch
         {

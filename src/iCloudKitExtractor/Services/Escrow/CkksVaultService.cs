@@ -179,6 +179,10 @@ public sealed class CkksVaultService
                     $"  skip fetchRecoverable (TLK già preloaded: {string.Join(", ", recoverableTlks.Keys)})");
             }
 
+            // Engram (Messages) resta isolato: non entra in PcsManateeCompactKeys (pool backup).
+            var manateePcs = new List<PcsCompactPrivateKey>();
+            var engramPcs = new List<PcsCompactPrivateKey>();
+
             foreach (var view in viewList)
             {
                 ct.ThrowIfCancellationRequested();
@@ -201,7 +205,10 @@ public sealed class CkksVaultService
                     totalClass += result.ClassKeys;
                     lastTlkPath ??= result.TlkPath;
                     allItems.AddRange(result.Items);
-                    pcsKeys.AddRange(result.PcsKeys);
+                    if (view.Equals("Engram", StringComparison.OrdinalIgnoreCase))
+                        engramPcs.AddRange(result.PcsKeys);
+                    else
+                        manateePcs.AddRange(result.PcsKeys);
                     log?.Report(
                         $"  OK {view}: records={result.RecordCount} tlkshares={result.TlkShares} " +
                         $"classKeys={result.ClassKeys} items={result.Items.Count} " +
@@ -214,22 +221,35 @@ public sealed class CkksVaultService
                 }
             }
 
-            // Dedup PCS keys by PublicX.
-            pcsKeys = DedupPcs(pcsKeys);
-            if (pcsKeys.Count > 0)
+            manateePcs = DedupPcs(manateePcs);
+            engramPcs = DedupPcs(engramPcs);
+            // Chiavi Engram che coincidono col pool Manatee restano solo lì (backup).
+            if (manateePcs.Count > 0 && engramPcs.Count > 0)
+            {
+                var manateeIds = new HashSet<string>(
+                    manateePcs.Select(static k => Convert.ToHexString(k.KeyId)),
+                    StringComparer.Ordinal);
+                engramPcs = engramPcs
+                    .Where(k => !manateeIds.Contains(Convert.ToHexString(k.KeyId)))
+                    .ToList();
+            }
+
+            pcsKeys = manateePcs.Concat(engramPcs).ToList();
+
+            if (manateePcs.Count > 0)
             {
                 // Backup/PCS: SearchParty (82) in coda — altrimenti ogni unwrap prova 82 per primo.
-                pcsKeys = pcsKeys
+                manateePcs = manateePcs
                     .OrderBy(k => k.Service == PcsPrivateKeyDer.SearchPartyServiceType ? 1 : 0)
                     .ThenBy(k => k.Service ?? int.MaxValue)
                     .ToList();
-                session.PcsManateeCompactKeys = pcsKeys;
+                session.PcsManateeCompactKeys = manateePcs;
                 var keysDir = Path.Combine(outputDirectory, "manatee_pcs_keys");
                 Directory.CreateDirectory(keysDir);
                 var svc82 = 0;
-                for (var i = 0; i < pcsKeys.Count; i++)
+                for (var i = 0; i < manateePcs.Count; i++)
                 {
-                    var k = pcsKeys[i];
+                    var k = manateePcs[i];
                     if (k.Service == PcsPrivateKeyDer.SearchPartyServiceType)
                         svc82++;
                     var tag = k.Service?.ToString() ?? "na";
@@ -240,7 +260,30 @@ public sealed class CkksVaultService
                 }
 
                 log?.Report(
-                    $"  Manatee PCS keys → sessione ({pcsKeys.Count}, searchparty/82={svc82})");
+                    $"  Manatee PCS keys → sessione backup ({manateePcs.Count}, searchparty/82={svc82})");
+            }
+
+            if (engramPcs.Count > 0)
+            {
+                engramPcs = engramPcs
+                    .OrderBy(k => k.Service ?? int.MaxValue)
+                    .ToList();
+                session.PcsEngramCompactKeys = engramPcs;
+                var engramDir = Path.Combine(outputDirectory, "engram_pcs_keys");
+                Directory.CreateDirectory(engramDir);
+                for (var i = 0; i < engramPcs.Count; i++)
+                {
+                    var k = engramPcs[i];
+                    var tag = k.Service?.ToString() ?? "na";
+                    await File.WriteAllBytesAsync(
+                        Path.Combine(engramDir, $"pcs_{i:D3}_svc{tag}_x.bin"), k.PublicX, ct);
+                    await File.WriteAllBytesAsync(
+                        Path.Combine(engramDir, $"pcs_{i:D3}_svc{tag}_d.bin"), k.PrivateD, ct);
+                }
+
+                log?.Report(
+                    $"  Engram PCS keys → sessione Messages-only ({engramPcs.Count}) " +
+                    "(escluse dal pool backup)");
             }
 
             var itemsPath = Path.Combine(outputDirectory, "ckks_items.json");

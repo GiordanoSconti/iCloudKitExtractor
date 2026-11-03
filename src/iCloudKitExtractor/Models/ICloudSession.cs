@@ -108,10 +108,17 @@ public sealed class ICloudSession
 
     /// <summary>
     /// Chiavi PCS compact da CKKS OpenVault (Manatee / ProtectedCloudStorage).
-    /// SyncData e Backup le uniscono al KeySet Escrow (pool seed PCS).
+    /// Solo pool Backup / Drive / Photos — <b>senza</b> Engram (Messages).
     /// Con ADP spesso sono l’unica fonte utilizzabile.
     /// </summary>
     public List<PcsCompactPrivateKey>? PcsManateeCompactKeys { get; set; }
+
+    /// <summary>
+    /// Chiavi PCS dalla view CKKS <c>Engram</c> (Messages / iMessage Manatee zones).
+    /// Usate solo da Sync Data Messages — mai mescolate in <see cref="PcsManateeCompactKeys"/>
+    /// (altrimenti unwrap backup × N seed Engram = minuti).
+    /// </summary>
+    public List<PcsCompactPrivateKey>? PcsEngramCompactKeys { get; set; }
 
     /// <summary>
     /// KeyId (hex) che hanno già unwrap-ato zone/keybag in questa sessione — provati per primi.

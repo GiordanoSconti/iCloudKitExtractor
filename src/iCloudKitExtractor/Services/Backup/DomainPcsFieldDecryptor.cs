@@ -53,7 +53,8 @@ public static class DomainPcsFieldDecryptor
         }
 
         var manateeFast = PcsSessionSeedKeys.IsManateePrimary(session);
-        // Escrow = ParseKeySet (HEAD). Manatee = Collect. Light solo Escrow (manateeFast→no-light BP-style).
+        // Escrow = ParseKeySet. Manatee = Collect. Mai light 0xFF su EN multi-MB:
+        // Escrow 66 seed × payload batch = minuti (stesso bug backupProperties).
         var seedKeys = PcsSessionSeedKeys.HasEscrowKeySet(session)
             ? PcsDer.ParseKeySetPrivateKeys(session.PcsEscrowedKeySet!)
             : PcsSessionSeedKeys.Collect(session, log);
@@ -64,12 +65,26 @@ public static class DomainPcsFieldDecryptor
                 "KeySet senza chiavi private"));
         }
 
+        // EN moderno: fileList/newAssets già in chiaro sul wire → skip brute GCM
+        // su migliaia di type=20 (0/N tipico, costi secondi/minuti).
+        var wireWithFl = wireDomains.Count(static d => d.FileList is not null);
+        if (wireWithFl > 0 && wireWithFl >= wireDomains.Count)
+        {
+            log?.Report(
+                $"  EN PCS Domain skip: {wireWithFl}/{wireDomains.Count} fileList già sul wire " +
+                "(niente brute type=20)");
+            return (wireDomains, new DecryptSummary(
+                wireDomains.Count, wireDomains.Count, 0, 0, 0, 0, 0,
+                $"skip — {wireWithFl} fileList wire"));
+        }
+
         var poolKeys = new List<PcsCompactPrivateKey>(seedKeys);
         var zones = new List<ProtectionZoneKeys>();
+        var swUnwrap = System.Diagnostics.Stopwatch.StartNew();
         if (zonesPayload is { Length: > 32 })
         {
             var fromZones = PcsProtectionZone.TryUnwrapAll(
-                zonesPayload, seedKeys, includeLight: !manateeFast);
+                zonesPayload, seedKeys, includeLight: false);
             if (fromZones.Count > 0)
             {
                 zones.AddRange(fromZones);
@@ -79,17 +94,28 @@ public static class DomainPcsFieldDecryptor
             }
         }
 
+        var payloadIdx = 0;
         foreach (var payload in payloads)
         {
+            payloadIdx++;
             if (payload is not { Length: > 64 })
                 continue;
             var fromRecords = PcsProtectionZone.TryUnwrapAll(
-                payload, poolKeys, includeLight: !manateeFast);
+                payload, poolKeys, includeLight: false);
             if (fromRecords.Count == 0)
                 continue;
             zones.AddRange(fromRecords);
             poolKeys = PcsProtectionZone.MergeKeys(poolKeys, fromRecords);
+            if (payloadIdx == 1 || payloadIdx == payloads.Count || payloadIdx % 5 == 0)
+            {
+                log?.Report(
+                    $"  EN PCS unwrap: batch {payloadIdx}/{payloads.Count} " +
+                    $"→ +{fromRecords.Count} zone (tot={zones.Count}, {swUnwrap.ElapsedMilliseconds} ms)");
+            }
         }
+        log?.Report(
+            $"  EN PCS unwrap done: zones={zones.Count}, pool={poolKeys.Count}, " +
+            $"{swUnwrap.ElapsedMilliseconds} ms (DER-only)");
 
         // Domain PI spesso 96–512 B (sotto filtro CloudDocs 200–900).
         foreach (var d in wireDomains)
@@ -338,7 +364,12 @@ public static class DomainPcsFieldDecryptor
                 return plain;
         }
 
-        var embedded = PcsProtectionZone.TryUnwrapAll(ciphertext, seedKeys);
+        // Solo DER sul ciphertext (no light): × migliaia di campi Domain con light
+        // default era ~50 s e 0 decrypt (EN moderno ha fileList già sul wire).
+        if (seedKeys.Count == 0 || ciphertext.Length < 64)
+            return null;
+        var embedded = PcsProtectionZone.TryUnwrapAll(
+            ciphertext, seedKeys, includeLight: false);
         foreach (var zone in embedded)
         {
             var plain = PcsProtectionZone.TryDecryptField(zone, ciphertext, aad);

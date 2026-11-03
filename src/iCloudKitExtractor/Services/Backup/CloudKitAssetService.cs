@@ -501,8 +501,15 @@ public sealed class CloudKitAssetService
                     if (seeds.Count > 0)
                     {
                         var before = _cachedZoneMasters.Count;
+                        // Mai light su zones mbksync: Escrow 66 seed × 0xFF ≈ 7 s anche su
+                        // 15 KB; Manatee × catalog = minuti. I master backup escono dal DER.
+                        const bool useLight = false;
+                        log?.Report(
+                            $"  zone masters unwrap start " +
+                            $"({_bootstrapZonesPayload.Length:N0} B, seeds={seeds.Count}" +
+                            $"{(manateeFast ? ", manatee" : ", escrow")}, no-light)…");
                         var labeled = UnwrapZonesLabeled(
-                            _bootstrapZonesPayload, seeds, includeLight: true);
+                            _bootstrapZonesPayload, seeds, includeLight: useLight);
                         foreach (var (zone, zoneName) in labeled)
                             ConsiderCachedMaster(
                                 zone.MasterKey, $"zones:{zoneName}", zone.MasterKeyIdHex, zoneName);
@@ -518,7 +525,7 @@ public sealed class CloudKitAssetService
                             log?.Report(
                                 $"  zone masters unwrap → {_cachedZoneMasters.Count} " +
                                 $"(default={def}, mbksync={mbk}, +{_cachedZoneMasters.Count - before}, " +
-                                "nested/FL+light once)");
+                                $"nested/FL{(useLight ? "+light" : ", no-light")} once)");
                         }
                     }
                 }

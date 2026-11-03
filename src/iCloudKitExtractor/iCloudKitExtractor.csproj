@@ -44,4 +44,21 @@
     <Copy SourceFiles="@(_ViewerOut)" DestinationFiles="@(_ViewerOut->'$(OutputPath)viewer-payload\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'@(_ViewerOut)' != ''" />
   </Target>
 
+  <!--
+    Autofirma locale (Release): cert CN=ForensisLab iCloudKitExtractor in CurrentUser\My,
+    trusted in Root + TrustedPublisher. Skip: -p:SkipLocalSign=true
+  -->
+  <Target Name="SignLocalRelease"
+          AfterTargets="BuildPhotosViewerPayload"
+          Condition="'$(Configuration)' == 'Release' AND '$(SkipLocalSign)' != 'true'">
+    <PropertyGroup>
+      <_SignScript>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\scripts\sign_icloudkitextractor.ps1'))</_SignScript>
+      <!-- Trim trailing \ so PowerShell does not eat the closing quote. -->
+      <_SignOutDir>$([System.IO.Path]::GetFullPath('$(TargetDir)').TrimEnd('\'))</_SignOutDir>
+    </PropertyGroup>
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(_SignScript)&quot; -OutputDir &quot;$(_SignOutDir)&quot; -TrustLocally"
+          IgnoreExitCode="false"
+          LogStandardErrorAsError="true" />
+  </Target>
+
 </Project>

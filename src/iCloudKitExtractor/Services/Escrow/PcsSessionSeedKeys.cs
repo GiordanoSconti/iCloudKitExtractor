@@ -12,15 +12,17 @@ public static class PcsSessionSeedKeys
 {
     public static bool HasAny(ICloudSession session) =>
         session.PcsEscrowedKeySet is { Length: > 32 }
-        || session.PcsManateeCompactKeys is { Count: > 0 };
+        || session.PcsManateeCompactKeys is { Count: > 0 }
+        || session.PcsEngramCompactKeys is { Count: > 0 };
 
-    /// <summary>Riga di log UI: Escrow KeySet e/o Manatee compact.</summary>
+    /// <summary>Riga di log UI: Escrow KeySet e/o Manatee compact (+ Engram se presente).</summary>
     public static string DescribeSeed(ICloudSession session, string? source = null)
     {
         var escrow = session.PcsEscrowedKeySet is { Length: > 32 } ks ? $"{ks.Length} B" : "—";
         var manatee = session.PcsManateeCompactKeys is { Count: > 0 } m ? $"{m.Count}" : "—";
+        var engram = session.PcsEngramCompactKeys is { Count: > 0 } e ? $"{e.Count}" : "—";
         var src = string.IsNullOrWhiteSpace(source) ? "" : $" ← {source}";
-        return $"PCS seed: escrow={escrow}, manatee={manatee}{src}";
+        return $"PCS seed: escrow={escrow}, manatee={manatee}, engram={engram}{src}";
     }
 
     /// <summary>KeySet Escrow classico in sessione (consumo originale intatto).</summary>
@@ -93,9 +95,11 @@ public static class PcsSessionSeedKeys
                     seeds.Add(k);
             }
 
+            var engramN = session.PcsEngramCompactKeys?.Count ?? 0;
             log?.Report(
                 $"  PCS seed: manatee={manatee.Count - skipped82}" +
                 (skipped82 > 0 ? $" (skip 82×{skipped82})" : "") +
+                (engramN > 0 ? $", engram={engramN} (escluso backup)" : "") +
                 $" → pool={seeds.Count}");
         }
 
@@ -121,8 +125,9 @@ public static class PcsSessionSeedKeys
     }
 
     /// <summary>
-    /// Pool Sync Data / ADP: Escrow ∪ Manatee (incluso SearchParty 82 per BeaconStore/Find My).
-    /// Diverso da <see cref="Collect"/> backup: lì Escrow-only se presente e 82 viene saltato.
+    /// Pool Sync Data / ADP: Escrow ∪ Manatee ∪ <b>Engram</b> (Messages) ∪ SearchParty 82.
+    /// Diverso da <see cref="Collect"/> backup: lì Escrow-only se presente, 82 saltato,
+    /// Engram escluso (resta in <see cref="ICloudSession.PcsEngramCompactKeys"/>).
     /// </summary>
     public static List<PcsCompactPrivateKey> CollectForSyncData(
         ICloudSession session,
@@ -164,9 +169,22 @@ public static class PcsSessionSeedKeys
             }
         }
 
+        var engramAdded = 0;
+        if (session.PcsEngramCompactKeys is { Count: > 0 } engram)
+        {
+            foreach (var k in engram)
+            {
+                var before = seeds.Count;
+                Add(k);
+                if (seeds.Count > before)
+                    engramAdded++;
+            }
+        }
+
         seeds = OrderForBackup(session, seeds);
         log?.Report(
-            $"  PCS seed SyncData: escrow={escrowCount} manatee=+{manateeAdded} → pool={seeds.Count}");
+            $"  PCS seed SyncData: escrow={escrowCount} manatee=+{manateeAdded} " +
+            $"engram=+{engramAdded} → pool={seeds.Count}");
         return seeds;
     }
 

@@ -278,6 +278,19 @@ public static class EscrowPcsSession
                     && keys.Count > 0)
                 {
                     session.PcsManateeCompactKeys = keys;
+                    // Engram Messages: cartella gemella, mai mescolata al pool backup.
+                    var engramDir = Path.Combine(
+                        Path.GetDirectoryName(keysDir) ?? root, "engram_pcs_keys");
+                    if (Directory.Exists(engramDir)
+                        && TryReadManateeKeys(engramDir, out var engram)
+                        && engram.Count > 0)
+                    {
+                        session.PcsEngramCompactKeys = engram;
+                        log?.Report(
+                            $"  PCS Engram ← disco ({engram.Count} compact, Messages-only) " +
+                            $"da {engramDir}");
+                    }
+
                     if (string.IsNullOrWhiteSpace(session.OctagonKeysDirectory))
                         session.OctagonKeysDirectory = Path.GetDirectoryName(keysDir) ?? root;
                     log?.Report(
