@@ -62,11 +62,32 @@ public static class SyncDataPcsDecryptor
         log?.Report($"  PCS: {fields.Count} ciphertext type=20 — unwrap zone…");
         if (zonesPayload is { Length: > 32 })
         {
+            // rustpush: zone PI → nested EC; then record_protection_info decode →
+            // default_record_keys (master + nest symm 04 10) for field GCM.
             var fromZones = PcsProtectionZone.TryUnwrapAll(zonesPayload, seedKeys);
             if (fromZones.Count > 0)
             {
                 zones.AddRange(fromZones);
                 poolKeys = PcsProtectionZone.MergeKeys(seedKeys, fromZones);
+            }
+
+            for (var round = 0; round < 3; round++)
+            {
+                var more = PcsProtectionZone.TryUnwrapAll(zonesPayload, poolKeys);
+                var added = 0;
+                foreach (var z in more)
+                {
+                    var id = Convert.ToHexString(z.MasterKey);
+                    if (zones.Any(x => Convert.ToHexString(x.MasterKey) == id))
+                        continue;
+                    zones.Add(z);
+                    added++;
+                }
+
+                if (added == 0)
+                    break;
+                poolKeys = PcsProtectionZone.MergeKeys(poolKeys, more);
+                log?.Report($"  PCS: zones nested round +{added} (record_prot / symm keys)");
             }
         }
 
@@ -138,6 +159,10 @@ public static class SyncDataPcsDecryptor
         var previewOk = 0;
         var lines = new List<string> { "field\tlargest_plain\tpath\tnote" };
         var recordLines = new List<string> { "field\tidx\trecord_name\toffset\tplain_path\ttext" };
+        var failLines = new List<string>
+        {
+            "field\tidx\toffset\tnear_name\tzone_hint\tkey_id4\tct_head\taad0",
+        };
 
         var flat = fields.ToList();
         var total = flat.Count;
@@ -205,6 +230,18 @@ public static class SyncDataPcsDecryptor
                     failInGroup++;
                     failed++;
                     consecutiveFail++;
+                    var ct = field.Ciphertext;
+                    var kid4 = ct.Length >= 6 && ct[0] == 3 && ct[3] == 2
+                        ? Convert.ToHexString(new byte[] { ct[1], ct[2], ct[4], ct[5] })
+                        : "";
+                    var head = Convert.ToHexString(ct.AsSpan(0, Math.Min(8, ct.Length)));
+                    var aad0 = nearName is { Length: > 0 } && zoneHint is { Length: > 0 }
+                        ? $"{zoneHint}-{nearName}-{fieldName}"
+                        : nearName is { Length: > 0 }
+                            ? $"{nearName}-{fieldName}"
+                            : fieldName;
+                    failLines.Add(
+                        $"{fieldName}\t{idx}\t{field.Offset}\t{nearName}\t{zoneHint}\t{kid4}\t{head}\t{aad0}");
                     continue;
                 }
 
@@ -257,6 +294,12 @@ public static class SyncDataPcsDecryptor
 
         File.WriteAllLines(metaPath, lines);
         File.WriteAllLines(recordsPath, recordLines);
+        if (failLines.Count > 1)
+        {
+            File.WriteAllLines(Path.Combine(outputDirectory, "decrypt_fails.tsv"), failLines);
+            log?.Report($"  PCS fails detail: {failLines.Count - 1} → decrypt_fails.tsv");
+        }
+
         var msg = decrypted > 0
             ? $"ok {decrypted}/{fields.Count} campi (zoneKeys={zones.Count})"
             : $"nessun decrypt ({fields.Count} ciphertext, zoneKeys={zones.Count})";
@@ -602,32 +645,9 @@ public static class SyncDataPcsDecryptor
     private static byte[]? TryDecryptWithZone(
         ProtectionZoneKeys zone, byte[] ciphertext, string[] aadCandidates)
     {
+        // EnumerateFieldDecryptKeys: DecryptKey + Master/KDF + nested wrap-ref + nested PCS.
         // plain.Length==0 è successo GCM (campo vuoto) — non confondere con fail.
-        var plain = PcsProtectionZone.TryDecryptField(zone, ciphertext, aadCandidates);
-        if (plain is not null)
-            return plain;
-
-        // Fallback: stessa KDF su MasterKey (PCSKey 16 B) se DecryptKey non matcha key_id.
-        if (zone.MasterKey is { Length: > 0 }
-            && !zone.MasterKey.AsSpan().SequenceEqual(zone.DecryptKey))
-        {
-            try
-            {
-                var alt = PcsNistKdf.CtrHmacSha256(
-                    zone.MasterKey,
-                    Encoding.ASCII.GetBytes("encryption key key m"),
-                    16);
-                plain = PcsProtectionZone.TryDecryptField(alt, ciphertext, aadCandidates);
-                if (plain is not null)
-                    return plain;
-            }
-            catch
-            {
-                // ignore
-            }
-        }
-
-        return null;
+        return PcsProtectionZone.TryDecryptField(zone, ciphertext, aadCandidates);
     }
 
     private static List<ProtectionZoneKeys> BuildLocalZones(
@@ -761,15 +781,26 @@ public static class SyncDataPcsDecryptor
         return "Esegui Escrow OTBottle/Peer + CKKS OpenVault (Manatee + Engram).";
     }
 
+    private static bool IsMessagesManateeField(string fieldName) =>
+        fieldName is "svc" or "guid" or "sender" or "chatID" or "msgProto"
+            or "dcId" or "time" or "flags" or "eCode" or "msgType"
+            or "msgProto2" or "msgProto3" or "msgProto4";
+
     private static string? ResolveRecordName(byte[] payload, int fieldOffset, string fieldName)
     {
-        var uuid = CplPhotosRecordParser.TryFindUuidForEncryptedField(
-            payload, fieldOffset, fieldName);
-        if (!string.IsNullOrWhiteSpace(uuid))
-            return uuid;
+        // Photos CPLMaster UUID — must NOT run for Messages: the sync header UUID
+        // (device/user) is nearer than the 64-hex record name → wrong AAD (51/2200 fails).
+        if (!IsMessagesManateeField(fieldName))
+        {
+            var uuid = CplPhotosRecordParser.TryFindUuidForEncryptedField(
+                payload, fieldOffset, fieldName);
+            if (!string.IsNullOrWhiteSpace(uuid))
+                return uuid;
+        }
 
-        // Finestra prima del campo: GUID (BeaconStore) o "_"+32hex (Messages Manatee).
-        var windowStart = Math.Max(0, fieldOffset - 1500);
+        // Finestra prima del campo: 64-hex record (Messages) / GUID / "_"+32hex owner.
+        var lookback = IsMessagesManateeField(fieldName) ? 12_000 : 1500;
+        var windowStart = Math.Max(0, fieldOffset - lookback);
         var windowLen = Math.Min(payload.Length - windowStart, fieldOffset - windowStart + 64);
         if (windowLen < 33)
             return null;
@@ -787,12 +818,25 @@ public static class SyncDataPcsDecryptor
             best = text.Substring(relativeIndex, length);
         }
 
+        // Messages: record name = 64 hex. Prefer over GUID/owner always.
+        for (var i = 0; i + 64 <= text.Length; i++)
+        {
+            if (!LooksLikeHex64(text.AsSpan(i, 64)))
+                continue;
+            if (i > 0 && IsAsciiHex(text[i - 1]))
+                continue;
+            if (i + 64 < text.Length && IsAsciiHex(text[i + 64]))
+                continue;
+            Consider(i, 64);
+        }
+
+        if (best is { Length: 64 })
+            return best;
+
         for (var i = 0; i + 33 <= text.Length; i++)
         {
-            // Messages MessageEncryptedV3: "_1f765d7f431869eb5832d3d65fc3eadd"
             if (text[i] == '_' && i + 33 <= text.Length && LooksLikeHex32(text.AsSpan(i + 1, 32)))
             {
-                // Evita match su coda di stringhe più lunghe: char prima non hex.
                 if (i > 0 && IsAsciiHex(text[i - 1]))
                     continue;
                 Consider(i, 33);
@@ -809,6 +853,19 @@ public static class SyncDataPcsDecryptor
         }
 
         return best;
+    }
+
+    private static bool LooksLikeHex64(ReadOnlySpan<char> s)
+    {
+        if (s.Length != 64)
+            return false;
+        foreach (var c in s)
+        {
+            if (!IsAsciiHex(c))
+                return false;
+        }
+
+        return true;
     }
 
     private static bool LooksLikeHex32(ReadOnlySpan<char> s)
@@ -978,8 +1035,10 @@ public static class SyncDataPcsDecryptor
             // HITB / CloudKit Messages: campi type=20 tipici in messageManateeZone.
             return
             [
-                "msgProto", "chatID", "dcId", "eCode", "flags", "guid",
-                "msgType", "sender", "svc", "time",
+                "msgProto", "msgProto2", "msgProto3", "msgProto4",
+                "chatID", "dcId", "flags", "guid",
+                "sender", "svc", "time",
+                // eCode / msgType are unencrypted on wire (rustpush) — omit.
             ];
         }
 

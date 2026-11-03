@@ -977,31 +977,97 @@ public static class PcsProtectionZone
         return -1;
     }
 
+    /// <summary>
+    /// Chiavi AES-GCM per campi type=20: DecryptKey, MasterKey, nested wrap-ref 16 B
+    /// (PI Manatee/ADP ~535), eventuali nested compact → KDF.
+    /// </summary>
+    public static IEnumerable<byte[]> EnumerateFieldDecryptKeys(ProtectionZoneKeys zone)
+    {
+        if (zone.DecryptKey is { Length: >= 16 })
+            yield return zone.DecryptKey;
+        if (zone.MasterKey is { Length: >= 16 }
+            && !zone.MasterKey.AsSpan().SequenceEqual(zone.DecryptKey))
+        {
+            yield return zone.MasterKey.Length == 16
+                ? zone.MasterKey
+                : zone.MasterKey.AsSpan(0, 16).ToArray();
+            byte[]? kdf = null;
+            try
+            {
+                kdf = PcsNistKdf.CtrHmacSha256(
+                    zone.MasterKey, DecryptKeyLabel, 16);
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (kdf is { Length: 16 }
+                && !kdf.AsSpan().SequenceEqual(zone.DecryptKey))
+                yield return kdf;
+        }
+
+        if (zone.NestedProtectionObject is { Length: > 0 } nested)
+        {
+            // rustpush default_record_keys: master + symm_keys (OCTET 16 in nest meta).
+            // Field GCM uses KDF(PCSKey) with key_id in v3 header — yield raw + KDF.
+            for (var i = 0; i + 18 <= nested.Length; i++)
+            {
+                if (nested[i] != 0x04 || nested[i + 1] != 0x10)
+                    continue;
+                var symm = nested.AsSpan(i + 2, 16).ToArray();
+                yield return symm;
+                byte[]? symmKdf = null;
+                try
+                {
+                    symmKdf = PcsNistKdf.CtrHmacSha256(symm, DecryptKeyLabel, 16);
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                if (symmKdf is { Length: 16 })
+                    yield return symmKdf;
+            }
+        }
+
+        foreach (var nk in zone.NestedPrivateKeys)
+        {
+            if (nk.PrivateD is not { Length: >= 16 })
+                continue;
+            var seed = nk.PrivateD.Length == 16
+                ? nk.PrivateD
+                : nk.PrivateD.AsSpan(0, 16).ToArray();
+            yield return seed;
+            byte[]? nkKdf = null;
+            try
+            {
+                nkKdf = PcsNistKdf.CtrHmacSha256(seed, DecryptKeyLabel, 16);
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (nkKdf is { Length: 16 })
+                yield return nkKdf;
+        }
+    }
+
     public static byte[]? TryDecryptField(
         ProtectionZoneKeys zone,
         ReadOnlySpan<byte> ciphertext,
         params string[] identifiers)
     {
-        foreach (var id in identifiers)
+        foreach (var key in EnumerateFieldDecryptKeys(zone))
         {
-            try
-            {
-                return PcsGcmDataA.Decrypt(zone.DecryptKey, ciphertext, Encoding.UTF8.GetBytes(id));
-            }
-            catch
-            {
-                // next
-            }
+            var plain = TryDecryptField(key, ciphertext, identifiers);
+            if (plain is not null)
+                return plain;
         }
 
-        try
-        {
-            return PcsGcmDataA.Decrypt(zone.DecryptKey, ciphertext);
-        }
-        catch
-        {
-            return null;
-        }
+        return null;
     }
 
     private sealed record EncryptedKeyItem(byte[] MasterPublic, byte[] WrappedKey);

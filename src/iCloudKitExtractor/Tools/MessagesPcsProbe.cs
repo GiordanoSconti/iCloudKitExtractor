@@ -3,8 +3,29 @@ using System.Text;
 using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Protocol;
 using iCloudKitExtractor.Services.Escrow;
+using iCloudKitExtractor.Services.SyncData;
 
 namespace iCloudKitExtractor.Tools;
+
+/// <summary>
+/// rustpush <c>PCSKey::key_id</c>:
+/// HMAC-SHA256(KDF(master,"master key id labell"), "M key input data 2 u").
+/// GCMDataA v3 header embeds key_id[0..4].
+/// </summary>
+internal static class PcsKeyId
+{
+    private static readonly byte[] Label =
+        Encoding.ASCII.GetBytes("master key id labell");
+    private static readonly byte[] Step2 =
+        Encoding.ASCII.GetBytes("M key input data 2 u");
+
+    public static byte[] FromMaster(ReadOnlySpan<byte> master)
+    {
+        var labelKey = PcsNistKdf.CtrHmacSha256(master, Label, master.Length);
+        using var h = new System.Security.Cryptography.HMACSHA256(labelKey);
+        return h.ComputeHash(Step2);
+    }
+}
 
 /// <summary>Offline Messages PCS field decrypt probe (CLI: msgs-probe).</summary>
 public static class MessagesPcsProbe
@@ -21,114 +42,245 @@ public static class MessagesPcsProbe
         void L(string s)
         {
             log.WriteLine(s);
-            try { Console.WriteLine(s); } catch { /* WinExe may have no console */ }
+            try { Console.WriteLine(s); } catch { /* WinExe */ }
         }
 
+        L($"log={outLog}");
         var sync = Directory.GetDirectories(backups, "sync_data_*")
             .OrderByDescending(Directory.GetLastWriteTimeUtc)
             .First();
         var container = Path.Combine(sync, "ck", "apple.messages.cloud");
         var keysDir = Path.Combine(backups, "manatee_pcs_keys");
-        var payloadPath = Path.Combine(container, "record_sync_chatManateeZone_p1.bin");
+        // messageManateeZone: dominant key_id4=288B9022 (already in zone masters).
+        var payloadPath = Path.Combine(container, "record_sync_messageManateeZone_p1.bin");
         var zonesPath = Directory.GetFiles(container, "zones_*.bin").FirstOrDefault();
-
-        L($"log={outLog}");
         L($"sync={sync}");
         L($"payload={payloadPath} exists={File.Exists(payloadPath)}");
 
-        var session = new ICloudSession
-        {
-            PcsManateeCompactKeys = LoadKeys(keysDir)
-        };
+        var session = new ICloudSession { PcsManateeCompactKeys = LoadKeys(keysDir) };
         L($"loaded keys={session.PcsManateeCompactKeys.Count}");
-
+        var seed = PcsSessionSeedKeys.CollectForSyncData(session);
         var payload = File.ReadAllBytes(payloadPath);
         byte[]? zonesPayload = zonesPath is null ? null : File.ReadAllBytes(zonesPath);
-        var fields = CloudKitEncryptedFieldScanner.Scan(payload, ["svc", "guid", "msgProto"]);
+
+        var fields = CloudKitEncryptedFieldScanner.Scan(payload, ["svc", "guid"]);
         L($"fields={fields.Count}");
         if (fields.Count == 0)
             return 2;
 
-        var seed = PcsSessionSeedKeys.CollectForSyncData(session);
-        var zones = new List<ProtectionZoneKeys>();
-        if (zonesPayload is { Length: > 0 })
-            zones.AddRange(PcsProtectionZone.TryUnwrapAll(zonesPayload, seed));
-        L($"from zones_*: {zones.Count}");
-        zones.AddRange(PcsProtectionZone.TryUnwrapAllIterative(payload, seed));
-        L(
-            $"zoneKeys={zones.Count} nestedSum={zones.Sum(z => z.NestedPrivateKeys.Count)} " +
-            $"withNestedBlob={zones.Count(z => z.NestedProtectionObject is { Length: > 0 })}");
-
-        foreach (var z in zones.Take(8))
-        {
-            L(
-                $"  zone id={Trim(z.MasterKeyIdHex, 16)} masterLen={z.MasterKey.Length} " +
-                $"decLen={z.DecryptKey.Length} tag={z.ProtectionInfoTag ?? "-"} " +
-                $"nestedKeys={z.NestedPrivateKeys.Count} nestBlob={z.NestedProtectionObject?.Length ?? 0}");
-        }
-
+        // Prefer ciphertext whose key_id4 matches an unwrapped PCSKey (after zones load).
         var sample = fields.First(f => f.FieldName == "svc");
-        var record = ResolveMessagesRecord(payload, sample.Offset);
-        L(
-            $"sample svc ctLen={sample.Ciphertext.Length} " +
-            $"head={Convert.ToHexString(sample.Ciphertext.AsSpan(0, Math.Min(8, sample.Ciphertext.Length)))} " +
-            $"record={record ?? "(null)"}");
+        // Owner id "_"+32hex is NOT the record name — Messages uses 64-hex record names.
+        var owner = ResolveMessagesRecord(payload, sample.Offset);
+        var record = ResolveMessagesRecordHex64(payload, sample.Offset) ?? owner;
+        L($"sample svc offset={sample.Offset} ctLen={sample.Ciphertext.Length} " +
+          $"head={Convert.ToHexString(sample.Ciphertext.AsSpan(0, Math.Min(8, sample.Ciphertext.Length)))} " +
+          $"record={record ?? "(null)"} owner={owner ?? "(null)"}");
         DumpGcmLayout(sample.Ciphertext, L);
 
-        var aads = BuildAads("svc", "chatManateeZone", record);
+        var zones = new List<ProtectionZoneKeys>();
+        var pool = new List<PcsCompactPrivateKey>(seed);
+        // rustpush: zone PI → nested EC (zone_keys); then record_protection_info
+        // decode(zone_keys) → default_record_keys (PCSKey) for field GCM.
+        if (zonesPayload is { Length: > 0 })
+        {
+            var round0 = PcsProtectionZone.TryUnwrapAll(zonesPayload, seed);
+            zones.AddRange(round0);
+            pool = PcsProtectionZone.MergeKeys(seed, round0);
+            L($"zones round0 (seed): {round0.Count} pool={pool.Count}");
+
+            // Re-scan with nested MasterKeySet → record_protection_info.
+            for (var round = 1; round <= 3; round++)
+            {
+                var more = PcsProtectionZone.TryUnwrapAll(zonesPayload, pool);
+                var added = 0;
+                foreach (var z in more)
+                {
+                    var id = Convert.ToHexString(z.MasterKey);
+                    if (zones.Any(x => Convert.ToHexString(x.MasterKey) == id))
+                        continue;
+                    zones.Add(z);
+                    added++;
+                }
+
+                pool = PcsProtectionZone.MergeKeys(pool, more);
+                L($"zones round{round} (nested): +{added} totalZones={zones.Count} pool={pool.Count}");
+                if (added == 0)
+                    break;
+            }
+
+            // GCM v3 header embeds PCSKey.key_id[0..4] as 03 | id0..1 | 02 | id2..3.
+            var wantKeyId4 = sample.Ciphertext.Length >= 6 && sample.Ciphertext[0] == 3
+                ? new byte[]
+                {
+                    sample.Ciphertext[1], sample.Ciphertext[2],
+                    sample.Ciphertext[4], sample.Ciphertext[5],
+                }
+                : null;
+            if (wantKeyId4 is not null)
+                L($"ciphertext key_id4={Convert.ToHexString(wantKeyId4)}");
+
+            foreach (var z in zones)
+            {
+                var kid = PcsKeyId.FromMaster(z.MasterKey);
+                var kid4 = kid.AsSpan(0, Math.Min(4, kid.Length)).ToArray();
+                var match = wantKeyId4 is not null
+                            && kid4.AsSpan().SequenceEqual(wantKeyId4);
+                L($"  master id={Trim(z.MasterKeyIdHex, 12)} nest={z.NestedPrivateKeys.Count} " +
+                  $"pcsKeyId4={Convert.ToHexString(kid4)}{(match ? " ★MATCH header" : "")} " +
+                  $"master={Convert.ToHexString(z.MasterKey.AsSpan(0, Math.Min(8, z.MasterKey.Length)))}…");
+            }
+
+            // Collect symm keys (04 10) from all nestBlobs as PCSKey candidates.
+            var pcsCandidates = new List<(string Label, byte[] Master)>();
+            foreach (var z in zones)
+            {
+                pcsCandidates.Add(($"master:{Trim(z.MasterKeyIdHex, 8)}", z.MasterKey));
+                if (z.NestedProtectionObject is not { Length: > 0 } nb)
+                    continue;
+                for (var i = 0; i + 18 <= nb.Length; i++)
+                {
+                    if (nb[i] != 0x04 || nb[i + 1] != 0x10)
+                        continue;
+                    pcsCandidates.Add(($"symm@{i}", nb.AsSpan(i + 2, 16).ToArray()));
+                }
+            }
+
+            // Prefer first svc; if no PCSKey for its key_id4, repick.
+            byte[]? FindMaster(byte[] id4) =>
+                pcsCandidates
+                    .Select(c => (c, kid: PcsKeyId.FromMaster(c.Master)))
+                    .Where(t => t.kid.Length >= 4 && t.kid.AsSpan(0, 4).SequenceEqual(id4))
+                    .Select(t => t.c.Master)
+                    .FirstOrDefault();
+
+            if (wantKeyId4 is not null && FindMaster(wantKeyId4) is null)
+            {
+                foreach (var f in fields.Where(f => f.FieldName == "svc" && f.Ciphertext.Length >= 6))
+                {
+                    var id4 = new byte[]
+                    {
+                        f.Ciphertext[1], f.Ciphertext[2], f.Ciphertext[4], f.Ciphertext[5],
+                    };
+                    if (FindMaster(id4) is null)
+                        continue;
+                    sample = f;
+                    record = ResolveMessagesRecord(payload, sample.Offset);
+                    wantKeyId4 = id4;
+                    L($"REPICK svc@{sample.Offset} key_id4={Convert.ToHexString(id4)} " +
+                      $"head={Convert.ToHexString(sample.Ciphertext.AsSpan(0, 8))}");
+                    break;
+                }
+            }
+
+            if (wantKeyId4 is not null)
+            {
+                foreach (var (label, master) in pcsCandidates)
+                {
+                    var kid = PcsKeyId.FromMaster(master);
+                    if (kid.Length < 4 || !kid.AsSpan(0, 4).SequenceEqual(wantKeyId4))
+                        continue;
+                    L($"PCSKey candidate {label} master={Convert.ToHexString(master)} " +
+                      $"kid={Convert.ToHexString(kid)}");
+                }
+            }
+        }
+
+        L($"payloadLen={payload.Length}");
+
+        zones = zones
+            .GroupBy(z => Convert.ToHexString(z.MasterKey), StringComparer.Ordinal)
+            .Select(g => g.First())
+            .ToList();
+        L($"zoneKeys dedup={zones.Count}");
+
+        var aads = BuildAads("svc", "messageManateeZone", record);
+        foreach (var extra in new[]
+                 {
+                     "messageManateeZone-_1f765d7f431869eb5832d3d65fc3eadd-svc",
+                     "chatManateeZone-_1f765d7f431869eb5832d3d65fc3eadd-svc",
+                     "MessageEncryptedV3-svc",
+                 })
+        {
+            if (!aads.Contains(extra, StringComparer.Ordinal))
+                aads.Add(extra);
+        }
+
         L($"aad×{aads.Count}: {string.Join(" | ", aads)}");
 
         var keysToTry = new List<(string Label, byte[] Key)>();
-        foreach (var z in zones)
-        {
-            var id = Trim(z.MasterKeyIdHex, 8);
-            keysToTry.Add(($"dec:{id}", z.DecryptKey));
-            if (z.MasterKey.Length >= 16)
-                keysToTry.Add(($"master16:{id}", z.MasterKey.AsSpan(0, 16).ToArray()));
-            if (z.MasterKey.Length >= 32)
-                keysToTry.Add(($"master32:{id}", z.MasterKey.AsSpan(0, 32).ToArray()));
-            // KDF variants already in DecryptKey; also try raw nested blob prefixes.
-            if (z.NestedProtectionObject is { Length: >= 16 } nest)
+        var want4 = sample.Ciphertext.Length >= 6 && sample.Ciphertext[0] == 3
+            ? new byte[]
             {
-                keysToTry.Add(($"nest16:{id}", nest.AsSpan(0, 16).ToArray()));
-                if (nest.Length >= 32)
-                    keysToTry.Add(($"nest32:{id}", nest.AsSpan(0, 32).ToArray()));
-                // If nested is itself GCMDataA, try decrypt with zone keys then use result
-                try
-                {
-                    var inner = PcsGcmDataA.Decrypt(z.DecryptKey, nest);
-                    if (inner.Length >= 16)
-                        keysToTry.Add(($"nestDec16:{id}", inner.AsSpan(0, 16).ToArray()));
-                }
-                catch
-                {
-                    // ignore
-                }
+                sample.Ciphertext[1], sample.Ciphertext[2],
+                sample.Ciphertext[4], sample.Ciphertext[5],
             }
+            : null;
 
-            foreach (var nk in z.NestedPrivateKeys)
+        void AddPcs(string label, byte[] master)
+        {
+            var m16 = master.Length == 16 ? master : master.AsSpan(0, 16).ToArray();
+            keysToTry.Add(($"★{label} nist",
+                PcsNistKdf.CtrHmacSha256(m16, Encoding.ASCII.GetBytes("encryption key key m"), 16)));
+            keysToTry.Add(($"★{label} hmacPad", PcsHmacKdf.DeriveAes128Key(m16)));
+            keysToTry.Add(($"★{label} raw", m16));
+            var share = PcsNistKdf.CtrHmacSha256(
+                m16, Encoding.ASCII.GetBytes("MsaeEooevaX fooo 012"), 16);
+            keysToTry.Add(($"★{label} shareNist",
+                PcsNistKdf.CtrHmacSha256(share, Encoding.ASCII.GetBytes("encryption key key m"), 16)));
+            L($"try PCSKey {label}={Convert.ToHexString(m16)} " +
+              $"nist={Convert.ToHexString(keysToTry[^4].Key)}");
+        }
+
+        if (want4 is not null)
+        {
+            foreach (var z in zones)
             {
-                var nMaster = nk.PrivateD.Length >= 16 ? nk.PrivateD.AsSpan(0, 16).ToArray() : nk.PrivateD;
-                keysToTry.Add(($"nestedD:{Trim(Convert.ToHexString(nk.KeyId), 8)}", nMaster));
+                if (PcsKeyId.FromMaster(z.MasterKey).AsSpan(0, 4).SequenceEqual(want4))
+                    AddPcs("master", z.MasterKey);
+                if (z.NestedProtectionObject is not { Length: > 0 } nb)
+                    continue;
+                for (var i = 0; i + 18 <= nb.Length; i++)
+                {
+                    if (nb[i] != 0x04 || nb[i + 1] != 0x10)
+                        continue;
+                    var slice = nb.AsSpan(i + 2, 16).ToArray();
+                    if (PcsKeyId.FromMaster(slice).AsSpan(0, 4).SequenceEqual(want4))
+                        AddPcs($"symm@{i}", slice);
+                }
             }
         }
 
-        var hits = 0;
-        foreach (var (label, key) in keysToTry)
+        keysToTry = keysToTry
+            .GroupBy(k => Convert.ToHexString(k.Key), StringComparer.Ordinal)
+            .Select(g => g.First())
+            .ToList();
+        L($"keysToTry={keysToTry.Count} want4={(want4 is null ? "-" : Convert.ToHexString(want4))}");
+
+        var priority = keysToTry.Where(k => k.Label.StartsWith('★')).ToList();
+        if (priority.Count == 0)
+            priority = keysToTry;
+        foreach (var (label, key) in priority)
         {
             if (key.Length is not (16 or 32))
                 continue;
-            foreach (var aad in aads.Append(""))
+            foreach (var aad in aads)
             {
                 try
                 {
-                    var plain = aad.Length == 0
-                        ? PcsGcmDataA.Decrypt(key, sample.Ciphertext)
-                        : PcsGcmDataA.Decrypt(key, sample.Ciphertext, Encoding.UTF8.GetBytes(aad));
+                    var plain = PcsGcmDataA.Decrypt(key, sample.Ciphertext, Encoding.UTF8.GetBytes(aad));
                     L($"HIT {label} aad='{aad}' plainLen={plain.Length} plain={Preview(plain)}");
-                    hits++;
-                    if (hits >= 8)
-                        return 0;
+
+                    // Production path smoke: SyncDataPcsDecryptor on this payload.
+                    var outDir = Path.Combine(Path.GetDirectoryName(payloadPath)!, "crypto", "_msgs_probe_verify");
+                    var progress = new Progress<string>(L);
+                    var sum = SyncDataPcsDecryptor.DecryptPayload(
+                        session, zonesPayload, payload, outDir,
+                        containerHint: "apple.messages.cloud",
+                        log: progress,
+                        zoneNameHint: "messageManateeZone");
+                    L($"SyncDataPcsDecryptor: {sum.Message} decrypted={sum.DecryptedCount}/{sum.FieldCount} zones={sum.ZoneKeys}");
+                    return sum.DecryptedCount > 0 ? 0 : 1;
                 }
                 catch
                 {
@@ -137,39 +289,63 @@ public static class MessagesPcsProbe
             }
         }
 
-        L($"no hits after keys={keysToTry.Count} aads={aads.Count + 1}");
+        L($"no hits after priority={priority.Count} × aads={aads.Count}");
+        return 1;
+    }
 
-        var windowStart = Math.Max(0, sample.Offset - 48 * 1024);
-        var window = payload.AsSpan(
-            windowStart,
-            Math.Min(payload.Length - windowStart, 60 * 1024)).ToArray();
-        var local = PcsProtectionZone.TryUnwrapAll(window, seed);
-        L($"localZones={local.Count}");
-        foreach (var z in local)
+    private static int IndexOf(byte[] hay, byte[] needle)
+    {
+        if (needle.Length == 0 || hay.Length < needle.Length)
+            return -1;
+        var span = hay.AsSpan();
+        for (var i = 0; i <= span.Length - needle.Length; i++)
         {
-            foreach (var key in new[] { z.DecryptKey, z.MasterKey.Length >= 16 ? z.MasterKey.AsSpan(0, 16).ToArray() : z.MasterKey })
-            {
-                foreach (var aad in aads.Append(""))
-                {
-                    try
-                    {
-                        var plain = aad.Length == 0
-                            ? PcsGcmDataA.Decrypt(key, sample.Ciphertext)
-                            : PcsGcmDataA.Decrypt(key, sample.Ciphertext, Encoding.UTF8.GetBytes(aad));
-                        L(
-                            $"LOCAL HIT id={Trim(z.MasterKeyIdHex, 8)} aad='{aad}' " +
-                            $"plainLen={plain.Length} {Preview(plain)}");
-                        return 0;
-                    }
-                    catch
-                    {
-                        // next
-                    }
-                }
-            }
+            if (span.Slice(i, needle.Length).SequenceEqual(needle))
+                return i;
         }
 
-        return 1;
+        return -1;
+    }
+
+    private static bool TrySliceAppl(byte[] data, int offset, out byte[] der)
+    {
+        der = [];
+        try
+        {
+            if (offset >= data.Length || data[offset] != 0x61)
+                return false;
+            var pos = offset + 1;
+            if (!TryReadLen(data, ref pos, out var len))
+                return false;
+            if (pos + len > data.Length || len < 4)
+                return false;
+            der = data.AsSpan(offset, (pos - offset) + len).ToArray();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadLen(byte[] data, ref int pos, out int len)
+    {
+        len = 0;
+        if (pos >= data.Length)
+            return false;
+        var b = data[pos++];
+        if (b < 0x80)
+        {
+            len = b;
+            return true;
+        }
+
+        var n = b & 0x7F;
+        if (n is 0 or > 3 || pos + n > data.Length)
+            return false;
+        for (var i = 0; i < n; i++)
+            len = (len << 8) | data[pos++];
+        return len > 0;
     }
 
     private static void DumpGcmLayout(byte[] ct, Action<string> log)
@@ -193,8 +369,7 @@ public static class MessagesPcsProbe
         var nonceLen = ver == 0 ? 8 : 12;
         var tagLen = ver == 0 ? 8 : 12;
         var encLen = ct.Length - headerLen - nonceLen - tagLen;
-        log(
-            $"gcm: ver={ver} headerLen={headerLen} header={Convert.ToHexString(ct.AsSpan(0, headerLen))} " +
+        log($"gcm: ver={ver} headerLen={headerLen} header={Convert.ToHexString(ct.AsSpan(0, headerLen))} " +
             $"nonceLen={nonceLen} tagLen={tagLen} encLen={encLen}");
     }
 
@@ -237,10 +412,9 @@ public static class MessagesPcsProbe
             Add($"{record}-{field}");
             if (record.StartsWith('_'))
                 Add($"{record[1..]}-{field}");
-            Add($"BeaconStore-{record}-{field}");
-            // Alternate separators seen in some Apple stacks
-            Add($"{zone}/{record}/{field}");
-            Add($"{zone}:{record}:{field}");
+            Add($"Manatee-{record}-{field}");
+            Add($"MessageEncryptedV3-{record}-{field}");
+            Add($"ChatEncryptedV3-{record}-{field}");
         }
 
         Add(field);
@@ -283,6 +457,49 @@ public static class MessagesPcsProbe
 
         return best;
     }
+
+    /// <summary>Messages record name: 64 lowercase hex (not owner <c>_</c>+32hex).</summary>
+    private static string? ResolveMessagesRecordHex64(byte[] payload, int fieldOffset)
+    {
+        var windowStart = Math.Max(0, fieldOffset - 2500);
+        var text = Encoding.ASCII.GetString(
+            payload, windowStart,
+            Math.Min(payload.Length - windowStart, fieldOffset - windowStart + 8));
+        string? best = null;
+        var bestDist = int.MaxValue;
+        for (var i = 0; i + 64 <= text.Length; i++)
+        {
+            var ok = true;
+            for (var j = 0; j < 64; j++)
+            {
+                var c = text[i + j];
+                if (c is not ((>= '0' and <= '9') or (>= 'a' and <= 'f')))
+                {
+                    ok = false;
+                    break;
+                }
+            }
+
+            if (!ok)
+                continue;
+            // Prefer standalone hex (not mid-string): prev not hex.
+            if (i > 0 && IsAsciiHex(text[i - 1]))
+                continue;
+            if (i + 64 < text.Length && IsAsciiHex(text[i + 64]))
+                continue;
+            var abs = windowStart + i;
+            var dist = fieldOffset - abs;
+            if (dist < 0 || dist >= bestDist)
+                continue;
+            bestDist = dist;
+            best = text.Substring(i, 64);
+        }
+
+        return best;
+    }
+
+    private static bool IsAsciiHex(char c) =>
+        c is (>= '0' and <= '9') or (>= 'a' and <= 'f') or (>= 'A' and <= 'F');
 
     private static string Preview(byte[] plain)
     {
