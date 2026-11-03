@@ -17,6 +17,8 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
     private readonly Uri _baseUri;
     private string? _licenseBearer;
     private readonly bool _sendFingerprintWhenUnlicensed;
+    /// <summary>Cooldown-limit server: niente GET fino a questo istante UTC.</summary>
+    private DateTimeOffset? _rateLimitedUntilUtc;
 
     /// <summary>Raised once when the server returns a first-connection Package C license bundle.</summary>
     public event Action<string>? LicenseBundleIssued;
@@ -71,17 +73,24 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
 
     public async Task<AnisetteHeaders> FetchAsync(AnisetteFetchOptions? options, CancellationToken ct = default)
     {
+        ThrowIfRateLimited();
+
         Exception? lastError = null;
         var errors = new List<string>(3);
         var appleId = options?.AppleId?.Trim();
         var forceFresh = options?.ForceFresh == true;
+        var loginPhase = options?.LoginPhase == true;
 
         foreach (var relativePath in ProbePaths())
         {
             try
             {
-                return await FetchFromPathAsync(relativePath, appleId, forceFresh, ct)
+                return await FetchFromPathAsync(relativePath, appleId, forceFresh, loginPhase, ct)
                     .ConfigureAwait(false);
+            }
+            catch (AnisetteRateLimitedException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -103,6 +112,21 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
             : lastError?.Message ?? "nessun endpoint valido";
         throw new InvalidOperationException(
             $"Anisette remota non raggiungibile ({_baseUri}): {detail}");
+    }
+
+    private void ThrowIfRateLimited()
+    {
+        var until = _rateLimitedUntilUtc;
+        if (until is null || DateTimeOffset.UtcNow >= until.Value)
+        {
+            if (until is not null && DateTimeOffset.UtcNow >= until.Value)
+                _rateLimitedUntilUtc = null;
+            return;
+        }
+
+        throw new AnisetteRateLimitedException(
+            $"Anisette remota rate-limited fino a {until.Value:u} (niente GET).",
+            until);
     }
 
     public async Task<string?> TryGetBackendAsync(CancellationToken ct = default)
@@ -143,7 +167,11 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
     }
 
     private async Task<AnisetteHeaders> FetchFromPathAsync(
-        string relativePath, string? appleId, bool forceFresh, CancellationToken ct)
+        string relativePath,
+        string? appleId,
+        bool forceFresh,
+        bool loginPhase,
+        CancellationToken ct)
     {
         var uri = string.IsNullOrEmpty(relativePath)
             ? _baseUri
@@ -177,6 +205,11 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
             IkeClientIdentity.ApplyFingerprintHeaders(request);
         }
 
+        // Middleware burst-limit solo su Accedi; download remint = session.
+        request.Headers.TryAddWithoutValidation(
+            AnisetteFetchOptions.PhaseHeaderName,
+            loginPhase ? AnisetteFetchOptions.PhaseLogin : AnisetteFetchOptions.PhaseSession);
+
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
@@ -184,8 +217,26 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
 
         if (!response.IsSuccessStatusCode)
         {
+            var code = (int)response.StatusCode;
+            if (code == 429
+                || body.Contains("rate_limited", StringComparison.OrdinalIgnoreCase))
+            {
+                DateTimeOffset? until = null;
+                if (AnisetteRateLimitedException.TryParseBlockedUntilUtc(body, out var parsed))
+                    until = parsed;
+                else
+                    until = DateTimeOffset.UtcNow.AddHours(1);
+
+                // Margine: server può ancora rifiutare al secondo esatto.
+                until = until.Value.AddMinutes(1);
+                _rateLimitedUntilUtc = until;
+                throw new AnisetteRateLimitedException(
+                    $"HTTP {code} GET {uri}: {TrimBody(body)}",
+                    until);
+            }
+
             throw new InvalidOperationException(
-                $"HTTP {(int)response.StatusCode} GET {uri}: {TrimBody(body)}");
+                $"HTTP {code} GET {uri}: {TrimBody(body)}");
         }
 
         if (AnisetteJsonParser.TryParseHeaders(body, out var payload))

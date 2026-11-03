@@ -95,7 +95,10 @@ public sealed class ConnectionGuardMiddleware
             return;
         }
 
-        if (!skipAbuse)
+        // Burst >10/10s: solo Accedi (X-IKE-Anisette-Phase: login) o richieste senza
+        // Authorization (probe/fingerprint). I remint mid-download (phase=session + Bearer)
+        // non devono finire in rate_limited da 1h.
+        if (!skipAbuse && ShouldApplyLoginBurstLimit(ctx))
         {
             if (_limiter.IsBlocked(ip, out var until)
                 || !_limiter.TryAdmit(ip, out until))
@@ -201,6 +204,24 @@ public sealed class ConnectionGuardMiddleware
             || name.Equals("Via", StringComparison.OrdinalIgnoreCase))
             return 1;
         return 2;
+    }
+
+    /// <summary>
+    /// Burst-limit solo su login Accedi o client senza Bearer (anti-scrape).
+    /// Header <c>X-IKE-Anisette-Phase: session</c> + Authorization → download, skip.
+    /// </summary>
+    internal static bool ShouldApplyLoginBurstLimit(HttpContext ctx)
+    {
+        var phase = ctx.Request.Headers["X-IKE-Anisette-Phase"].ToString().Trim();
+        if (phase.Equals("login", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (phase.Equals("session", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Client vecchio senza header: limita solo se manca Bearer (probe).
+        var auth = ctx.Request.Headers.Authorization.ToString();
+        return string.IsNullOrWhiteSpace(auth)
+            || !auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string OutcomeFor(int code) =>

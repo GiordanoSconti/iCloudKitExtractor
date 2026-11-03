@@ -406,7 +406,7 @@ public partial class MainWindow : Window
 
         var denied = _connectionRows.Count(c => c.Outcome == "VPN_DENIED");
         ConnectionLogHint.Text =
-            $"{_connectionRows.Count} event(s) · vpn_denied={denied} · abuse >{AbuseRateLimiter.BurstLimit}/10s"
+            $"{_connectionRows.Count} event(s) · vpn_denied={denied} · Accedi burst >{AbuseRateLimiter.BurstLimit}/10s"
             + " · data/connection-requests.log + data/vpn-consent.json";
         ShowSelectedConnectionHeaders();
         RefreshVpnConsentUi();

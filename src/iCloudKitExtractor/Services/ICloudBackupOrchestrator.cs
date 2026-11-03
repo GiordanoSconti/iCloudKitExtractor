@@ -496,7 +496,7 @@ public sealed class ICloudBackupOrchestrator
             return;
 
         var opts = forceRemint
-            ? AnisetteFetchOptions.ForGrandSlamLogin(session.AppleId)
+            ? AnisetteFetchOptions.ForSessionRemint(session.AppleId)
             : AnisetteFetchOptions.ForAppleId(session.AppleId);
         session.Anisette = await _anisette.Ios
             .FetchAsync(opts, ct)

@@ -28,6 +28,24 @@ public sealed class BackupDownloadService
     private static readonly SemaphoreSlim GlobalEdgeDownloadGate =
         new(BackupEdgeDownloadParallelism, BackupEdgeDownloadParallelism);
 
+    /// <summary>
+    /// Un solo Domain alla volta su PrivilegedBatch / query/retrieve auth —
+    /// 8 Domain × PB → X-Apple-Error-Info. MMCS/edge restano paralleli.
+    /// </summary>
+    private static readonly SemaphoreSlim GlobalFlistAuthGate = new(1, 1);
+
+    /// <summary>
+    /// Cache sessione: MmcsAuth già harvestati (PB) per digest signature 40-char.
+    /// EN non ha auth dei file dentro il flist — solo dei blob FL:; questa cache
+    /// evita di ripeti query/retrieve per lo stesso file tra Domain/wave.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _flistAuthByDigest =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Cache sessione MmcsAuth per RecordIdSuffix esatto (token:size).</summary>
+    private readonly ConcurrentDictionary<string, string> _flistAuthByRid =
+        new(StringComparer.Ordinal);
+
     private static int _edgeInFlight;
 
     /// <summary>
@@ -1731,9 +1749,17 @@ public sealed class BackupDownloadService
 
                     await AttachFlistAuthFromCachesAsync(needDownload, readyAssets, log)
                         .ConfigureAwait(false);
-                    await ResolveFlistBatchAuthAsync(
-                        session, needDownload, pref4, workDir, enFetch, log, ct)
-                        .ConfigureAwait(false);
+                    await GlobalFlistAuthGate.WaitAsync(ct).ConfigureAwait(false);
+                    try
+                    {
+                        await ResolveFlistBatchAuthAsync(
+                            session, needDownload, pref4, workDir, enFetch, log, ct)
+                            .ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        GlobalFlistAuthGate.Release();
+                    }
 
                     var readyBatch = new List<BackupAsset>();
                     var skipAuthAssets = new List<BackupAsset>();
@@ -5831,7 +5857,10 @@ public sealed class BackupDownloadService
         if (readyBatch.Count == 0)
             return;
 
-        var dop = Math.Clamp(AuthorizeGetBatchSize, 2, 8);
+        // Sotto throttle Apple: niente prefetch query parallelo (stesso bucket PB).
+        var dop = _assets.IsGatewayThrottled
+            ? 1
+            : Math.Clamp(AuthorizeGetBatchSize, 2, 8);
         var ok = 0;
         var miss = 0;
         await Parallel.ForEachAsync(
@@ -5843,6 +5872,8 @@ public sealed class BackupDownloadService
             },
             async (asset, token) =>
             {
+                if (_assets.IsGatewayThrottled)
+                    return;
                 await EnsureAssetRecordPayloadAsync(session, asset, log, token)
                     .ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex)
@@ -9010,16 +9041,27 @@ public sealed class BackupDownloadService
     }
 
     /// <summary>
-    /// Attende la fine del cooldown Anisette (stesso circuito 401) senza abortire il PB.
+    /// Attende la fine del cooldown Anisette. Su rate-limit remoto (fino a ~1h)
+    /// non aspetta oltre 2 minuti: stop PB e messaggio chiaro.
     /// </summary>
     private async Task PauseForAnisetteCooldownAsync(IProgress<string>? log, CancellationToken ct)
     {
         const int sliceMs = 2_000;
-        const int maxWaitMs = 90_000;
+        const int maxWaitMs = 120_000;
         var waited = 0;
+        var remain0 = _assets.AnisetteBlockedRemainingMs;
+        if (remain0 > maxWaitMs)
+        {
+            log?.Report(
+                $"  Anisette rate-limited (~{remain0 / 60_000.0:0.#} min rimanenti) — " +
+                "salto attesa lunga; riprendi lo snapshot dopo lo sblocco o usa Anisette locale.");
+            return;
+        }
+
         while (_assets.AnisetteRefreshBlocked && waited < maxWaitMs)
         {
-            log?.Report($"  attendo Anisette… ({waited / 1000}s)");
+            var remain = _assets.AnisetteBlockedRemainingMs;
+            log?.Report($"  attendo Anisette… ({waited / 1000}s, restano ~{remain / 1000}s)");
             await Task.Delay(sliceMs, ct).ConfigureAwait(false);
             waited += sliceMs;
         }
@@ -9029,8 +9071,30 @@ public sealed class BackupDownloadService
     }
 
     /// <summary>
-    /// Aggancia auth già noti (EN/PreAuth in RAM) per <b>signature digest</b>
-    /// (type-byte 0x01/0x04 agnostico) — stesso join di PrivilegedBatch.
+    /// Memorizza MmcsAuth flist (post-PB / attach) per riuso cross-Domain senza
+    /// nuova <c>query/retrieve</c>. Key = digest signature e/o rid esatto.
+    /// </summary>
+    private void RememberFlistMmcsAuth(BackupAsset asset)
+    {
+        if (!HasUsableMmcsAuth(asset.MmcsAuth))
+            return;
+        var auth = asset.MmcsAuth!;
+        if (asset.AssetSignature is { Length: 21 }
+            && MmcsAuthBuilder.SignatureDigestHex(asset.AssetSignature) is { } dig)
+            _flistAuthByDigest[dig] = auth;
+        if (!string.IsNullOrWhiteSpace(asset.RecordIdSuffix))
+            _flistAuthByRid[asset.RecordIdSuffix] = auth;
+    }
+
+    private void RememberFlistMmcsAuthBatch(IEnumerable<BackupAsset> assets)
+    {
+        foreach (var a in assets)
+            RememberFlistMmcsAuth(a);
+    }
+
+    /// <summary>
+    /// Aggancia auth già noti: (1) cache sessione PB, (2) EN/PreAuth per digest
+    /// (di solito solo blob FL:, non i file dentro), (3) readyAssets per rid.
     /// </summary>
     private Task AttachFlistAuthFromCachesAsync(
         IReadOnlyList<BackupAsset> assets,
@@ -9042,13 +9106,37 @@ public sealed class BackupDownloadService
         var preBySig = MmcsAuthBuilder.IndexAuthsBySignatureHex(preAuthHeaders);
 
         var attached = 0;
+        var bySession = 0;
         var byDigest = 0;
         var byReady = 0;
         foreach (var asset in assets)
         {
             if (HasUsableMmcsAuth(asset.MmcsAuth))
             {
+                RememberFlistMmcsAuth(asset);
                 attached++;
+                continue;
+            }
+
+            // 1) Cache sessione (PB già fatto su altro Domain/wave).
+            if (asset.AssetSignature is { Length: 21 }
+                && MmcsAuthBuilder.SignatureDigestHex(asset.AssetSignature) is { } dig0
+                && _flistAuthByDigest.TryGetValue(dig0, out var sessAuth)
+                && HasUsableMmcsAuth(sessAuth))
+            {
+                asset.MmcsAuth = sessAuth;
+                attached++;
+                bySession++;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(asset.RecordIdSuffix)
+                && _flistAuthByRid.TryGetValue(asset.RecordIdSuffix, out var sessRid)
+                && HasUsableMmcsAuth(sessRid))
+            {
+                asset.MmcsAuth = sessRid;
+                attached++;
+                bySession++;
                 continue;
             }
 
@@ -9069,6 +9157,7 @@ public sealed class BackupDownloadService
                 if (hitAuth is not null)
                 {
                     asset.MmcsAuth = hitAuth;
+                    RememberFlistMmcsAuth(asset);
                     attached++;
                     continue;
                 }
@@ -9118,6 +9207,7 @@ public sealed class BackupDownloadService
                         catch { /* ignore */ }
                     }
 
+                    RememberFlistMmcsAuth(asset);
                     attached++;
                     byReady++;
                 }
@@ -9125,10 +9215,12 @@ public sealed class BackupDownloadService
         }
 
         ApplyFlistSignatureOverrideToAuthHeaders(assets);
+        RememberFlistMmcsAuthBatch(assets);
         var preN = preAuthHeaders.Count;
         log?.Report(
-            $"  auth flist da EN/PreAuth in RAM: {attached}/{assets.Count} " +
-            $"(header={preN}, digestJoin={byDigest}, readyJoin={byReady}; " +
+            $"  auth flist cache: {attached}/{assets.Count} " +
+            $"(session={bySession}, enDigest={byDigest}, readyJoin={byReady}, " +
+            $"headerEN={preN}, cacheDig={_flistAuthByDigest.Count}; " +
             "resto → PrivilegedBatch)");
         // #region agent log
         AgentCountAlways("auth_flist_cache_attach", new
@@ -9136,8 +9228,10 @@ public sealed class BackupDownloadService
             attached,
             assets = assets.Count,
             preAuthInRam = preN,
+            bySession,
             byDigest,
             byReady,
+            sessionCache = _flistAuthByDigest.Count,
             stillNeed = assets.Count - attached,
             hypothesis = "H-AUTH-JOIN",
         });
@@ -9213,6 +9307,14 @@ public sealed class BackupDownloadService
                 : pendingSeeds.Take(waveSeedCap).ToList();
             pendingSeeds = pendingSeeds.Skip(waveSeeds.Count).ToList();
 
+            if (_assets.IsGatewayThrottled)
+            {
+                log?.Report(
+                    $"  PrivilegedBatch: pausa throttle Apple " +
+                    $"(~{_assets.GatewayThrottleRemainingMs / 1000}s) prima wave {wave}…");
+                await _assets.WaitGatewayThrottleAsync(ct).ConfigureAwait(false);
+            }
+
             log?.Report(
                 $"  query/retrieve seeds wave {wave}: ×{waveSeeds.Count} " +
                 $"(restano {pendingSeeds.Count}; EN={fromEn}, size-class={synthesized}), " +
@@ -9221,7 +9323,9 @@ public sealed class BackupDownloadService
                     .Select(static g => $"{g.Key}×{g.Count()}")));
 
             // Refresh sessione all'inizio di ogni wave grande (oltre la 1ª).
-            if (wave > 1 && waveSeeds.Count >= 48 && _refreshSession is not null)
+            // ClearGatewayUnauthorized NON azzera più pace/throttle Error-Info.
+            if (wave > 1 && waveSeeds.Count >= 48 && _refreshSession is not null
+                && !_assets.IsGatewayThrottled)
             {
                 try
                 {
@@ -9271,6 +9375,7 @@ public sealed class BackupDownloadService
                         attachedNow,
                         need = need.Count,
                         stillNeed,
+                        throttled = _assets.IsGatewayThrottled,
                         anisetteBlocked = _assets.AnisetteRefreshBlocked,
                     },
                 });
@@ -9284,9 +9389,17 @@ public sealed class BackupDownloadService
             if (stillNeed == 0)
                 break;
 
-            // gained==0 (Error-Info / vuoto): NON riaccodare la stessa wave —
-            // altrimenti wave 50–64 × Domain paralleli = flood X-Apple-Error-Info.
-            // Il retry finale sotto gestisce i missing una sola volta (max 2 pass).
+            // gained==0 + throttle: stop flood wave (riprova dopo hold, non subito).
+            if (gained == 0 && _assets.IsGatewayThrottled)
+            {
+                log?.Report(
+                    $"  wave {wave}: 0 auth + Error-Info — pausa " +
+                    $"~{_assets.GatewayThrottleRemainingMs / 1000}s, stop wave");
+                await _assets.WaitGatewayThrottleAsync(ct).ConfigureAwait(false);
+                break;
+            }
+
+            // gained==0: non riaccodare (evita flood). Retry finale sotto.
             if (gained == 0)
             {
                 log?.Report(
@@ -9324,29 +9437,16 @@ public sealed class BackupDownloadService
                     .ToList();
             }
 
-            // NON svuotare pendingSeeds su Anisette blocked: è lavoro incompleto, non
-            // "MmcsAuth assente". Il gateway già fa 401→refresh→stessa request; qui
-            // aspettiamo il cooldown e continuiamo le seed residue (flusso PB unico).
             if (gained == 0 && _assets.AnisetteRefreshBlocked)
             {
                 log?.Report(
                     $"  PrivilegedBatch: Anisette in cooldown — attendo, poi continuo " +
                     $"({stillNeed} senza auth, {pendingSeeds.Count} seed in coda)…");
-                // #region agent log
-                AgentCountAlways("pb_wave_anisette_pause", new
-                {
-                    wave,
-                    stillNeed,
-                    pendingLeft = pendingSeeds.Count,
-                    hypothesis = "H-AUTH-JOIN",
-                });
-                // #endregion
                 await PauseForAnisetteCooldownAsync(log, ct).ConfigureAwait(false);
                 if (_refreshSession is not null)
                 {
                     try
                     {
-                        // Dopo cooldown 401: remint (OTP era il problema).
                         await _refreshSession(session, log, ct, forceRemint: true).ConfigureAwait(false);
                         _assets.ClearGatewayUnauthorized();
                         _assets.ResetAnisetteRefreshCircuit();
@@ -9357,17 +9457,21 @@ public sealed class BackupDownloadService
                     }
                 }
             }
-
-            // H-AUTH-GAP: NON abbandonare seed residue su gained==0 — Domain grandi
-            // (es. 900+ ready / 200+ skip) restavano senza MmcsAuth. Continua le wave.
         }
 
-        // Retry dedicato (max 2): niente loop infinito su Error-Info.
+        // Retry dedicato (max 2).
         for (var retry = 0; retry < 2; retry++)
         {
             var missing = need.Where(static a => !HasUsableMmcsAuth(a.MmcsAuth)).ToList();
             if (missing.Count == 0 || _assets.AnisetteRefreshBlocked)
                 break;
+            if (_assets.IsGatewayThrottled)
+            {
+                log?.Report(
+                    $"  PrivilegedBatch retry: attendo throttle " +
+                    $"(~{_assets.GatewayThrottleRemainingMs / 1000}s)…");
+                await _assets.WaitGatewayThrottleAsync(ct).ConfigureAwait(false);
+            }
 
             var retrySeeds = new List<string>();
             var retrySeen = new HashSet<string>(StringComparer.Ordinal);
@@ -9479,6 +9583,8 @@ public sealed class BackupDownloadService
         }
 
         AttachFetchedAuthToFlistAssets(need, fetched, payload, out var attached);
+        RememberFlistMmcsAuthBatch(need);
+        RememberFlistMmcsAuthBatch(fetched);
         log?.Report($"  query/retrieve rid→MmcsAuth: {attached}/{need.Count}");
         // #region agent log
         try
@@ -9547,7 +9653,7 @@ public sealed class BackupDownloadService
     /// <c>ck::Record</c> (stessa query) + assetSignature. Auth e wrap non si
     /// riassociano dopo per solo digest.
     /// </summary>
-    private static void AttachFetchedAuthToFlistAssets(
+    private void AttachFetchedAuthToFlistAssets(
         IReadOnlyList<BackupAsset> need,
         IReadOnlyList<BackupAsset> fetched,
         byte[]? payload,
@@ -9691,8 +9797,13 @@ public sealed class BackupDownloadService
                 parentBound++;
 
             if (HasUsableMmcsAuth(asset.MmcsAuth))
+            {
+                RememberFlistMmcsAuth(asset);
                 attached++;
+            }
         }
+
+        RememberFlistMmcsAuthBatch(fetched);
 
         // #region agent log
         try
@@ -9712,6 +9823,7 @@ public sealed class BackupDownloadService
                         ["need"] = need.Count,
                         ["fetched"] = fetched.Count,
                         ["authAttached"] = attached,
+                        ["sessionCache"] = _flistAuthByDigest.Count,
                         ["authFromRid"] = authFromRid,
                         ["authFromTok"] = authFromTok,
                         ["authFromSig"] = authFromSig,

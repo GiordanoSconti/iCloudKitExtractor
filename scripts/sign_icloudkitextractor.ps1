@@ -1,4 +1,4 @@
-# Signs iCloudKitExtractor Release output with a local ForensisLab code-signing certificate.
+﻿# Signs iCloudKitExtractor Release output with a local ForensisLab code-signing certificate.
 # Self-signed: after -TrustLocally once (Root + TrustedPublisher), Smart App Control / CI
 # can accept local lab builds. Does NOT replace EV/OV Authenticode for public releases
 # (use scripts/sign-release.ps1 + Azure Trusted Signing for that).
@@ -81,17 +81,9 @@ if (-not (Test-Path $OutputDir)) {
 $cert = Get-OrCreateCert
 if ($TrustLocally) { Trust-Cert $cert }
 
-# Host + managed entry + native bridge + viewer payload commonly flagged by SAC
-$toSign = @()
-$toSign += Get-ChildItem $OutputDir -File -Filter "iCloudKitExtractor.exe" -ErrorAction SilentlyContinue
-$toSign += Get-ChildItem $OutputDir -File -Filter "iCloudKitExtractor.dll" -ErrorAction SilentlyContinue
-$toSign += Get-ChildItem $OutputDir -File -Filter "CoreAdiBridge.exe" -ErrorAction SilentlyContinue
-$viewer = Join-Path $OutputDir "viewer-payload"
-if (Test-Path $viewer) {
-    $toSign += Get-ChildItem $viewer -File -Filter "PhotosViewer.exe" -ErrorAction SilentlyContinue
-    $toSign += Get-ChildItem $viewer -File -Filter "PhotosViewer.dll" -ErrorAction SilentlyContinue
-}
-
+# Firmare TUTTI gli .exe/.dll dell'output: SAC/App Control blocca spesso
+# dipendenze non firmate (BouncyCastle.Cryptography, SQLite, PhotosViewer, …).
+$toSign = @(Get-ChildItem $OutputDir -Recurse -File -Include *.exe,*.dll -ErrorAction SilentlyContinue)
 $toSign = $toSign | Where-Object { $_ -ne $null } | Sort-Object FullName -Unique
 if ($toSign.Count -eq 0) {
     throw "No iCloudKitExtractor binaries to sign in $OutputDir"

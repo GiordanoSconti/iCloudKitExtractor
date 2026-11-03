@@ -94,8 +94,9 @@ public sealed class ConnectionLogStore
 }
 
 /// <summary>
-/// Burst limiter: more than <see cref="BurstLimit"/> requests from the same IP
-/// inside <see cref="BurstWindow"/> → block that IP for <see cref="BlockDuration"/>.
+/// Burst limiter Accedi: more than <see cref="BurstLimit"/> login-phase requests from the
+/// same IP inside <see cref="BurstWindow"/> → block for <see cref="BlockDuration"/>.
+/// Non si applica ai remint mid-download (<c>X-IKE-Anisette-Phase: session</c>).
 /// </summary>
 public sealed class AbuseRateLimiter
 {
@@ -104,7 +105,7 @@ public sealed class AbuseRateLimiter
     public static readonly TimeSpan BlockDuration = TimeSpan.FromHours(1);
 
     public const string ExcessiveOriginMessage =
-        "richieste eccessive provenienti dalla stessa origine, attendere un'ora prima di riprovare";
+        "richieste eccessive in fase Accedi dalla stessa origine, attendere un'ora prima di riprovare";
 
     private readonly ConcurrentDictionary<string, IpState> _states = new(StringComparer.Ordinal);
 

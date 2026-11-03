@@ -96,8 +96,48 @@ public sealed class CloudKitAssetService
     /// <summary>Azzera il circuit breaker HTTP 401 del gateway (dopo refresh sessione).</summary>
     public void ClearGatewayUnauthorized()
     {
+        // Solo circuit 401 HTTP — NON azzerare pace/throttle Error-Info
+        // (un remint Anisette non autorizza a rifloodare query/retrieve).
         _gateway.ClearUnauthorized();
-        Volatile.Write(ref _gatewayPaceMs, 0);
+    }
+
+    /// <summary>Pace corrente PB (0 = libero; alto = throttle Apple).</summary>
+    public int GatewayPaceMs => Volatile.Read(ref _gatewayPaceMs);
+
+    /// <summary>True se siamo nella finestra hold dopo X-Apple-Error-Info.</summary>
+    public bool IsGatewayThrottled =>
+        Environment.TickCount64 < Volatile.Read(ref _gatewayThrottleUntilMs)
+        || Volatile.Read(ref _gatewayPaceMs) > 0;
+
+    /// <summary>Ms rimasti di hold Error-Info (0 = libero).</summary>
+    public int GatewayThrottleRemainingMs
+    {
+        get
+        {
+            var left = Volatile.Read(ref _gatewayThrottleUntilMs) - Environment.TickCount64;
+            return left > 0 ? (int)Math.Min(left, int.MaxValue) : 0;
+        }
+    }
+
+    /// <summary>Attende il pace corrente (min 1×pace o <paramref name="minMs"/>).</summary>
+    public Task WaitGatewayPaceAsync(CancellationToken ct, int minMs = 0)
+    {
+        var ms = Math.Max(minMs, Volatile.Read(ref _gatewayPaceMs));
+        return ms > 0 ? Task.Delay(ms, ct) : Task.CompletedTask;
+    }
+
+    /// <summary>Attende fine hold Error-Info (+ pace residuo).</summary>
+    public async Task WaitGatewayThrottleAsync(CancellationToken ct)
+    {
+        while (true)
+        {
+            var hold = GatewayThrottleRemainingMs;
+            var pace = Volatile.Read(ref _gatewayPaceMs);
+            var wait = Math.Max(hold, pace);
+            if (wait <= 0)
+                return;
+            await Task.Delay(Math.Min(wait, 5_000), ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>True se l'ultimo refresh Anisette è fallito e siamo ancora in cooldown.</summary>
@@ -107,10 +147,30 @@ public sealed class CloudKitAssetService
         {
             if (Volatile.Read(ref _anisetteRefreshFailed) == 0)
                 return false;
+            var until = Volatile.Read(ref _anisetteBlockedUntilMs);
+            if (until > 0)
+                return Environment.TickCount64 < until;
             var at = Volatile.Read(ref _anisetteRefreshFailedAtMs);
             if (at == 0)
                 return true;
             return Environment.TickCount64 - at < AnisetteRefreshCooldownMs;
+        }
+    }
+
+    /// <summary>Ms rimanenti di cooldown Anisette (0 se libero).</summary>
+    public int AnisetteBlockedRemainingMs
+    {
+        get
+        {
+            if (!AnisetteRefreshBlocked)
+                return 0;
+            var until = Volatile.Read(ref _anisetteBlockedUntilMs);
+            if (until > 0)
+                return (int)Math.Max(0, until - Environment.TickCount64);
+            var at = Volatile.Read(ref _anisetteRefreshFailedAtMs);
+            if (at == 0)
+                return AnisetteRefreshCooldownMs;
+            return (int)Math.Max(0, AnisetteRefreshCooldownMs - (Environment.TickCount64 - at));
         }
     }
 
@@ -119,14 +179,27 @@ public sealed class CloudKitAssetService
     {
         Volatile.Write(ref _anisetteRefreshFailed, 0);
         Volatile.Write(ref _anisetteRefreshFailedAtMs, 0);
+        Volatile.Write(ref _anisetteBlockedUntilMs, 0);
     }
 
     public void SetSessionRefresh(SessionRefreshDelegate? refresh)
     {
         _sessionRefresh = refresh;
+        // OBBLIGATORIO passare da TryRefresh…: altrimenti ogni HTTP 401 CloudKit
+        // chiama Anisette remota in parallelo e con 429 esplode (consecutivi=100+).
         _gateway.SetUnauthorizedRefresh(refresh is null
             ? null
-            : (s, ct) => refresh(s, null, ct, forceRemint: true));
+            : async (s, ct) =>
+            {
+                if (!await TryRefreshSessionAfterUnauthorizedAsync(s, null, ct)
+                        .ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        AnisetteRefreshBlocked
+                            ? $"Anisette in cooldown (~{AnisetteBlockedRemainingMs / 1000}s rimanenti)."
+                            : "Refresh Anisette non disponibile.");
+                }
+            });
     }
 
     public async Task AcquireRestoreLockAsync(
@@ -795,6 +868,23 @@ public sealed class CloudKitAssetService
         IProgress<string>? log = null,
         CancellationToken ct = default)
     {
+        if (AnisetteRefreshBlocked)
+        {
+            log?.Report(
+                $"  PrivilegedBatch skip: Anisette in cooldown " +
+                $"(~{AnisetteBlockedRemainingMs / 1000}s) — niente query/retrieve");
+            return ([], null);
+        }
+
+        if (IsGatewayThrottled)
+        {
+            var remainSec = Math.Max(1, GatewayThrottleRemainingMs / 1000);
+            log?.Report(
+                $"  PrivilegedBatch: attendo throttle Apple (~{remainSec}s, " +
+                $"pace={GatewayPaceMs}ms) prima di ×{seedRecordNames.Count} seed…");
+            await WaitGatewayThrottleAsync(ct).ConfigureAwait(false);
+        }
+
         var rawIn = seedRecordNames.Count;
         var seeds = NormalizeKaLaMaSeeds(seedRecordNames)
             .Where(static n => !CloudKitMmcsIds.IsUuidRecordName(n))
@@ -887,8 +977,11 @@ public sealed class CloudKitAssetService
         var chunksSinceRefresh = 0;
         var unauthorizedRefreshes = 0;
         var lastProgressLog = 0;
+        var throttleAbort = 0;
         var refreshGate = new SemaphoreSlim(1, 1);
-        using var parallelGate = new SemaphoreSlim(PrivilegedBatchParallelism);
+        // Sempre 1 slot locale: il parallelismo tra Domain è già sul download;
+        // più chunk in coda = flood non appena Apple riapre.
+        using var parallelGate = new SemaphoreSlim(1, 1);
         var tasks = new List<Task>();
 
         async Task<bool> RefreshAnisetteAsync(string reason)
@@ -931,6 +1024,13 @@ public sealed class CloudKitAssetService
                     {
                         ct.ThrowIfCancellationRequested();
 
+                        // Primo Error-Info → stop HTTP sui chunk ancora in coda.
+                        if (Volatile.Read(ref throttleAbort) != 0)
+                        {
+                            Interlocked.Increment(ref chunksDone);
+                            return;
+                        }
+
                         // Refresh proattivo Anisette (serializzato).
                         if (Volatile.Read(ref chunksSinceRefresh) >= PrivilegedBatchRefreshEveryChunks)
                         {
@@ -940,17 +1040,27 @@ public sealed class CloudKitAssetService
                         }
 
                         var paceMs = Volatile.Read(ref _gatewayPaceMs);
-                        var (chunkAssets, payload, hardFail) = await QueryPrivilegedBatchChunkAsync(
-                            session,
-                            chunkLocal,
-                            dir,
-                            log,
-                            ct,
-                            paceMs,
-                            allowPerSeedFallback).ConfigureAwait(false);
+                        var (chunkAssets, payload, hardFail, throttled) =
+                            await QueryPrivilegedBatchChunkAsync(
+                                session,
+                                chunkLocal,
+                                dir,
+                                log,
+                                ct,
+                                paceMs,
+                                allowPerSeedFallback).ConfigureAwait(false);
 
                         var done = Interlocked.Increment(ref chunksDone);
                         Interlocked.Increment(ref chunksSinceRefresh);
+
+                        if (throttled)
+                        {
+                            Interlocked.Exchange(ref throttleAbort, 1);
+                            log?.Report(
+                                $"  PrivilegedBatch: Error-Info — abort resto chunk " +
+                                $"({done}/{chunkCount}, hold~{GatewayThrottleRemainingMs / 1000}s)");
+                            return;
+                        }
 
                         if (hardFail)
                         {
@@ -975,21 +1085,31 @@ public sealed class CloudKitAssetService
                                     ct)
                                 .ConfigureAwait(false);
 
+                            if (Volatile.Read(ref throttleAbort) != 0)
+                                return;
+
                             try
                             {
-                                (chunkAssets, payload, hardFail) = await QueryPrivilegedBatchChunkAsync(
-                                    session,
-                                    chunkLocal,
-                                    dir,
-                                    log,
-                                    ct,
-                                    Volatile.Read(ref _gatewayPaceMs),
-                                    allowPerSeedFallback).ConfigureAwait(false);
+                                (chunkAssets, payload, hardFail, throttled) =
+                                    await QueryPrivilegedBatchChunkAsync(
+                                        session,
+                                        chunkLocal,
+                                        dir,
+                                        log,
+                                        ct,
+                                        Volatile.Read(ref _gatewayPaceMs),
+                                        allowPerSeedFallback).ConfigureAwait(false);
                             }
                             catch (Exception retryEx)
                             {
                                 log?.Report(
                                     $"  PrivilegedBatch chunk retry: {retryEx.Message}");
+                                return;
+                            }
+
+                            if (throttled)
+                            {
+                                Interlocked.Exchange(ref throttleAbort, 1);
                                 return;
                             }
 
@@ -1002,8 +1122,9 @@ public sealed class CloudKitAssetService
                             }
                         }
 
-                        // H-PB-PACE: dopo chunk ok (anche post-401) azzera pace — altrimenti resta a 800.
-                        NoteGatewayOk();
+                        // Harvest ok → pace decade (durante hold non azzera).
+                        if (chunkAssets.Count > 0)
+                            NoteGatewayOk();
 
                         if (payload is { Length: > 0 })
                         {
@@ -1022,12 +1143,12 @@ public sealed class CloudKitAssetService
                                 log?.Report(
                                     $"  PrivilegedBatch progresso {done}/{chunkCount} " +
                                     $"auth={assets.Count} pace={Volatile.Read(ref _gatewayPaceMs)}ms " +
-                                    $"parallel={PrivilegedBatchParallelism}");
+                                    $"parallel=1 abort={Volatile.Read(ref throttleAbort)}");
                             }
                         }
 
                         // #region agent log
-                        if (done == 1 || done % 25 == 0 || hardFail)
+                        if (done == 1 || done % 25 == 0 || hardFail || throttled)
                         {
                             try
                             {
@@ -1045,9 +1166,11 @@ public sealed class CloudKitAssetService
                                         chunkCount,
                                         harvested = chunkAssets.Count,
                                         hardFail,
+                                        throttled,
+                                        throttleAbort = Volatile.Read(ref throttleAbort),
                                         paceMs = Volatile.Read(ref _gatewayPaceMs),
                                         bagCount = assets.Count,
-                                        parallel = PrivilegedBatchParallelism,
+                                        parallel = 1,
                                         chunkSize = PrivilegedBatchChunkSize,
                                     },
                                 });
@@ -1067,6 +1190,8 @@ public sealed class CloudKitAssetService
                     catch (Exception ex) when (IsUnauthorizedCloudKit(ex))
                     {
                         Interlocked.Increment(ref chunksDone);
+                        if (Volatile.Read(ref throttleAbort) != 0)
+                            return;
                         NoteGatewayUnauthorized();
                         log?.Report(
                             $"  PrivilegedBatch chunk 401 ({chunkLocal.Count} seed) — " +
@@ -1081,14 +1206,20 @@ public sealed class CloudKitAssetService
 
                         try
                         {
-                            var (retryAssets, retryPayload, retryFail) = await QueryPrivilegedBatchChunkAsync(
-                                session,
-                                chunkLocal,
-                                dir,
-                                log,
-                                ct,
-                                Volatile.Read(ref _gatewayPaceMs),
-                                allowPerSeedFallback).ConfigureAwait(false);
+                            var (retryAssets, retryPayload, retryFail, retryThrottle) =
+                                await QueryPrivilegedBatchChunkAsync(
+                                    session,
+                                    chunkLocal,
+                                    dir,
+                                    log,
+                                    ct,
+                                    Volatile.Read(ref _gatewayPaceMs),
+                                    allowPerSeedFallback).ConfigureAwait(false);
+                            if (retryThrottle)
+                            {
+                                Interlocked.Exchange(ref throttleAbort, 1);
+                                return;
+                            }
                             if (retryFail)
                             {
                                 NoteGatewayUnauthorized();
@@ -1097,7 +1228,9 @@ public sealed class CloudKitAssetService
                                 return;
                             }
 
-                            NoteGatewayOk();
+                            if (retryAssets.Count > 0)
+                                NoteGatewayOk();
+
                             if (retryPayload is { Length: > 0 })
                             {
                                 lock (lastPayloadLock)
@@ -1137,15 +1270,18 @@ public sealed class CloudKitAssetService
 
     /// <summary>capture ~6–12 seed/query; 12 bilancia RTT vs 401.</summary>
     private const int PrivilegedBatchChunkSize = 12;
-    /// <summary>Chunk PrivilegedBatch in parallelo per Domain (solo se pace=0).</summary>
+    /// <summary>Chunk PrivilegedBatch in parallelo per Domain (solo se pace=0 / no cooldown).</summary>
     private const int PrivilegedBatchParallelism = 2;
     /// <summary>
-    /// Cap globale PB tra Domain paralleli (8 FL × PB = flood → X-Apple-Error-Info).
+    /// Cap globale PB tra Domain paralleli: 1 = niente flood query/retrieve
+    /// (8 FL × PB paralleli → X-Apple-Error-Info). MMCS/edge restano paralleli.
     /// </summary>
-    private static readonly SemaphoreSlim PrivilegedBatchGlobalGate = new(2, 2);
+    private static readonly SemaphoreSlim PrivilegedBatchGlobalGate = new(1, 1);
+    /// <summary>Evita deadlock se PerSeed/TryResolve è già sotto il gate.</summary>
+    private static readonly AsyncLocal<bool> PrivilegedBatchGateHeld = new();
     /// <summary>Soglia oltre la quale il fallback per-seed è troppo costoso (401).</summary>
     private const int PrivilegedBatchPerSeedMaxTotal = 48;
-    /// <summary>Pace di base (Anisette ok): 0 — solo back-off dopo 401.</summary>
+    /// <summary>Pace di base: 0. Solo back-off dopo 401 / Error-Info.</summary>
     private const int PrivilegedBatchPaceMs = 0;
     private const int PrivilegedBatchPaceLargeMs = 50;
     private const int PrivilegedBatchPaceMaxMs = 800;
@@ -1155,7 +1291,27 @@ public sealed class CloudKitAssetService
     private const int PrivilegedBatchTransportMaxAttempts = 3;
     private const int PrivilegedBatchTransportRetryBaseMs = 400;
 
-    private async Task<(IReadOnlyList<BackupAsset> Assets, byte[]? Payload, bool HitUnauthorized)>
+    private async Task<T> WithPrivilegedBatchGateAsync<T>(
+        Func<Task<T>> action,
+        CancellationToken ct)
+    {
+        if (PrivilegedBatchGateHeld.Value)
+            return await action().ConfigureAwait(false);
+
+        await PrivilegedBatchGlobalGate.WaitAsync(ct).ConfigureAwait(false);
+        PrivilegedBatchGateHeld.Value = true;
+        try
+        {
+            return await action().ConfigureAwait(false);
+        }
+        finally
+        {
+            PrivilegedBatchGateHeld.Value = false;
+            PrivilegedBatchGlobalGate.Release();
+        }
+    }
+
+    private Task<(IReadOnlyList<BackupAsset> Assets, byte[]? Payload, bool HitUnauthorized, bool Throttled)>
         QueryPrivilegedBatchChunkAsync(
         ICloudSession session,
         IReadOnlyList<string> chunk,
@@ -1163,22 +1319,13 @@ public sealed class CloudKitAssetService
         IProgress<string>? log,
         CancellationToken ct,
         int paceMs,
-        bool allowPerSeedFallback)
-    {
-        await PrivilegedBatchGlobalGate.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            return await QueryPrivilegedBatchChunkCoreAsync(
-                    session, chunk, dumpDir, log, ct, paceMs, allowPerSeedFallback)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            PrivilegedBatchGlobalGate.Release();
-        }
-    }
+        bool allowPerSeedFallback) =>
+        WithPrivilegedBatchGateAsync(
+            () => QueryPrivilegedBatchChunkCoreAsync(
+                session, chunk, dumpDir, log, ct, paceMs, allowPerSeedFallback),
+            ct);
 
-    private async Task<(IReadOnlyList<BackupAsset> Assets, byte[]? Payload, bool HitUnauthorized)>
+    private async Task<(IReadOnlyList<BackupAsset> Assets, byte[]? Payload, bool HitUnauthorized, bool Throttled)>
         QueryPrivilegedBatchChunkCoreAsync(
         ICloudSession session,
         IReadOnlyList<string> chunk,
@@ -1188,8 +1335,13 @@ public sealed class CloudKitAssetService
         int paceMs,
         bool allowPerSeedFallback)
     {
-        if (paceMs > 0)
-            await Task.Delay(paceMs, ct).ConfigureAwait(false);
+        // Aspetta hold Error-Info prima di qualsiasi query (anche se pace già letto).
+        var holdMs = GatewayThrottleRemainingMs;
+        if (holdMs > 0)
+            await Task.Delay(Math.Min(holdMs, 15_000), ct).ConfigureAwait(false);
+        var effectivePace = Math.Max(paceMs, Volatile.Read(ref _gatewayPaceMs));
+        if (effectivePace > 0)
+            await Task.Delay(effectivePace, ct).ConfigureAwait(false);
         byte[] payload;
         var hit401 = false;
         try
@@ -1206,7 +1358,7 @@ public sealed class CloudKitAssetService
                     .ConfigureAwait(false))
             {
                 NoteGatewayUnauthorized();
-                return ([], null, true);
+                return ([], null, true, false);
             }
 
             try
@@ -1220,13 +1372,13 @@ public sealed class CloudKitAssetService
             {
                 NoteGatewayUnauthorized();
                 log?.Report($"  PrivilegedBatch ×{chunk.Count} retry: {retryEx.Message}");
-                return ([], null, true);
+                return ([], null, true, false);
             }
         }
         catch (Exception ex)
         {
             log?.Report($"  PrivilegedBatch ×{chunk.Count}: {ex.Message}");
-            return ([], null, false);
+            return ([], null, false, false);
         }
 
         if (dumpDir is not null && payload.Length > 0)
@@ -1260,14 +1412,14 @@ public sealed class CloudKitAssetService
         catch (Exception ex)
         {
             log?.Report($"  PrivilegedBatch harvest skip: {ex.GetType().Name}: {ex.Message}");
-            return ([], payload, hit401);
+            return ([], payload, hit401, false);
         }
         if (harvested.Count > 0)
-            return (harvested, payload, hit401);
+            return (harvested, payload, hit401, false);
 
         if (CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err))
         {
-            // X-Apple-Error-Info / throttle: per-seed × N Domain = storm (wave 60+ a 0 auth).
+            // X-Apple-Error-Info / throttle: niente per-seed (moltiplica le richieste).
             var throttle = LooksLikeCloudKitThrottle(err);
             if (throttle)
             {
@@ -1278,7 +1430,7 @@ public sealed class CloudKitAssetService
                 await Task.Delay(
                         Math.Max(Volatile.Read(ref _gatewayPaceMs), 500), ct)
                     .ConfigureAwait(false);
-                return ([], payload, hit401);
+                return ([], payload, hit401, true);
             }
 
             if (!allowPerSeedFallback)
@@ -1286,18 +1438,18 @@ public sealed class CloudKitAssetService
                 log?.Report(
                     $"  PrivilegedBatch ×{chunk.Count}: {err ?? "errore"} — " +
                     "skip per-seed (batch grande)");
-                return ([], payload, hit401);
+                return ([], payload, hit401, false);
             }
 
             log?.Report(
                 $"  PrivilegedBatch ×{chunk.Count}: {err ?? "errore"} — fallback per-seed");
             var (one, onePayload) = await QueryPrivilegedBatchPerSeedAsync(
                 session, chunk, dumpDir, log, ct).ConfigureAwait(false);
-            return (one, onePayload, hit401);
+            return (one, onePayload, hit401, false);
         }
 
         log?.Report($"  PrivilegedBatch ×{chunk.Count}: risposta senza CAog ({payload.Length} B)");
-        return ([], payload, hit401);
+        return ([], payload, hit401, false);
     }
 
     private async Task<(IReadOnlyList<BackupAsset> Assets, byte[]? Payload)> QueryPrivilegedBatchPerSeedAsync(
@@ -1316,12 +1468,26 @@ public sealed class CloudKitAssetService
         foreach (var seed in seeds)
         {
             ct.ThrowIfCancellationRequested();
-            await PaceGatewayAsync(ct).ConfigureAwait(false);
+            if (IsGatewayThrottled)
+            {
+                log?.Report(
+                    $"  PrivilegedBatch per-seed: stop su throttle " +
+                    $"(ok={hits}, miss={misses}+{seeds.Count - hits - misses})");
+                break;
+            }
+
             byte[] payload;
             try
             {
-                payload = await QueryFetchPayloadWithTransportRetryAsync(
-                    session, [seed], log, ct).ConfigureAwait(false);
+                payload = await WithPrivilegedBatchGateAsync(
+                        async () =>
+                        {
+                            await PaceGatewayAsync(ct).ConfigureAwait(false);
+                            return await QueryFetchPayloadWithTransportRetryAsync(
+                                session, [seed], log, ct).ConfigureAwait(false);
+                        },
+                        ct)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) when (IsUnauthorizedCloudKit(ex) && !refreshedOnce)
             {
@@ -1336,9 +1502,15 @@ public sealed class CloudKitAssetService
 
                 try
                 {
-                    await PaceGatewayAsync(ct).ConfigureAwait(false);
-                    payload = await QueryFetchPayloadWithTransportRetryAsync(
-                        session, [seed], log, ct).ConfigureAwait(false);
+                    payload = await WithPrivilegedBatchGateAsync(
+                            async () =>
+                            {
+                                await PaceGatewayAsync(ct).ConfigureAwait(false);
+                                return await QueryFetchPayloadWithTransportRetryAsync(
+                                    session, [seed], log, ct).ConfigureAwait(false);
+                            },
+                            ct)
+                        .ConfigureAwait(false);
                 }
                 catch
                 {
@@ -2648,14 +2820,23 @@ public sealed class CloudKitAssetService
     }
 
     /// <summary>
-    /// Pace CloudKit: default 0. Solo dopo 401 sale (max <see cref="PrivilegedBatchPaceMaxMs"/>).
-    /// Prima era Delay(500) fisso → FL grandi lentissimi.
+    /// Pace CloudKit: default 0. Solo dopo 401 / Error-Info sale (max
+    /// <see cref="PrivilegedBatchPaceMaxMs"/>). Harvest ok decade; durante
+    /// cooldown throttle non torna a 0 (evita sawtooth flood→Error-Info).
     /// </summary>
     private int _gatewayPaceMs;
-    /// <summary>1 = refresh Anisette fallito; ritenta dopo <see cref="AnisetteRefreshCooldownMs"/>.</summary>
+    /// <summary>TickCount64: fino a qui non azzerare pace dopo Error-Info.</summary>
+    private long _gatewayThrottleUntilMs;
+    /// <summary>Finestra in cui tenere un floor di pace dopo throttle Apple.</summary>
+    private const int GatewayThrottleHoldMs = 90_000;
+    private const int GatewayThrottleFloorMs = 400;
+    /// <summary>1 = refresh Anisette fallito; ritenta dopo cooldown.</summary>
     private int _anisetteRefreshFailed;
     private long _anisetteRefreshFailedAtMs;
+    /// <summary>TickCount64 deadline (rate-limit remoto); 0 = usa solo cooldown corto.</summary>
+    private long _anisetteBlockedUntilMs;
     private const int AnisetteRefreshCooldownMs = 60_000;
+    private const int AnisetteRateLimitCooldownFloorMs = 3_600_000; // 1h se manca blocked_until
 
     private Task PaceGatewayAsync(CancellationToken ct)
     {
@@ -2673,64 +2854,45 @@ public sealed class CloudKitAssetService
 
     private void NoteGatewayUnauthorized()
     {
+        var holdUntil = Environment.TickCount64 + GatewayThrottleHoldMs;
+        while (true)
+        {
+            var curUntil = Volatile.Read(ref _gatewayThrottleUntilMs);
+            if (holdUntil <= curUntil
+                || Interlocked.CompareExchange(ref _gatewayThrottleUntilMs, holdUntil, curUntil)
+                    == curUntil)
+                break;
+        }
+
         while (true)
         {
             var cur = Volatile.Read(ref _gatewayPaceMs);
             var next = Math.Min(Math.Max(cur, 250) + 250, PrivilegedBatchPaceMaxMs);
             if (Interlocked.CompareExchange(ref _gatewayPaceMs, next, cur) == cur)
-            {
-                // #region agent log
-                try
-                {
-                    var line = JsonSerializer.Serialize(new Dictionary<string, object?>
-                    {
-                        ["sessionId"] = "7dabb5",
-                        ["runId"] = "pb-pace-fix",
-                        ["hypothesisId"] = "H-PB-PACE",
-                        ["location"] = "NoteGatewayUnauthorized",
-                        ["message"] = "pace_bump",
-                        ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        ["data"] = new { cur, next },
-                    });
-                    if (IkeLogOptions.ShouldWriteAgentDiag)
-                        IkeLogOptions.AppendAgentNdjson(
-                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
-                            line);
-                }
-                catch { /* ignore */ }
-                // #endregion
                 return;
-            }
         }
     }
 
+    /// <summary>
+    /// Harvest ok: fuori cooldown → pace=0; durante hold Error-Info → decadimento
+    /// lento con floor (niente reset immediato che riapre il flood).
+    /// </summary>
     private void NoteGatewayOk()
     {
-        var cur = Volatile.Read(ref _gatewayPaceMs);
-        if (cur == 0)
-            return;
-        // Dopo successo torniamo a 0 (non pacea a vuoto).
-        Volatile.Write(ref _gatewayPaceMs, 0);
-        // #region agent log
-        try
+        if (Environment.TickCount64 < Volatile.Read(ref _gatewayThrottleUntilMs))
         {
-            var line = JsonSerializer.Serialize(new Dictionary<string, object?>
+            while (true)
             {
-                ["sessionId"] = "7dabb5",
-                ["runId"] = "pb-pace-fix",
-                ["hypothesisId"] = "H-PB-PACE",
-                ["location"] = "NoteGatewayOk",
-                ["message"] = "pace_clear",
-                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                ["data"] = new { clearedFrom = cur },
-            });
-            if (IkeLogOptions.ShouldWriteAgentDiag)
-                IkeLogOptions.AppendAgentNdjson(
-                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
-                    line);
+                var cur = Volatile.Read(ref _gatewayPaceMs);
+                if (cur <= GatewayThrottleFloorMs)
+                    return;
+                var next = Math.Max(cur - 50, GatewayThrottleFloorMs);
+                if (Interlocked.CompareExchange(ref _gatewayPaceMs, next, cur) == cur)
+                    return;
+            }
         }
-        catch { /* ignore */ }
-        // #endregion
+
+        Volatile.Write(ref _gatewayPaceMs, 0);
     }
 
     /// <summary>
@@ -3627,6 +3789,13 @@ public sealed class CloudKitAssetService
         IProgress<string>? log,
         CancellationToken ct)
     {
+        // Senza Anisette non martellare CloudKit (401×N → GET remota×N → 429).
+        if (AnisetteRefreshBlocked)
+            return null;
+        // Durante Error-Info hold: niente query/retrieve parallele (prefetch owned).
+        if (IsGatewayThrottled)
+            return null;
+
         var refreshed = false;
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -3722,8 +3891,15 @@ public sealed class CloudKitAssetService
             ct.ThrowIfCancellationRequested();
             try
             {
-                return await _query.FetchAssetViaQueryAsync(
-                    session, recordName, _restoreState, ct).ConfigureAwait(false);
+                return await WithPrivilegedBatchGateAsync(
+                        async () =>
+                        {
+                            await PaceGatewayAsync(ct).ConfigureAwait(false);
+                            return await _query.FetchAssetViaQueryAsync(
+                                session, recordName, _restoreState, ct).ConfigureAwait(false);
+                        },
+                        ct)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) when (IsUnauthorizedCloudKit(ex))
             {
@@ -3793,21 +3969,68 @@ public sealed class CloudKitAssetService
 
     private readonly SemaphoreSlim _sessionRefreshGate = new(1, 1);
 
+    private bool IsAnisetteInCooldown(out int remainingMs)
+    {
+        remainingMs = AnisetteBlockedRemainingMs;
+        return remainingMs > 0 || AnisetteRefreshBlocked;
+    }
+
+    private void NoteAnisetteRefreshFailure(Exception ex, IProgress<string>? log)
+    {
+        Volatile.Write(ref _anisetteRefreshFailed, 1);
+        Volatile.Write(ref _anisetteRefreshFailedAtMs, Environment.TickCount64);
+
+        var rateLimited = FindAnisetteRateLimit(ex);
+        long cooldownMs = AnisetteRefreshCooldownMs;
+        if (rateLimited is not null)
+        {
+            var until = rateLimited.BlockedUntilUtc
+                ?? DateTimeOffset.UtcNow.AddMilliseconds(AnisetteRateLimitCooldownFloorMs);
+            cooldownMs = Math.Max(
+                AnisetteRefreshCooldownMs,
+                (long)Math.Ceiling((until - DateTimeOffset.UtcNow).TotalMilliseconds));
+            cooldownMs = Math.Clamp(cooldownMs, AnisetteRefreshCooldownMs, AnisetteRateLimitCooldownFloorMs + 120_000);
+        }
+
+        Volatile.Write(ref _anisetteBlockedUntilMs, Environment.TickCount64 + cooldownMs);
+        var mins = cooldownMs / 60_000.0;
+        log?.Report(
+            rateLimited is not null
+                ? $"  ERROR Anisette remota rate-limited — stop refresh per ~{mins:0.#} min " +
+                  $"(fino a {(rateLimited.BlockedUntilUtc ?? DateTimeOffset.UtcNow.AddMilliseconds(cooldownMs)):u}). " +
+                  "Niente altre GET a icloudkitextractor.eu; riprendi dopo o usa Anisette locale."
+                : $"  ERROR Anisette offline — niente refresh per ~{cooldownMs / 1000}s. " +
+                  "Verifica ADI worker :6973 / Anisette remota.");
+    }
+
+    private static Auth.AnisetteRateLimitedException? FindAnisetteRateLimit(Exception? ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is Auth.AnisetteRateLimitedException rl)
+                return rl;
+            var msg = e.Message ?? "";
+            if (msg.Contains("rate_limited", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("HTTP 429", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("blocked_until_utc", StringComparison.OrdinalIgnoreCase))
+            {
+                DateTimeOffset? until = null;
+                if (Auth.AnisetteRateLimitedException.TryParseBlockedUntilUtc(msg, out var parsed))
+                    until = parsed;
+                return new Auth.AnisetteRateLimitedException(msg, until);
+            }
+        }
+
+        return null;
+    }
+
     private async Task<bool> TryRefreshSessionAfterUnauthorizedAsync(
         ICloudSession session,
         IProgress<string>? log,
         CancellationToken ct)
     {
-        if (Volatile.Read(ref _anisetteRefreshFailed) != 0)
-        {
-            var at = Volatile.Read(ref _anisetteRefreshFailedAtMs);
-            var age = at == 0 ? AnisetteRefreshCooldownMs : Environment.TickCount64 - at;
-            if (age < AnisetteRefreshCooldownMs)
-                return false;
-            Volatile.Write(ref _anisetteRefreshFailed, 0);
-            log?.Report(
-                $"  retry refresh Anisette dopo cooldown {AnisetteRefreshCooldownMs / 1000}s…");
-        }
+        if (IsAnisetteInCooldown(out var remain))
+            return false;
 
         _gateway.ClearUnauthorized();
         if (_sessionRefresh is null)
@@ -3816,15 +4039,9 @@ public sealed class CloudKitAssetService
         await _sessionRefreshGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            // Double-check dopo il gate (altro chunk può aver già refreshato).
-            if (Volatile.Read(ref _anisetteRefreshFailed) != 0)
-            {
-                var at = Volatile.Read(ref _anisetteRefreshFailedAtMs);
-                var age = at == 0 ? AnisetteRefreshCooldownMs : Environment.TickCount64 - at;
-                if (age < AnisetteRefreshCooldownMs)
-                    return false;
-                Volatile.Write(ref _anisetteRefreshFailed, 0);
-            }
+            // Double-check dopo il gate (altro chunk può aver già fallito/rate-limit).
+            if (IsAnisetteInCooldown(out _))
+                return false;
 
             // #region agent log
             var workerHealth = await ProbeAdiWorkerHealthAsync(ct).ConfigureAwait(false);
@@ -3855,9 +4072,10 @@ public sealed class CloudKitAssetService
             // 401 → OTP morto: remint obbligatorio (non solo Client-Time).
             await _sessionRefresh(session, log, ct, forceRemint: true);
             _gateway.ClearUnauthorized();
-            Volatile.Write(ref _anisetteRefreshFailed, 0);
-            Volatile.Write(ref _anisetteRefreshFailedAtMs, 0);
-            Volatile.Write(ref _gatewayPaceMs, 0);
+            ResetAnisetteRefreshCircuit();
+            // Non azzerare pace se siamo in hold Error-Info (evita flood immediato).
+            if (Environment.TickCount64 >= Volatile.Read(ref _gatewayThrottleUntilMs))
+                Volatile.Write(ref _gatewayPaceMs, 0);
 
             // #region agent log
             try
@@ -3883,14 +4101,16 @@ public sealed class CloudKitAssetService
         }
         catch (Exception ex)
         {
-            Volatile.Write(ref _anisetteRefreshFailed, 1);
-            Volatile.Write(ref _anisetteRefreshFailedAtMs, Environment.TickCount64);
+            NoteAnisetteRefreshFailure(ex, log);
             var workerAfter = await ProbeAdiWorkerHealthAsync(ct).ConfigureAwait(false);
             log?.Report($"  refresh sessione fallito: {ex.Message}");
-            log?.Report(
-                $"  ERROR Anisette offline (ADI worker={workerAfter}) — " +
-                $"niente PrivilegedBatch auth per ~{AnisetteRefreshCooldownMs / 1000}s. " +
-                "Verifica python akd_adi_worker.py :6973 e GET http://127.0.0.1:6971/.");
+            if (FindAnisetteRateLimit(ex) is null)
+            {
+                log?.Report(
+                    $"  ERROR Anisette offline (ADI worker={workerAfter}) — " +
+                    $"niente PrivilegedBatch auth per ~{AnisetteBlockedRemainingMs / 1000}s. " +
+                    "Verifica python akd_adi_worker.py :6973 e GET http://127.0.0.1:6971/.");
+            }
             // #region agent log
             try
             {
@@ -3908,7 +4128,8 @@ public sealed class CloudKitAssetService
                         errorType = ex.GetType().FullName,
                         inner = ex.InnerException?.Message,
                         workerAfter,
-                        cooldownMs = AnisetteRefreshCooldownMs,
+                        cooldownMs = AnisetteBlockedRemainingMs,
+                        rateLimited = FindAnisetteRateLimit(ex) is not null,
                     },
                 });
                 if (IkeLogOptions.ShouldWriteAgentDiag)
