@@ -47,6 +47,9 @@ public sealed class AppleHttpClientFactory
                 : new HttpLoggingHandler(legacy!, handler);
         }
 
+        // Sempre esterno: conta wire anche senza HAR/log (Backup vs Rete in UI).
+        pipeline = new HttpByteCountingHandler(pipeline);
+
         return new HttpClient(pipeline)
         {
             Timeout = TimeSpan.FromMinutes(30)

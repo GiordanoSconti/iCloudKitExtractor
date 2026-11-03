@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Session — iCloudKit Extractor</title>
+  <meta
+    name="description"
+    content="Live operator session for iCloudKit Extractor lab demos and restores."
+  />
+  <meta name="theme-color" content="#071c22" />
+  <link rel="icon" type="image/png" href="../assets/app-icon.png" />
+  <link rel="apple-touch-icon" href="../assets/app-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../site.css" />
+</head>
+<body>
+  <a class="skip" href="#live">Skip to live session</a>
+
+  <nav class="nav" aria-label="Primary">
+    <div class="nav__inner">
+      <a class="nav__brand" href="../">
+        <img src="../assets/app-icon.png" width="32" height="32" alt="" />
+        <span>Forensis-Lab</span>
+      </a>
+      <div class="nav__links">
+        <a href="./">Live</a>
+        <a href="../#demos">Demos</a>
+        <a href="../#downloads">Download</a>
+        <a href="../blog/">Notes</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="live-page">
+    <section
+      class="live"
+      id="live"
+      aria-label="Live session"
+      hidden
+      data-live-panel
+      data-state="on"
+      data-status-url="./status.json"
+    >
+      <div class="live__inner">
+        <div class="live__head">
+          <span class="live__badge" data-live-badge>Live Session On</span>
+          <div class="live__titles">
+            <h1 class="live__title" data-live-title>Loading live status…</h1>
+            <p class="live__detail" data-live-detail></p>
+            <p class="live__meta" data-live-meta></p>
+          </div>
+          <div class="live__actions">
+            <a class="btn btn--ghost" href="../">Back to site</a>
+            <a class="btn btn--primary" data-live-watch hidden href="https://www.twitch.tv/d34dl0ck9327" rel="noopener noreferrer" target="_blank">Watch on Twitch</a>
+          </div>
+        </div>
+        <div class="live__stage" data-live-stage hidden>
+          <iframe
+            class="live__frame"
+            data-live-frame
+            hidden
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+            referrerpolicy="strict-origin-when-cross-origin"
+          ></iframe>
+          <p class="live__placeholder" data-live-placeholder hidden></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span class="footer__brand">
+        <img src="../assets/app-icon.png" width="28" height="28" alt="" />
+        © Forensis-Lab · Giordano Sconti
+      </span>
+      <span>MIT License · Experimental research software</span>
+    </div>
+  </footer>
+  <script src="../live.js" defer></script>
+</body>
+</html>

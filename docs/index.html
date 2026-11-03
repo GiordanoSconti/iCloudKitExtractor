@@ -29,6 +29,7 @@
         <span>Forensis-Lab</span>
       </a>
       <div class="nav__links">
+        <a href="#live">Live</a>
         <a href="#demos">Demos</a>
         <a href="#downloads">Download</a>
         <a href="./blog/">Notes</a>
@@ -36,6 +37,42 @@
       </div>
     </div>
   </nav>
+
+  <section
+    class="live"
+    id="live"
+    aria-label="Live session"
+    hidden
+    data-live-panel
+    data-state="on"
+    data-status-url="./live/status.json"
+  >
+    <div class="live__inner">
+      <div class="live__head">
+        <span class="live__badge" data-live-badge>Live Session On</span>
+        <div class="live__titles">
+          <h2 class="live__title" data-live-title>Loading live status…</h2>
+          <p class="live__detail" data-live-detail></p>
+          <p class="live__meta" data-live-meta></p>
+        </div>
+        <div class="live__actions">
+          <a class="btn btn--primary" data-live-watch hidden href="https://www.twitch.tv/d34dl0ck9327" rel="noopener noreferrer" target="_blank">Watch on Twitch</a>
+        </div>
+      </div>
+      <div class="live__stage" data-live-stage hidden>
+        <iframe
+          class="live__frame"
+          data-live-frame
+          hidden
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowfullscreen
+          referrerpolicy="strict-origin-when-cross-origin"
+          loading="lazy"
+        ></iframe>
+        <p class="live__placeholder" data-live-placeholder hidden></p>
+      </div>
+    </div>
+  </section>
 
   <header class="hero" aria-label="Introduction">
     <div class="hero__plane" aria-hidden="true"></div>
@@ -215,5 +252,6 @@
       <span>MIT License · Experimental research software</span>
     </div>
   </footer>
+  <script src="./live.js" defer></script>
 </body>
 </html>

@@ -570,8 +570,13 @@
                                 <TextBlock x:Name="DownloadBytesText" Margin="16,0,0,0"
                                            VerticalAlignment="Center"
                                            Style="{StaticResource HintTextStyle}"
-                                           Text="Dati: — / —"
-                                           ToolTip="Byte effettivamente scaricati / stima byte da scaricare"/>
+                                           Text="Backup: — / —"
+                                           ToolTip="Byte payload Backup scaricati/decifrati (chunk data file) / stima rimanente — non include authorizeGet/query/FL"/>
+                                <TextBlock x:Name="DownloadWireBytesText" Margin="12,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Text="Rete: —"
+                                           ToolTip="Traffico HTTP cumulato (body request + response): CloudKit, authorizeGet, FL, edge MMCS, ecc."/>
                                 <ComboBox x:Name="DownloadBytesScaleCombo"
                                           Width="72" MinHeight="28" Margin="6,0,0,0"
                                           Padding="6,2"

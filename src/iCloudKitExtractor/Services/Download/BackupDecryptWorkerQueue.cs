@@ -63,26 +63,33 @@ public sealed class BackupDecryptJobContext
 /// </summary>
 public sealed class BackupDecryptWorkerQueue : IAsyncDisposable
 {
-    /// <summary>QThread FillChunks ≈ 8. Env <c>IKE_DECRYPT_WORKERS</c> 4–32.</summary>
-    public const int DefaultParallelism = 8;
+    /// <summary>Worker decrypt. Default 4 (era 8) — meno compact LOH in parallelo. Env <c>IKE_DECRYPT_WORKERS</c> 2–32.</summary>
+    public const int DefaultParallelism = 4;
 
     /// <summary>
-    /// ≈ parallelism (picco concurrent compact). Evidence: 96–240 + overlap → WS multi-GB.
-    /// Env <c>IKE_DECRYPT_CAPACITY</c> 8–96.
+    /// Coda corta ≈ worker×3. Evidence: capacity 24 + compact centinaia di MB → OOM.
+    /// Env <c>IKE_DECRYPT_CAPACITY</c> 4–96.
     /// </summary>
-    public const int DefaultCapacity = 24;
+    public const int DefaultCapacity = 12;
 
-    /// <summary>Oltre questa soglia il compact non entra in coda: decrypt sync (PDF/app grandi).</summary>
-    public const int LargeCompactSyncBytes = 2 * 1024 * 1024;
+    /// <summary>
+    /// Compact ≥ questa soglia: al massimo 1 job pinned in coda (serializza Gemma/PDF grandi).
+    /// </summary>
+    public const int LargeCompactSyncBytes = 64 * 1024 * 1024;
+
+    /// <summary>Budget totale PrebuiltCompact pinnati in coda+flight (oltre → backpressure).</summary>
+    public const long MaxPinnedCompactBudgetBytes = 384L * 1024 * 1024;
 
     private readonly Channel<QueuedWork> _channel;
     private readonly Task[] _workers;
     private readonly CancellationToken _shutdown;
     private int _inFlight;
+    private long _pinnedCompactBytes;
 
     private sealed record QueuedWork(
         BackupDecryptJob Job,
-        TaskCompletionSource<AssetDownloadOutcome> Completion);
+        TaskCompletionSource<AssetDownloadOutcome> Completion,
+        long PinnedCompactBytes);
 
     public BackupDecryptWorkerQueue(
         Func<BackupDecryptJob, CancellationToken, Task<AssetDownloadOutcome>> worker,
@@ -128,11 +135,25 @@ public sealed class BackupDecryptWorkerQueue : IAsyncDisposable
             var inflBefore = Volatile.Read(ref _inFlight);
             var sw = Environment.TickCount64;
             // #endregion
-            await _channel.Writer.WriteAsync(new QueuedWork(job, tcs), ct).ConfigureAwait(false);
+            var pin = job.PrebuiltCompact?.LongLength ?? 0L;
+            await WaitForCompactBudgetAsync(pin, ct).ConfigureAwait(false);
+            if (pin > 0)
+                Interlocked.Add(ref _pinnedCompactBytes, pin);
+            try
+            {
+                await _channel.Writer.WriteAsync(new QueuedWork(job, tcs, pin), ct)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                if (pin > 0)
+                    Interlocked.Add(ref _pinnedCompactBytes, -pin);
+                throw;
+            }
             // #region agent log
             var waitMs = Environment.TickCount64 - sw;
             var n = Interlocked.Increment(ref _schedSampleN);
-            if (waitMs >= 50 || n <= 8 || n % 25 == 0)
+            if (waitMs >= 50 || n <= 8 || n % 25 == 0 || pin >= LargeCompactSyncBytes)
             {
                 try
                 {
@@ -142,8 +163,8 @@ public sealed class BackupDecryptWorkerQueue : IAsyncDisposable
                         ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         ["location"] = "BackupDecryptWorkerQueue.ScheduleAsync",
                         ["message"] = "decrypt_schedule_wait",
-                        ["hypothesisId"] = "H-Q1",
-                        ["runId"] = "queue-opt-v1",
+                        ["hypothesisId"] = "H-OOM-BUDGET",
+                        ["runId"] = "oom-budget-v1",
                         ["data"] = new Dictionary<string, object?>
                         {
                             ["waitMs"] = waitMs,
@@ -153,7 +174,10 @@ public sealed class BackupDecryptWorkerQueue : IAsyncDisposable
                             ["inFlightAfter"] = Volatile.Read(ref _inFlight),
                             ["capacity"] = DefaultCapacity,
                             ["workers"] = _workers.Length,
-                            ["compact"] = job.PrebuiltCompact?.Length ?? 0,
+                            ["compact"] = pin,
+                            ["pinnedMb"] = Volatile.Read(ref _pinnedCompactBytes) / (1024 * 1024),
+                            ["budgetMb"] = MaxPinnedCompactBudgetBytes / (1024 * 1024),
+                            ["largeSerial"] = pin >= LargeCompactSyncBytes,
                             ["saturated"] = waitMs >= 50 || qBefore >= DefaultCapacity - 2,
                         },
                     });
@@ -170,6 +194,37 @@ public sealed class BackupDecryptWorkerQueue : IAsyncDisposable
         }
 
         return tcs.Task;
+    }
+
+    /// <summary>
+    /// Backpressure RAM: budget totale sui compact pinnati; i job ≥
+    /// <see cref="LargeCompactSyncBytes"/> entrano solo a coda/flight vuoti.
+    /// </summary>
+    private async Task WaitForCompactBudgetAsync(long pinBytes, CancellationToken ct)
+    {
+        if (pinBytes <= 0)
+            return;
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var pinned = Volatile.Read(ref _pinnedCompactBytes);
+            var inflight = Volatile.Read(ref _inFlight);
+            var queued = _channel.Reader.Count;
+
+            if (pinBytes >= LargeCompactSyncBytes)
+            {
+                // Un solo compact grande alla volta (Gemma / model cache / video).
+                if (pinned == 0 && inflight == 0 && queued == 0)
+                    return;
+            }
+            else if (pinned + pinBytes <= MaxPinnedCompactBudgetBytes)
+            {
+                return;
+            }
+
+            await Task.Delay(25, ct).ConfigureAwait(false);
+        }
     }
 
     public async Task WhenIdleAsync(CancellationToken ct = default)
@@ -301,6 +356,8 @@ public sealed class BackupDecryptWorkerQueue : IAsyncDisposable
             {
                 // point 4: cipher transient — sempre drop pin (ok / fail / OOM).
                 item.Job.PrebuiltCompact = null;
+                if (item.PinnedCompactBytes > 0)
+                    Interlocked.Add(ref _pinnedCompactBytes, -item.PinnedCompactBytes);
                 Interlocked.Decrement(ref _inFlight);
             }
         }

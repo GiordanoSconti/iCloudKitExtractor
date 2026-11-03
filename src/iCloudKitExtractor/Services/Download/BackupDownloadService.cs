@@ -199,24 +199,24 @@ public sealed class BackupDownloadService
     }
 
     /// <summary>
-    /// Worker Ford/chunk decrypt (non GET edge). Default 8 (pool); env <c>IKE_DECRYPT_WORKERS</c> 4–32.
+    /// Worker Ford/chunk decrypt (non GET edge). Default 4; env <c>IKE_DECRYPT_WORKERS</c> 2–32.
     /// </summary>
     internal static int ResolveDecryptWorkerParallelism()
     {
         var env = Environment.GetEnvironmentVariable("IKE_DECRYPT_WORKERS");
-        if (int.TryParse(env, out var n) && n is >= 4 and <= 32)
+        if (int.TryParse(env, out var n) && n is >= 2 and <= 32)
             return n;
         return BackupDecryptWorkerQueue.DefaultParallelism;
     }
 
     /// <summary>
-    /// Coda decrypt (compact pinned). Default 24; env <c>IKE_DECRYPT_CAPACITY</c> 8–96.
+    /// Coda decrypt (compact pinned). Default 12; env <c>IKE_DECRYPT_CAPACITY</c> 4–96.
     /// Con FillAwait ≈ worker×3 — no multi-AG backlog.
     /// </summary>
     internal static int ResolveDecryptQueueCapacity()
     {
         var env = Environment.GetEnvironmentVariable("IKE_DECRYPT_CAPACITY");
-        if (int.TryParse(env, out var n) && n is >= 8 and <= 96)
+        if (int.TryParse(env, out var n) && n is >= 4 and <= 96)
             return n;
         return BackupDecryptWorkerQueue.DefaultCapacity;
     }
@@ -311,8 +311,10 @@ public sealed class BackupDownloadService
         _cloneCountUiLogN = 0;
         _uiFilesTotal = 0;
         _uiBytesDownloaded = 0;
-        // Barra Dati: totale già dichiarato (no doppio conteggio cloni); i cloni
+        // Barra Backup: totale già dichiarato (no doppio conteggio cloni); i cloni
         // accreditano solo i byte fatti. Catalog Snapshot.SizeBytes = diagnostica.
+        // Rete (WireBytes): HTTP req+resp body — distinto dal payload Backup.
+        IkeHttpTrafficMeter.ResetAndEnable();
         var catalogSnapBytes = job.Snapshot.SizeBytes is > 0 ? job.Snapshot.SizeBytes.Value : 0L;
         _uiBytesSnapshotDeclared = 0;
         _uiBytesTotal = 0;
@@ -3048,6 +3050,7 @@ public sealed class BackupDownloadService
             DecryptQueued = CurrentDecryptQueueDepth(),
             BytesDownloaded = totalBytes,
             TotalBytes = Math.Max(_uiBytesTotal, totalBytes),
+            WireBytes = IkeHttpTrafficMeter.TotalBytes,
             ReportSequence = Interlocked.Increment(ref _progressReportSeq),
             AppendToLog = true,
             Status =
@@ -3064,6 +3067,18 @@ public sealed class BackupDownloadService
             try { _mmcsChunkSession?.ClearCacheIfIdle(log, force: true); }
             catch { /* ignore */ }
             _mmcsChunkSession = null;
+            try
+            {
+                log?.Report(
+                    $"  Traffico HTTP (rete): {IkeHttpTrafficMeter.TotalBytes:N0} B " +
+                    $"(req={IkeHttpTrafficMeter.RequestBytes:N0}, " +
+                    $"resp={IkeHttpTrafficMeter.ResponseBytes:N0}; " +
+                    $"nReq={IkeHttpTrafficMeter.RequestCount:N0}, " +
+                    $"nResp={IkeHttpTrafficMeter.ResponseCount:N0}) · " +
+                    $"Backup payload: {Volatile.Read(ref _uiBytesDownloaded):N0} B");
+            }
+            catch { /* ignore */ }
+            IkeHttpTrafficMeter.Disable();
             var deleted = IkeBackupOutputPaths.TryDeleteTmpDirectory(snapshotRoot, log);
             // #region agent log
             try
@@ -3776,6 +3791,7 @@ public sealed class BackupDownloadService
             FilesPendingChunks = pendingChunks,
             BytesDownloaded = bytesDl,
             TotalBytes = bytesTotal,
+            WireBytes = IkeHttpTrafficMeter.TotalBytes,
             ReportSequence = seq,
             AppendToLog = false,
         });
@@ -12163,6 +12179,32 @@ public sealed class BackupDownloadService
         {
             NoteDecryptJobFinished();
             throw;
+        }
+        catch (OutOfMemoryException ex)
+        {
+            var queueLeftEx = NoteDecryptJobFinished();
+            job.PrebuiltCompact = null;
+            try
+            {
+                GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+            }
+            catch { /* ignore */ }
+
+            var path = job.Asset.RelativePath ?? job.Asset.RecordName;
+            var compactMb = (job.Asset.SizeBytes ?? 0) / (1024 * 1024);
+            NoteDecryptFailed(
+                "decrypt_job_exception",
+                path,
+                emitUiError: true,
+                detail:
+                    $"OutOfMemoryException (size≈{compactMb} MB, ws={Environment.WorkingSet / (1024 * 1024)} MB) — " +
+                    "retry dopo GC; abbassa IKE_DECRYPT_WORKERS se persiste. " + ex.Message);
+            ReportFilesDoneProgress(
+                ctx.Progress,
+                Volatile.Read(ref _uiFilesDecrypted),
+                Math.Max(_uiFilesTotal > 0 ? _uiFilesTotal : job.AssetTotal, 1),
+                decryptQueuedOverride: queueLeftEx);
+            return AssetDownloadOutcome.Failed with { CountersApplied = true };
         }
         catch (Exception ex)
         {

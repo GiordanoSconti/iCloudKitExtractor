@@ -277,8 +277,15 @@ public sealed class DownloadJob
 
 public sealed class DownloadProgressReport
 {
+    /// <summary>Byte payload Backup (chunk data / body materializzati) — non traffico HTTP totale.</summary>
     public long BytesDownloaded { get; init; }
+    /// <summary>Stima byte payload Backup ancora da scaricare (denominatore barra Backup).</summary>
     public long TotalBytes { get; init; }
+    /// <summary>
+    /// Traffico HTTP cumulato (body request + response) dal Reset del meter durante lo snapshot.
+    /// Include authorizeGet, query, FL, edge, protobuf, ecc.
+    /// </summary>
+    public long WireBytes { get; init; }
     public string Status { get; init; } = string.Empty;
     public int AssetsCompleted { get; init; }
     public int AssetsTotal { get; init; }

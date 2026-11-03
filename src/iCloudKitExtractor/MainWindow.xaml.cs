@@ -96,6 +96,8 @@ public partial class MainWindow : Window
     private int _timingFilesTotal;
     private long _timingBytesDone;
     private long _timingBytesTotal;
+    /// <summary>Traffico HTTP cumulato (WireBytes) per la riga Rete.</summary>
+    private long _timingWireBytes;
     private int _uiBytesProgressLogCount;
     /// <summary>Ultima <see cref="DownloadProgressReport.SnapshotLabel"/> applicata ai byte UI (reset cross-snapshot).</summary>
     private string? _uiLastBytesSnapshotLabel;
@@ -5143,6 +5145,7 @@ public partial class MainWindow : Window
             _uiLastBytesSnapshotLabel = r.SnapshotLabel;
             _timingBytesDone = 0;
             _timingBytesTotal = r.TotalBytes > 0 ? r.TotalBytes : 0;
+            _timingWireBytes = 0;
             _uiBytesProgressLogCount = 0;
         }
 
@@ -5152,6 +5155,8 @@ public partial class MainWindow : Window
             _timingBytesDone = Math.Max(0L, r.BytesDownloaded);
             if (r.TotalBytes > 0)
                 _timingBytesTotal = r.TotalBytes;
+            if (r.WireBytes > 0)
+                _timingWireBytes = r.WireBytes;
         }
         else
         {
@@ -5160,6 +5165,8 @@ public partial class MainWindow : Window
                 _timingBytesDone = r.BytesDownloaded;
             if (r.TotalBytes > _timingBytesTotal)
                 _timingBytesTotal = r.TotalBytes;
+            if (r.WireBytes > _timingWireBytes)
+                _timingWireBytes = r.WireBytes;
         }
 
         var filesHint = r.FilesTotal > 0 ? r.FilesTotal : r.AssetsTotal;
@@ -5322,10 +5329,13 @@ public partial class MainWindow : Window
         _timingFilesTotal = 0;
         _timingBytesDone = 0;
         _timingBytesTotal = 0;
+        _timingWireBytes = 0;
         _uiBytesProgressLogCount = 0;
         _uiLastBytesSnapshotLabel = null;
         DownloadElapsedText.Text = "Tempo: 0:00";
-        DownloadBytesText.Text = "Dati: — / —";
+        DownloadBytesText.Text = "Backup: — / —";
+        if (DownloadWireBytesText is not null)
+            DownloadWireBytesText.Text = "Rete: —";
 
         _downloadTimingTimer?.Stop();
         _downloadTimingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -5365,12 +5375,15 @@ public partial class MainWindow : Window
 
         var bytesDone = Math.Max(0L, _timingBytesDone);
         var bytesTotal = Math.Max(0L, _timingBytesTotal);
+        var wireBytes = Math.Max(0L, _timingWireBytes);
         // Niente estrapolazione file-ratio in UI: il totale arriva da Snapshot.SizeBytes
         // (ReportFilesDoneProgress). Gonfiava 9GB → decine di GB.
 
         var scaleIdx = DownloadBytesScaleCombo?.SelectedIndex ?? 0;
         var text = FormatDownloadBytesProgress(bytesDone, bytesTotal, scaleIdx);
         DownloadBytesText.Text = text;
+        if (DownloadWireBytesText is not null)
+            DownloadWireBytesText.Text = FormatWireBytesProgress(wireBytes, scaleIdx);
 
         // #region agent log
         try
@@ -5422,10 +5435,22 @@ public partial class MainWindow : Window
 
         if (total <= 0)
             return done <= 0
-                ? $"Dati: — / — {unit.Name}"
-                : $"Dati: {Fmt(done)} / — {unit.Name}";
+                ? $"Backup: — / — {unit.Name}"
+                : $"Backup: {Fmt(done)} / — {unit.Name}";
 
-        return $"Dati: {Fmt(done)} / {Fmt(total)} {unit.Name}";
+        return $"Backup: {Fmt(done)} / {Fmt(total)} {unit.Name}";
+    }
+
+    private static string FormatWireBytesProgress(long wireBytes, int scaleIdx)
+    {
+        if (wireBytes <= 0)
+            return "Rete: —";
+
+        var unit = ResolveBytesUnit(scaleIdx, wireBytes);
+        var div = Math.Pow(1024, unit.Index);
+        if (unit.Index == 0)
+            return $"Rete: {wireBytes:N0} {unit.Name}";
+        return $"Rete: {(wireBytes / div):0.##} {unit.Name}";
     }
 
     private static (int Index, string Name) ResolveBytesUnit(int scaleIdx, long referenceBytes)
@@ -5720,10 +5745,13 @@ public partial class MainWindow : Window
                             // #endregion
                             _timingBytesDone = 0;
                             _timingBytesTotal = declared;
+                            _timingWireBytes = 0;
                             _uiBytesProgressLogCount = 0;
                             _uiLastBytesSnapshotLabel = null;
-                            DownloadBytesText.Text = FormatDownloadBytesProgress(
-                                0, declared, DownloadBytesScaleCombo?.SelectedIndex ?? 0);
+                            var scaleIdx = DownloadBytesScaleCombo?.SelectedIndex ?? 0;
+                            DownloadBytesText.Text = FormatDownloadBytesProgress(0, declared, scaleIdx);
+                            if (DownloadWireBytesText is not null)
+                                DownloadWireBytesText.Text = FormatWireBytesProgress(0, scaleIdx);
                             DownloadFilesCountText.Text = "0 / 0";
                             DecryptFilesCountText.Text = "0 / 0";
                             DecryptQueueText.Text = "Coda decrypt: 0";

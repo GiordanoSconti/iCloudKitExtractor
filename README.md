@@ -1,6 +1,17 @@
 # iCloudKit Extractor
 
 <p align="center">
+  <a href="https://giordanosconti.github.io/iCloudKitExtractor/live/"><img src="https://img.shields.io/badge/Live%20Session-ON-brightgreen" alt="Live Session On" /></a>
+  <a href="https://www.twitch.tv/d34dl0ck9327"><img src="https://img.shields.io/badge/Twitch-d34dl0ck9327-9146FF" alt="Twitch d34dl0ck9327" /></a>
+</p>
+
+<p align="center">
+  <a href="https://giordanosconti.github.io/iCloudKitExtractor/live/"><strong>Live Session On</strong></a>
+  · stream on
+  <a href="https://www.twitch.tv/d34dl0ck9327"><strong>Twitch · d34dl0ck9327</strong></a>
+</p>
+
+<p align="center">
   <img src="src/iCloudKitExtractor/Assets/app-icon.png" alt="iCloudKit Extractor" width="96" />
 </p>
 

@@ -1800,9 +1800,10 @@ public static class FordMmcsDecryptor
     /// Ordine fisso FileChecksumChunkReferences — niente riordino post-decrypt.
     /// </summary>
     /// <summary>
-    /// Soglia sotto il limite MemoryStream/.NET array (~2 GiB). Sopra: assemble su FileStream.
+    /// Soglia sotto cui il plaintext/compact resta in RAM. Sopra: path file / large-asset.
+    /// 512 MiB (era 1.8 GiB): 8 worker × compact grandi → OOM di processo (anche job piccoli).
     /// </summary>
-    public const long MaxInMemoryPlaintextBytes = 1_800_000_000L;
+    public const long MaxInMemoryPlaintextBytes = 512L * 1024 * 1024;
 
     public static byte[] AssemblePlaintextFromFileRefs(
         IReadOnlyList<FordChunkKey> chunkKeys,
