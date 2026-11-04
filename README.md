@@ -26,15 +26,14 @@
   <img src="https://img.shields.io/badge/.NET-10-512BD4" alt=".NET 10" />
   <img src="https://img.shields.io/badge/platform-Windows-0078D4" alt="Windows" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" />
-  <a href="https://www.icloudkitextractor.eu"><img src="https://img.shields.io/badge/Anisette%20preview-OFFLINE-lightgrey" alt="Anisette preview OFFLINE" /></a>
+  <a href="https://www.icloudkitextractor.eu"><img src="https://img.shields.io/badge/Anisette%20preview-ONLINE-brightgreen" alt="Anisette preview ONLINE" /></a>
   <img src="https://img.shields.io/badge/institutional%20VPN-manual%20consent-0A66C2" alt="Institutional VPN manual consent" />
 </p>
 
 > [!IMPORTANT]
-> **Anisette preview — OFFLINE** · [https://www.icloudkitextractor.eu](https://www.icloudkitextractor.eu)  
-> The preview Anisette server is temporarily unavailable. Self-host notes remain in [Preview access](#preview-access-to-anisette-server).  
-> When online again: leave the IKE **License** field empty on first connect to receive a Package-C license once.  
-> **VPN:** networks recognized as **institutions / universities** go through **manual operator consent** — access for later requests can be **allowed** or **denied**. Commercial / anonymous VPNs remain restricted under the acceptable-use rules.
+> **Anisette preview — ONLINE** · [https://www.icloudkitextractor.eu](https://www.icloudkitextractor.eu)  
+> Leave the IKE **License** field empty on first connect to receive a Package-C license once.  
+> **VPN:** networks recognized as **institutions / universities** go through **manual operator consent** — access for later requests can be **allowed** or **denied**. Commercial / anonymous VPNs remain restricted under the acceptable-use rules in [Preview access](#preview-access-to-anisette-server).
 
 <p align="center">
   <img src="docs/press/assets/linkedin-app-ike.png" alt="iCloudKit Extractor — login and session overview" width="920" />
