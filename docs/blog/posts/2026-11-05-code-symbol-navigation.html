@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>5 November 2026 &mdash; Code symbol navigation &mdash; Forensis-Lab</title>
+  <meta
+    name="description"
+    content="Navigable map of iCloudKit Extractor symbols: Auth, CloudKit Lock, MMCS authorizeGet, Ford/ChunkInfo, Escrow/Octagon, and session models—with paths and short descriptions."
+  />
+  <meta name="theme-color" content="#071c22" />
+  <link rel="icon" type="image/png" href="../../assets/app-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../"><img src="../../assets/app-icon.png" width="26" height="26" alt="" />Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-11-05">5 November 2026</time>
+        &middot; lab note &middot; Giordano Sconti
+      </p>
+      <h1>Code symbol navigation</h1>
+      <p>
+        A reader&rsquo;s index into <strong>iCloudKit Extractor</strong>: the symbols that carry
+        identity, CloudKit restore, MMCS download, and Octagon/PCS unlock. Each row names the type
+        or method, where it lives, and what it is for. For the narrative spine of MMCS /
+        <code>authorizeGet</code>, see the
+        <a href="./2026-11-05-mmcs-authorizeget-code-map.html">code map</a>; this page is the
+        directory of symbols behind that story.
+      </p>
+      <p>
+        Paths are relative to <code>src/iCloudKitExtractor/</code>. GitHub deep links point at
+        <code>main</code>.
+      </p>
+
+      <nav class="toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ol>
+          <li><a href="#session-auth">Session &amp; Auth</a></li>
+          <li><a href="#cloudkit-backup">CloudKit backup catalog &amp; Lock</a></li>
+          <li><a href="#mmcs">MMCS authorizeGet &amp; edge</a></li>
+          <li><a href="#ford">Ford, ChunkInfo &amp; LiveFill</a></li>
+          <li><a href="#escrow-octagon">Escrow, PCS &amp; Octagon</a></li>
+          <li><a href="#models">Session &amp; backup models</a></li>
+          <li><a href="#flow">Call-flow sketch</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="session-auth">1. Session &amp; Auth</h2>
+      <div class="symbol-table-wrap">
+        <table class="symbol-table">
+          <thead>
+            <tr><th>Symbol</th><th>Kind</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <code>ICloudBackupOrchestrator</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/ICloudBackupOrchestrator.cs">Services/ICloudBackupOrchestrator.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>
+                Top-level backup façade: sign-in completion, device listing, snapshot download,
+                Anisette refresh, <code>CkAppInitAsync</code>, CloudKit session ensure after Escrow.
+              </td>
+            </tr>
+            <tr>
+              <td><code>CompleteSignInAsync</code></td>
+              <td>method</td>
+              <td>Finishes Apple ID auth into an <code>ICloudSession</code> (tokens, dsid, partition).</td>
+            </tr>
+            <tr>
+              <td><code>ListBackupsAsync</code> / <code>DownloadSnapshotAsync</code></td>
+              <td>method</td>
+              <td>Enumerate devices/snapshots; drive the restore download for one snapshot.</td>
+            </tr>
+            <tr>
+              <td><code>CkAppInitAsync</code> / <code>TryCkAppInitOnceAsync</code></td>
+              <td>method</td>
+              <td>CloudKit app init for a container (keychain / backup); fills userId + auth token.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>GsaGrandSlamAuthService</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Auth/GsaGrandSlamAuthService.cs">Services/Auth/GsaGrandSlamAuthService.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>GrandSlam SRP login against <code>gsa.apple.com</code>.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>GrandSlamCpdBuilder</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Auth/GrandSlamCpdBuilder.cs">Services/Auth/GrandSlamCpdBuilder.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>Builds CPD from Anisette headers (<code>X-Apple-I-MD*</code>, Client-Time, RINFO).</td>
+            </tr>
+            <tr>
+              <td>
+                <code>GsaSrpClient</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Auth/GsaSrpClient.cs">Services/Auth/GsaSrpClient.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>SRP math for GSA init/complete (<code>A2k</code>, <code>M1</code>; no stray <code>M2</code>).</td>
+            </tr>
+            <tr>
+              <td>
+                <code>IAnisetteProvider</code> / <code>RemoteAnisetteProvider</code> /
+                <code>FridaIphoneAnisetteProvider</code>
+                <span class="path">Services/Auth/</span>
+              </td>
+              <td>iface / class</td>
+              <td>OTP / ADI identity sources; Frida-on-akd preferred for coherent iPhone CPD.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>Hsa2TrustedDeviceService</code> / <code>IdmsaMfaService</code>
+              </td>
+              <td>class</td>
+              <td>Trusted-device / SMS secondary auth after GrandSlam.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>SessionMmeAuth</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/SessionMmeAuth.cs">Services/SessionMmeAuth.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>MME / Basic auth helpers for EscrowProxy and related gateways.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="cloudkit-backup">2. CloudKit backup catalog &amp; Lock</h2>
+      <div class="symbol-table-wrap">
+        <table class="symbol-table">
+          <thead>
+            <tr><th>Symbol</th><th>Kind</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <code>CloudKitGatewayClient</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Backup/CloudKitGatewayClient.cs">Services/Backup/CloudKitGatewayClient.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>Low-level CloudKit database / coderouter HTTP for backup container RPCs.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>CloudKitQueryService</code> / <code>CloudKitPreAuthService</code> /
+                <code>CloudKitColdStartSeedService</code>
+              </td>
+              <td>class</td>
+              <td>Query zones/records; PreAuth material for MMCS; cold-start seeds into a session.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>CloudKitLockRequestBuilder</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Protocol/CloudKitLockRequestBuilder.cs">Protocol/CloudKitLockRequestBuilder.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>Builds the <code>mbksync</code> Lock record request (<code>{sha}:Lock</code>).</td>
+            </tr>
+            <tr>
+              <td>
+                <code>CloudKitRecordNames</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Protocol/CloudKitRecordNames.cs">Protocol/CloudKitRecordNames.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>Canonical <code>D:</code> / <code>S:</code> / snapshot name helpers.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>CloudKitBackupCatalogParser</code> /
+                <code>CloudKitManifestCatalogParser</code> /
+                <code>BackupEnRecordService</code>
+              </td>
+              <td>static / class</td>
+              <td>Parse backup account / manifest / <code>N:</code>&ndash;<code>EN:</code> post-Lock catalog.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>DomainFileListParser</code> / <code>FileListSqliteParser</code> /
+                <code>MbsManifestParser</code>
+              </td>
+              <td>static</td>
+              <td>Domain file lists, SQLite file-list, MBS manifest into downloadable inventory.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>BackupAssetContentsParser</code> /
+                <code>BackupAssetMetadataDecryptor</code> /
+                <code>SnapshotBackupPropertiesDecryptor</code>
+              </td>
+              <td>static</td>
+              <td>Asset contents / encrypted attributes; <code>backupProperties</code> when KeySet allows.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>CloudKitAssetService</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Backup/CloudKitAssetService.cs">Services/Backup/CloudKitAssetService.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>PrivilegedBatch / asset retrieve waves; Anisette circuit; feeds authorizeGet.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>BackupDownloadService</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Download/BackupDownloadService.cs">Services/Download/BackupDownloadService.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>End-to-end restore orchestration: Lock prep, flist, MMCS, decrypt workers, materialize.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>BackupFilesystemWriter</code> / <code>BackupManifestBuilder</code> /
+                <code>LocalBackupManifestWriter</code>
+              </td>
+              <td>class / static</td>
+              <td>iTunes-shaped <code>Backup/xx/fileID</code> tree + Manifest.db sidecars.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="mmcs">3. MMCS authorizeGet &amp; edge</h2>
+      <div class="symbol-table-wrap">
+        <table class="symbol-table">
+          <thead>
+            <tr><th>Symbol</th><th>Kind</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <code>MmcsAuthBuilder</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Protocol/MmcsAuthBuilder.cs">Protocol/MmcsAuthBuilder.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>
+                Builds / extracts <code>x-apple-mmcs-auth</code>
+                (<code>{hex21} {hex21} {CAog&hellip;}</code>); snapshot-aware.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>MmcsContentEndpoints</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Download/MmcsContentEndpoints.cs">Services/Download/MmcsContentEndpoints.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>
+                <code>BuildAuthorizeGetHosts</code>; <code>IsAuthorizeGetIncomplete</code> (URLs,
+                signatures, range sum vs declared size).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>UbChunkBuilder</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Protocol/UbChunkBuilder.cs">Protocol/UbChunkBuilder.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>
+                Core ubchunk codec:
+                <code>BuildAuthorizeGetRequest</code>, <code>ParseAuthorizeGetResponse</code>,
+                <code>BuildDecryptPlan</code>, FileGroup split, Ford vs data classification.
+              </td>
+            </tr>
+            <tr>
+              <td><code>AuthorizeGetFileEntry</code></td>
+              <td>record</td>
+              <td>Per-file authorizeGet input (signatures / CAog / companion tokens).</td>
+            </tr>
+            <tr>
+              <td><code>AuthorizeGetDecryptPlan</code></td>
+              <td>type</td>
+              <td>Parsed plan: hosts, crypto chunks, trailing file-checksum refs, ownership context.</td>
+            </tr>
+            <tr>
+              <td><code>AuthorizeGetCryptoChunk</code></td>
+              <td>type</td>
+              <td>One ChunkInfo / Ford descriptor from the plan (checksum, ctLen, keys, offsets).</td>
+            </tr>
+            <tr>
+              <td>
+                <code>IsAuthFordDescriptorChunk</code> / <code>IsAuthDataChunk</code> /
+                <code>GateOwnsPlan</code> / <code>GateEmbedsFileChecksum</code>
+              </td>
+              <td>method</td>
+              <td>Separate 45-B Ford gates from 21-B data CI; bind gates to the owning file plan.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>CloudKitMmcsBatchBuilder</code> / <code>CloudKitMmcsIds</code> /
+                <code>UbChunkPreAuthRequestBuilder</code>
+              </td>
+              <td>static</td>
+              <td>Batch / id helpers and PreAuth request shaping around MMCS.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>MmcsChunkStore</code> / <code>MmcsChunkAssemblySession</code> /
+                <code>ChunkFileCache</code>
+                <span class="path">Services/Download/</span>
+              </td>
+              <td>class</td>
+              <td>
+                Edge body storage, per-domain assembly sessions, <code>.chunks/</code> filename =
+                hex(signature).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>EdgeDownloadAuthState</code>
+              </td>
+              <td>class</td>
+              <td>Carries MMCS auth / edge header state across ranged GETs.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>ForegroundRestorePlistBuilder</code> /
+                <code>ForegroundRestorePlistExtractor</code>
+              </td>
+              <td>static</td>
+              <td>Foreground Restore plist side of signed-FG / CAog expectations.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="ford">4. Ford, ChunkInfo &amp; LiveFill</h2>
+      <div class="symbol-table-wrap">
+        <table class="symbol-table">
+          <thead>
+            <tr><th>Symbol</th><th>Kind</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <code>FileGroupFillDecrypt</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/FileGroupFillDecrypt.cs">Services/Escrow/FileGroupFillDecrypt.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>
+                Production open path for a plan: SpillOpen Ford &rarr; FillChunks &rarr; data decrypt;
+                <code>TraceDecrypt</code> for stage diagnostics.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>LiveFillPipeline</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/LiveFillPipeline.cs">Services/Escrow/LiveFillPipeline.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>
+                <code>PutChunksFromHostBodies</code>, <code>BindOwnedFordStorages</code>; plants /
+                binds only IKM-valid Ford.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>FordMmcsDecryptor</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/FordMmcsDecryptor.cs">Services/Escrow/FordMmcsDecryptor.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>
+                <code>PCSMMCS2</code> HKDF, AES-SIV Ford open, per-chunk <code>signature-key</code>,
+                <code>VerifyDigest</code> / ChunkDecrypt.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>MmcsChunkCrypto</code> / <code>MmcsAssetProtection</code>
+              </td>
+              <td>static</td>
+              <td>Additional MMCS chunk / asset protection helpers beside the Ford path.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>OidHostBodyCache</code> / <code>ChunkTree</code>
+              </td>
+              <td>class / type</td>
+              <td>OID&rarr;host body cache; chunk tree offsets for pack layouts.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>BackupDecryptWorkerQueue</code> / <code>BackupDecryptJob</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Download/BackupDecryptWorkerQueue.cs">Services/Download/BackupDecryptWorkerQueue.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>Parallel decrypt jobs with in-memory budget to avoid OOM on large waves.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>BackupAssetDecryptPipeline</code> / <code>AssetMaterialPipeline</code> /
+                <code>BackupFileKeyContext</code>
+              </td>
+              <td>static / type</td>
+              <td>Higher-level asset decrypt / materialize after MMCS plaintext is available.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>LzfseDecompressor</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Protocol/LzfseDecompressor.cs">Protocol/LzfseDecompressor.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>LZFSE inflate when Apple payloads use that compressor.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="escrow-octagon">5. Escrow, PCS &amp; Octagon</h2>
+      <div class="symbol-table-wrap">
+        <table class="symbol-table">
+          <thead>
+            <tr><th>Symbol</th><th>Kind</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <code>EscrowProxyClient</code> / <code>EscrowSrpClient</code> /
+                <code>EscrowRecoveryService</code>
+                <span class="path">Services/Escrow/</span>
+              </td>
+              <td>class</td>
+              <td>EscrowProxy HTTP; SRP with device passcode; KeyBag / PCS unwrap (HSM attempt budget).</td>
+            </tr>
+            <tr>
+              <td>
+                <code>OctagonEscrowSrp</code> / <code>OctagonBottleRecoveryService</code> /
+                <code>OctagonBottleCrypto</code>
+              </td>
+              <td>static / class</td>
+              <td>
+                iCDP bottle path: SRP + PBKDF2 &rarr; EscrowBottle &rarr; BottledPeerEntropy &rarr;
+                OTBottle AES-GCM.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>OctagonCuttlefishService</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/OctagonCuttlefishService.cs">Services/Escrow/OctagonCuttlefishService.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>
+                <code>fetchViableBottles</code>, peer decrypt,
+                <code>FetchRecoverableTlkSharesAsync</code> on
+                <code>com.apple.security.cuttlefish</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>OctagonRecoveryKey</code> / <code>OctagonRecoveryKeyUnlockService</code> /
+                <code>OctagonRecoveryKeyVerifier</code>
+              </td>
+              <td>static / class</td>
+              <td>
+                HKDF-SHA384(RK, altDSID) &rarr; P-384 peer; live TLK unlock; offline peer/share verify.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>CkksVaultService</code> / <code>CkksEcies</code> / <code>CkksTlkShare</code> /
+                <code>CkksKeys</code>
+              </td>
+              <td>class / static</td>
+              <td>OpenVault views; ECIES unwrap of TLKShares; TLK / zone helpers; password export.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>PcsProtectionZone</code> / <code>PcsSessionSeedKeys</code> /
+                <code>EscrowPcsSession</code> / <code>EscrowPcsKeyUnwrap</code>
+              </td>
+              <td>static</td>
+              <td>
+                Zone masters, session seed keys, PCS unwrap (incl. protectionInfo &rarr; IKM for Ford).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>BackupKeybagPcsUnlock</code> / <code>ModernBackupKeybag</code> /
+                <code>IosKeybag</code>
+              </td>
+              <td>static</td>
+              <td>Backup keybag unlock (classic TLV / modern DER + AES-KW).</td>
+            </tr>
+            <tr>
+              <td>
+                <code>OctagonAuthzProbeRunner</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Services/Escrow/OctagonAuthzProbeRunner.cs">Services/Escrow/OctagonAuthzProbeRunner.cs</a></span>
+              </td>
+              <td>static</td>
+              <td>
+                Lab-only (<code>IKE_AUTHZ_PROBES=1</code>): forPeer matrix + receiver inventory on
+                <em>our</em> session dumps.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="models">6. Session &amp; backup models</h2>
+      <div class="symbol-table-wrap">
+        <table class="symbol-table">
+          <thead>
+            <tr><th>Symbol</th><th>Kind</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <code>ICloudSession</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Models/ICloudSession.cs">Models/ICloudSession.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>
+                Live session bag: dsid, tokens, partition, CloudKit ids, Octagon peer PKCS#8 / TLKs,
+                PCS keys, Anisette state.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>BackupDevice</code> / <code>BackupSnapshot</code> / <code>BackupAsset</code>
+                <span class="path"><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/src/iCloudKitExtractor/Models/BackupModels.cs">Models/BackupModels.cs</a></span>
+              </td>
+              <td>class</td>
+              <td>UI/domain models for devices, snapshots, assets; wire-byte vs backup-byte metering.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>DownloadJob</code> / <code>DownloadProgressReport</code>
+              </td>
+              <td>class</td>
+              <td>Progress reporting across MMCS / decrypt / write phases.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>IkeHttpTrafficMeter</code> / <code>HttpByteCountingHandler</code>
+              </td>
+              <td>static / class</td>
+              <td>Splits Backup bytes vs total wire bytes in the UI.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>ProtobufWire</code> / <code>CloudKitResponseParser</code> /
+                <code>AppleBinaryPlist</code> / <code>AppleXmlPlist</code>
+              </td>
+              <td>static</td>
+              <td>Shared wire parsers used across Auth, CloudKit, and MMCS.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="flow">7. Call-flow sketch</h2>
+      <pre><code>ICloudBackupOrchestrator.CompleteSignInAsync
+  └─ GsaGrandSlamAuthService + Anisette provider + HSA2/SMS as needed
+       └─ ICloudSession
+
+Escrow / Octagon (when ADP needs KeySet)
+  ├─ EscrowRecoveryService / OctagonBottleRecoveryService  (PIN + HSM)
+  └─ OctagonRecoveryKeyUnlockService                       (RK, no RECOVER)
+       └─ OctagonCuttlefishService.fetchViableBottles / fetchRecoverableTLKShares
+            └─ CkksVaultService.OpenViewsAsync → session PCS / TLKs
+
+ICloudBackupOrchestrator.DownloadSnapshotAsync
+  └─ BackupDownloadService
+       ├─ CloudKit Lock (CloudKitLockRequestBuilder) + EN/flist parsers
+       ├─ CloudKitAssetService (PrivilegedBatch) → MmcsAuthBuilder
+       ├─ UbChunkBuilder.BuildAuthorizeGetRequest / BuildDecryptPlan
+       ├─ MmcsContentEndpoints + MmcsChunkAssemblySession (ranged GET)
+       ├─ FileGroupFillDecrypt ← LiveFillPipeline ← FordMmcsDecryptor
+       └─ BackupFilesystemWriter / Manifest builders</code></pre>
+
+      <p>
+        Related:
+        <a href="./2026-11-05-mmcs-authorizeget-code-map.html">MMCS / authorizeGet code map</a>
+        &middot;
+        <a href="./2026-11-05-themida-x64dbg-mcp-frida-memcpy.html">Themida / x64dbg / Frida note</a>
+        &middot;
+        <a href="./2026-10-29-day-11-stable-protocol-evidence.html">Day 11 wire evidence</a>.
+      </p>
+
+      <a class="back-link" href="../">&larr; All notes</a>
+      <aside class="diary-ai-note">
+        <p>
+          These diary entries are drafted with help from an AI coding assistant to speed up the
+          writing. If you spot inconsistencies or errors, please tell me by email:
+          <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>.
+        </p>
+      </aside>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>
