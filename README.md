@@ -357,7 +357,7 @@ Lab diary entries under [Notes](https://giordanosconti.github.io/iCloudKitExtrac
 
 - [Code symbol navigation](https://giordanosconti.github.io/iCloudKitExtractor/blog/posts/2026-11-05-code-symbol-navigation.html) — Auth, CloudKit Lock, MMCS, Ford/LiveFill, Escrow/Octagon, and session models with paths, kinds, descriptions, and a call-flow sketch.
 - [Inside MMCS and authorizeGet: a code map](https://giordanosconti.github.io/iCloudKitExtractor/blog/posts/2026-11-05-mmcs-authorizeget-code-map.html) — Lock → `x-apple-mmcs-auth` → authorizeGet / FileGroups → edge ranged GET → IKM / `PCSMMCS2` → Ford & ChunkInfo, mapped to the types in this tree.
-- [Themida, x64dbg MCP, and Frida on `memcpy`](https://giordanosconti.github.io/iCloudKitExtractor/blog/posts/2026-11-05-themida-x64dbg-mcp-frida-memcpy.html) — how virtualized/mutated code and VC++ `memcpy` hooks sped up early HTTPS capture work in the lab. For modern code virtualization / obfuscation as a protection map we used the student thesis and tooling in [67-6f-64/antioreans-codedevirtualizer](https://github.com/67-6f-64/antioreans-codedevirtualizer).
+- [Themida, x64dbg MCP, and Frida on `memcpy`](https://giordanosconti.github.io/iCloudKitExtractor/blog/posts/2026-11-05-themida-x64dbg-mcp-frida-memcpy.html) — how virtualized/mutated code and VC++ `memcpy` hooks sped up early HTTPS capture work in the lab. For modern code virtualization / obfuscation as a protection map we used the master’s thesis PDF ([Masters Thesis.pdf](https://github.com/67-6f-64/AntiOreans-CodeDevirtualizer/blob/main/Masters%20Thesis.pdf) in [67-6f-64/AntiOreans-CodeDevirtualizer](https://github.com/67-6f-64/AntiOreans-CodeDevirtualizer)), not the accompanying code tool.
 
 ---
 
