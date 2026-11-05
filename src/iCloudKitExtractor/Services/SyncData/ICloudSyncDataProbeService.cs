@@ -326,9 +326,21 @@ public sealed class ICloudSyncDataProbeService
 
             // _defaultZone non supporta record/sync (ck1e0lk64); scarta fingerprint spuri.
             // metadata_zone = zona sistema CloudKit: spesso solo RetryAfter, zero record utili.
+            // NON scartare com.apple.coredata.cloudkit.zone: è la zona dati di Voice Memos
+            // (e altri Core Data CloudKit) — blacklistata per errore in fe63242.
             zones.RemoveWhere(IsDefaultZoneName);
             zones.RemoveWhere(IsCloudKitSystemZone);
             zones.RemoveWhere(static z => !IsPlausibleCustomZone(z));
+
+            // Voice Memos: se zone/sync ha solo rumore, forza la zona Core Data nota.
+            if (zones.Count == 0
+                && binding.ContainerId.Equals(
+                    VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase))
+            {
+                zones.Add(VoiceMemosAudioDownloader.SyncZone);
+                log?.Report(
+                    $"  Voice Memos: seed zona {VoiceMemosAudioDownloader.SyncZone}");
+            }
 
             if (zones.Count == 0)
             {
@@ -604,11 +616,12 @@ public sealed class ICloudSyncDataProbeService
         || string.Equals(zone, "defaultZone", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Zone sistema CloudKit: sync inutile / throttle (Messages metadata_zone → RetryAfter).
+    /// Zone sistema CloudKit da non passare a record/sync
+    /// (Messages <c>metadata_zone</c> → RetryAfter; metadata Core Data senza record app).
+    /// <c>com.apple.coredata.cloudkit.zone</c> NON è qui: contiene i record Voice Memos.
     /// </summary>
     private static bool IsCloudKitSystemZone(string zone) =>
         zone.Equals("metadata_zone", StringComparison.OrdinalIgnoreCase)
-        || zone.Equals("com.apple.coredata.cloudkit.zone", StringComparison.OrdinalIgnoreCase)
         || zone.Equals("com.apple.coredata.cloudkit.metadata", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
