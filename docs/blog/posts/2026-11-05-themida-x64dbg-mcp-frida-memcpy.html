@@ -74,11 +74,13 @@
       <p>
         Before inventing our own path, we studied a student thesis on modern software obfuscation
         and protection&mdash;DBI-oriented recovery, write-then-execute patterns, import rebuild, PE
-        reconstruction, and the usual taxonomy of virtualization versus mutation. That work did not
-        &ldquo;solve Themida for us.&rdquo; It gave us a shared vocabulary: which layers are
-        expected to decrypt in memory, which traps are noise, and which artifacts (decoded regions,
-        rebuilt imports, dump timing) are worth keeping when the goal is protocol understanding
-        rather than a portable crack.
+        reconstruction, and the usual taxonomy of virtualization versus mutation. The public
+        reference we used is
+        <a href="https://github.com/67-6f-64/antioreans-codedevirtualizer">67-6f-64/antioreans-codedevirtualizer</a>.
+        That work did not &ldquo;solve Themida for us.&rdquo; It gave us a shared vocabulary: which
+        layers are expected to decrypt in memory, which traps are noise, and which artifacts
+        (decoded regions, rebuilt imports, dump timing) are worth keeping when the goal is protocol
+        understanding rather than a portable crack.
       </p>
       <p>
         Combined with public write-ups on Themida-class packing, the thesis became a checklist we
