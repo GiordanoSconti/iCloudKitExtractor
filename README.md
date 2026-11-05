@@ -351,6 +351,13 @@ Full guide: **[docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md)**. Keep you
 
 Also: [docs/IPHONE_INTERNAL_FLOW.md](docs/IPHONE_INTERNAL_FLOW.md) · [docs/APPLE_MIDSERVICE_PROVISIONING.md](docs/APPLE_MIDSERVICE_PROVISIONING.md)
 
+### Research notes (GitHub Pages)
+
+Lab diary entries under [Notes](https://giordanosconti.github.io/iCloudKitExtractor/blog/):
+
+- [Inside MMCS and authorizeGet: a code map](https://giordanosconti.github.io/iCloudKitExtractor/blog/posts/2026-11-05-mmcs-authorizeget-code-map.html) — Lock → `x-apple-mmcs-auth` → authorizeGet / FileGroups → edge ranged GET → IKM / `PCSMMCS2` → Ford & ChunkInfo, mapped to the types in this tree.
+- [Themida, x64dbg MCP, and Frida on `memcpy`](https://giordanosconti.github.io/iCloudKitExtractor/blog/posts/2026-11-05-themida-x64dbg-mcp-frida-memcpy.html) — how virtualized/mutated code and VC++ `memcpy` hooks sped up early HTTPS capture work in the lab.
+
 ---
 
 ## Repository layout
