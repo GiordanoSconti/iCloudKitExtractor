@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>5 November 2026 &mdash; Themida, x64dbg MCP, and Frida on memcpy &mdash; Forensis-Lab</title>
+  <meta
+    name="description"
+    content="How we approached a Themida-protected Windows binary with x64dbg + MCP for virtualized/mutated code, used a modern-obfuscation thesis as a map, and captured HTTPS request/response buffers via Frida hooks on VC++ memcpy."
+  />
+  <meta name="theme-color" content="#071c22" />
+  <link rel="icon" type="image/png" href="../../assets/app-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../"><img src="../../assets/app-icon.png" width="26" height="26" alt="" />Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-11-05">5 November 2026</time>
+        &middot; lab note &middot; Giordano Sconti
+      </p>
+      <h1>Themida, x64dbg MCP, and Frida on <code>memcpy</code></h1>
+      <p>
+        Day
+        <a href="./2026-10-29-day-11-stable-protocol-evidence.html">11</a>
+        already mentioned Themida-style packing while we watched a commercial Windows tool. This note
+        is the tooling story behind that sentence: how we approached the protector, how
+        <strong>x64dbg</strong> driven through an <strong>MCP</strong> bridge shortened the work on
+        virtualized and mutated code, which public research we used as a map, and how
+        <strong>Frida</strong> on the same Windows process turned VC++ <code>memcpy</code> into a
+        clean window on HTTPS request and response buffers.
+      </p>
+      <p>
+        The goal was never to redistribute a cracked binary. We needed the
+        <em>shape</em> of Apple-facing traffic&mdash;headers, bodies, ordering&mdash;so iCloudKit
+        Extractor could reproduce legitimate recoveries on accounts we control. Everything below is
+        written at that level of detail: methodology and outcomes, not a unpack recipe.
+      </p>
+
+      <h2>Why Themida was on the critical path</h2>
+      <p>
+        Early in the project, commercial extractors were both an oracle and a wall. They could
+        sometimes talk to surfaces we had not named yet; they could not always finish an ADP restore.
+        Reading their Windows client meant reading a binary wrapped in a modern protector stack:
+        packing, API wrapping, anti-debug noise, code virtualization, and instruction mutation.
+      </p>
+      <p>
+        Static disassembly alone was not enough. Large stretches of the interesting logic sat behind
+        a virtual machine or behind mutated native code that only made sense after a runtime decode
+        step. We needed a debugger that could stop at those decode moments, dump the resulting
+        instructions, and keep session state across long lab nights.
+      </p>
+
+      <h2>A thesis as a map, not as a script</h2>
+      <p>
+        Before inventing our own path, we studied a student thesis on modern software obfuscation
+        and protection&mdash;DBI-oriented recovery, write-then-execute patterns, import rebuild, PE
+        reconstruction, and the usual taxonomy of virtualization versus mutation. That work did not
+        &ldquo;solve Themida for us.&rdquo; It gave us a shared vocabulary: which layers are
+        expected to decrypt in memory, which traps are noise, and which artifacts (decoded regions,
+        rebuilt imports, dump timing) are worth keeping when the goal is protocol understanding
+        rather than a portable crack.
+      </p>
+      <p>
+        Combined with public write-ups on Themida-class packing, the thesis became a checklist we
+        could argue about in the lab: are we looking at a virtualized handler, a mutated native
+        block, or just anti-analysis theatre? Sorting that early saved weeks of chasing the wrong
+        region.
+      </p>
+
+      <h2>x64dbg + MCP: accelerating decode work</h2>
+      <p>
+        Hands-on work happened in <strong>x64dbg</strong>. The accelerator was wiring the debugger
+        to an <strong>MCP</strong> bridge so an AI coding assistant could drive the repetitive
+        parts of a session: set and clear breakpoints around decode stubs, walk small windows of
+        newly decrypted code, dump memory after a virtualized block finished, and annotate which
+        mutated sequences had collapsed into readable instructions.
+      </p>
+      <p>
+        That mattered for two different protection styles we kept hitting:
+      </p>
+      <ul>
+        <li>
+          <strong>Virtualized regions</strong> &mdash; interesting logic executed by a custom VM.
+          Waiting for the handler to materialize a native window (or enough of a decoded buffer to
+          reason about) was slow by hand. MCP-driven dumps after each interesting transition let us
+          compare buffers across runs and keep only the stretches that touched network and crypto
+          setup.
+        </li>
+        <li>
+          <strong>Mutated instructions</strong> &mdash; native code rewritten into equivalent but
+          hostile forms. Here the win was speed of iteration: hit the decode site, capture the
+          post-mutation bytes, ask for a structural reading, and decide whether the block was
+          worth deeper attention or disposable noise.
+        </li>
+      </ul>
+      <p>
+        None of that replaced human judgment. It compressed the loop between &ldquo;the debugger
+        stopped&rdquo; and &ldquo;we know whether this block teaches us an Apple RPC.&rdquo; Session
+        dumps from those nights still show up as breadcrumbs in the codebase (for example Ford /
+        ChunkInfo notes that reference live x64dbg captures).
+      </p>
+
+      <h2>Frida on VC++ <code>memcpy</code>: reading HTTPS without fighting TLS</h2>
+      <p>
+        Decrypting protectors is only half the story. We still needed the plaintext of HTTPS
+        requests and responses the commercial client was assembling. Breaking TLS on the wire was
+        the wrong fight: pinning, custom stacks, and Themida wrapping made MITM noisy and fragile.
+      </p>
+      <p>
+        Instead we attached <strong>Frida</strong> to the Windows process and hooked the Visual C++
+        runtime <code>memcpy</code> (and close relatives in the same CRT family). Large HTTP bodies,
+        plist blobs, and protobuf payloads almost always pass through a memory copy before send or
+        after receive. Filtering those copies by size and by recognizable prefixes
+        (<code>POST</code>, <code>HTTP/1</code>, XML/plist headers, CloudKit-ish binary markers)
+        gave us request/response pairs at the moment they existed as ordinary buffers&mdash;after
+        application crypto for Apple payloads, before or after the TLS record layer depending on
+        where the copy sat.
+      </p>
+      <p>
+        That technique is blunt and noisy; it also works when certificate pinning would defeat a
+        proxy. Paired with the x64dbg work, it let us label which decoded regions were
+        <em>worth</em> studying: a mutated block that never touched a <code>memcpy</code> of a
+        network buffer was usually less urgent than one that did.
+      </p>
+      <p>
+        Separately, Frida on a <strong>jailbroken iPhone</strong> remained the preferred path for
+        Anisette / <code>akd</code> identity (see the README and Day&nbsp;3). The VC++
+        <code>memcpy</code> hooks described here are the Windows-side companion for studying the
+        commercial client, not a replacement for on-device OTP minting.
+      </p>
+
+      <h2>What we took into iCloudKit Extractor</h2>
+      <p>
+        The durable output was not an unpacked EXE. It was a pile of labeled captures and a short
+        list of invariants that later survived refactoring: GrandSlam CPD shape, Lock ordering,
+        authorizeGet / FileGroups, Ford versus ChunkInfo, IKM / <code>PCSMMCS2</code>, Octagon
+        bottles and Recovery Key TLKShares. Day&nbsp;11 lists those wire facts. This note is how we
+        got close enough to the protected client to learn them without pretending the protector did
+        not exist.
+      </p>
+      <p class="evidence-lead">Lab takeaways we still use:</p>
+      <ul class="evidence-list">
+        <li>
+          Treat Themida-class protection as layered (pack / wrap / virtualize / mutate); name the
+          layer before spending a night on it.
+        </li>
+        <li>
+          Use public obfuscation research (including thesis-grade DBI maps) as a checklist, not as
+          a push-button unpacker.
+        </li>
+        <li>
+          Drive x64dbg through MCP for decode dumps and mutation windows; keep humans on protocol
+          judgment.
+        </li>
+        <li>
+          Prefer Frida on VC++ <code>memcpy</code> (Windows) for HTTPS buffer visibility when TLS
+          MITM is the wrong tool; keep Frida-on-<code>akd</code> for Anisette.
+        </li>
+        <li>
+          Ship only what is needed for recovery on accounts you control&mdash;never a cracked
+          third-party binary.
+        </li>
+      </ul>
+
+      <p>
+        Related diary entries:
+        <a href="./2026-03-25-day-01-adp-necessity.html">Day 1</a> (why we started),
+        <a href="./2026-04-29-day-03-prepare-restore-lock.html">Day 3</a> (Frida on device + Lock),
+        <a href="./2026-10-29-day-11-stable-protocol-evidence.html">Day 11</a> (consolidated wire
+        evidence).
+      </p>
+
+      <a class="back-link" href="../">&larr; All notes</a>
+      <aside class="diary-ai-note">
+        <p>
+          These diary entries are drafted with help from an AI coding assistant to speed up the
+          writing. If you spot inconsistencies or errors, please tell me by email:
+          <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>.
+        </p>
+      </aside>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>

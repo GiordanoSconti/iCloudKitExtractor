@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>5 November 2026 &mdash; Inside MMCS and authorizeGet: a code map &mdash; Forensis-Lab</title>
+  <meta
+    name="description"
+    content="A descriptive map of how iCloudKit Extractor implements CloudKit Lock, MMCS authorizeGet, FileGroups, edge ranged GETs, IKM/PCSMMCS2, Ford, and ChunkInfo—tied to the real types in the tree."
+  />
+  <meta name="theme-color" content="#071c22" />
+  <link rel="icon" type="image/png" href="../../assets/app-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../../site.css" />
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../../"><img src="../../assets/app-icon.png" width="26" height="26" alt="" />Forensis-Lab</a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Notes</a>
+        <a href="../../#downloads">Downloads</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <article class="article">
+      <p class="article__meta">
+        <time datetime="2026-11-05">5 November 2026</time>
+        &middot; lab note &middot; Giordano Sconti
+      </p>
+      <h1>Inside MMCS and authorizeGet: a code map</h1>
+      <p>
+        Day
+        <a href="./2026-10-29-day-11-stable-protocol-evidence.html">11</a>
+        lists the wire facts that survived months of restores. This note is the other half of that
+        picture: where those facts live in <strong>iCloudKit Extractor</strong>. It is a map of the
+        download spine&mdash;from CloudKit Lock through MMCS <code>authorizeGet</code>, FileGroups,
+        edge ranged GETs, IKM, Ford, and ChunkInfo&mdash;written so a reader can follow the
+        mechanisms in the repository without treating any third-party client as the source of truth.
+      </p>
+      <p>
+        The language stays descriptive. The anchors are types and paths under
+        <code>src/iCloudKitExtractor</code>. Private Apple surfaces move; the map describes what the
+        tree encodes today.
+      </p>
+
+      <h2>The spine in one glance</h2>
+      <p>
+        A backup restore that still has live MMCS assets climbs the same ladder every time. CloudKit
+        names the inventory; MMCS delivers the bytes; PCS/CKKS material turns those bytes into
+        files. In code the ladder looks like this:
+      </p>
+      <pre><code>CloudKit (mbksync)
+  zones → BackupAccount → D:&lt;sha&gt; → S:&lt;uuid&gt;
+  → Lock → N: / EN: file lists + asset metadata
+       ↓
+MMCS
+  x-apple-mmcs-auth  →  POST …/{dsid}/authorizeGet
+  → FileGroups (host templates + ChunkInfo + trailing refs)
+  → GET edge  ?content-byte-range=start-end
+       ↓
+Crypto open
+  contents.protectionInfo → IKM
+  → HKDF-SHA256(salt="PCSMMCS2") → Ford keys
+  → ChunkDecrypt / VerifyDigest → iTunes-shaped tree</code></pre>
+      <p>
+        Everything below is that ladder, stage by stage, with the types that own each step.
+      </p>
+
+      <h2>1. Session binding and content hosts</h2>
+      <p>
+        Before any ranged GET, the session must know <em>which</em> content partition to speak to.
+        Partition and optional per-record content bases become authorizeGet hosts in
+        <code>Services/Download/MmcsContentEndpoints.cs</code>
+        (<code>BuildAuthorizeGetHosts</code>): typically
+        <code>https://{partition}-content.icloud.com</code>, plus a record-level ContentBaseUrl when
+        it is not the generic gateway. The same type also decides when an authorizeGet plan is
+        incomplete&mdash;missing chunk URLs, missing edge signatures, or a summed byte-range shorter
+        than the declared size (<code>IsAuthorizeGetIncomplete</code>). Incomplete plans are hard
+        failures; guessing the missing range is how caches get poisoned.
+      </p>
+
+      <h2>2. The MMCS auth header</h2>
+      <p>
+        Edge authorization is not a bearer token alone. It is the HTTP header
+        <code>x-apple-mmcs-auth</code>, shaped as three whitespace-separated pieces:
+        a 21-byte hex token, a second 21-byte hex token, and a base64url protobuf often recognized
+        by a <code>CAog&hellip;</code> prefix and a decoded payload that carries
+        <strong>Foreground Restore</strong> markers. Construction and extraction live in
+        <code>Protocol/MmcsAuthBuilder.cs</code>.
+      </p>
+      <p>
+        That builder walks record payloads (including snapshot <code>S:</code> / <code>&amp;S:</code>
+        forms), prefers structured sibling fields when PreAuth encoded them as protobuf, and falls
+        back to ready-made header strings already present on the wire. For per-file authorizeGet
+        entries the discipline that stuck is strict: <strong>f1</strong> is the Assets
+        <code>assetSignature</code> verbatim (21&nbsp;B, usually <code>0x04‖20B</code>);
+        <strong>f2</strong> is the CAog token string; <strong>f4</strong> is the companion
+        21-byte token (often <code>0x01‖20B</code>). Rebuilding a batch header from the wrong field
+        &mdash;for example treating a CloudKit mmcs-auth part0 as f1&mdash;produces plans that look
+        authorized and then fail at the edge.
+      </p>
+
+      <h2>3. authorizeGet: the ubchunk conversation</h2>
+      <p>
+        The request and response MIME type is
+        <code>application/vnd.com.apple.me.ubchunk+protobuf</code>. Parsing, host templates,
+        Ford descriptors, data ChunkInfo classification, and ownership checks on gates all
+        concentrate in <code>Protocol/UbChunkBuilder.cs</code>&mdash;the largest protocol surface
+        in the download path. Higher up,
+        <code>Services/Backup/CloudKitAssetService.cs</code> and
+        <code>Services/Download/BackupDownloadService.cs</code> schedule PrivilegedBatch /
+        authorizeGet waves, refresh Anisette when the edge rejects identity, and hand each
+        successful plan downstream as an <code>AuthorizeGetDecryptPlan</code>.
+      </p>
+      <p>
+        A healthy response is a list of <strong>FileGroups</strong>. Each group maps to one edge
+        GET host (URL from template fields) and carries nested ChunkInfo: checksum (21 or 45&nbsp;B),
+        optional <code>chunkEncryptionKey</code>, ciphertext length, pack offset, and trailing
+        file-checksum chunk references that define assembly order. The plan is not &ldquo;a list of
+        URLs.&rdquo; It is a contract between signatures, ranges, and later decrypt stages.
+      </p>
+
+      <h2>4. Edge GET: one object, two personalities</h2>
+      <p>
+        Fetching uses query parameter <code>content-byte-range={start}-{end}</code> against the host
+        chosen by the FileGroup. The same object can expose <strong>Ford</strong> key material at
+        offset&nbsp;0 and <strong>data ChunkInfo</strong> at other ranges. Mixing those roles is the
+        classic silent failure mode: MAC checks fail while every layer reports partial success.
+      </p>
+      <p>
+        Assembly and caching sit in <code>Services/Download/MmcsChunkStore.cs</code> and
+        <code>Services/Download/MmcsChunkAssemblySession.cs</code>. Sessions are sharded per domain
+        so one FileGroup&rsquo;s cache cannot contaminate another. On disk, chunks land under
+        <code>.chunks/</code> (or a temporary <code>CChunkCache</code>), named as lowercase hex of
+        the signature&mdash;42 hex characters for a 21-byte data checksum, 90 for a 45-byte Ford
+        gate. Ford plants require size equal to <code>ctLen</code>, a plausible lead byte (typically
+        <code>0x04</code>), and an IKM that actually opens the blob. Planting Ford without IKM is
+        how a cache becomes a museum of convincing garbage.
+      </p>
+
+      <h2>5. Opening the plan: FileGroupFillDecrypt and LiveFill</h2>
+      <p>
+        Once host bodies are on disk, <code>Services/Escrow/FileGroupFillDecrypt.cs</code> owns the
+        observational and production decrypt path. The order that survived summer caching wars is
+        deliberate:
+      </p>
+      <ol>
+        <li>authorizeGet &rarr; FileGroups already parsed into the plan;</li>
+        <li>ranged GET bodies available to the assembly session;</li>
+        <li><strong>Ford SpillOpen</strong> for storages whose gates are owned by this plan;</li>
+        <li><strong>FillChunks</strong> only for storages that already hold Ford keys;</li>
+        <li>data <strong>ChunkDecrypt</strong> with VerifyDigest / MAC checks.</li>
+      </ol>
+      <p>
+        Ownership matters. A 45-byte gate with lead pattern <code>0C 0F 01 04</code> is not a
+        21-byte data checksum. <code>UbChunkBuilder</code> helpers
+        (<code>IsAuthFordDescriptorChunk</code>, <code>GateOwnsPlan</code>,
+        <code>GateEmbedsFileChecksum</code>, <code>IsAuthDataChunk</code>) decide whether a
+        descriptor belongs to <em>this</em> file&rsquo;s authorizeGet plan or is leftover material
+        from a sibling group in the same batch. Nested empty-OID gates without a matching CI45 on a
+        referenced host are skipped; treating them as local Ford is another poison vector.
+      </p>
+
+      <h2>6. IKM and the Ford KDF</h2>
+      <p>
+        Ford does not open on the file-list <code>EncryptionKey</code>. The IKM comes from the
+        owned CloudKit record&rsquo;s <code>contents.protectionInfo</code>, unwrapped with the zone
+        master (16 or 32&nbsp;B). That distinction is the single most expensive lesson in the MMCS
+        path: the wrong key produces ciphertext that almost looks right and never verifies.
+      </p>
+      <p>
+        Derivation, checked against live captures, is:
+      </p>
+      <pre><code>HKDF-SHA256(
+  ikm  = fileKey,          // from protectionInfo unwrap
+  salt = "PCSMMCS2",
+  info = "",
+  len  = 64                // 0x40
+)</code></pre>
+      <p>
+        Implementation lives primarily in <code>Services/Escrow/FordMmcsDecryptor.cs</code>, with PCS
+        zone unwrap helpers in <code>Services/Escrow/PcsProtectionZone.cs</code> and related share
+        protection types. The Ford blob layout is <code>lead(1) ‖ nonce(16) ‖ body</code>, where
+        body is <code>tag(16) ‖ ciphertext</code> from offset <code>0x11</code>. Decryption is
+        AES-SIV (RFC&nbsp;5297) with associated data <code>[nonce, lead]</code>. Per-chunk expansion
+        then uses HKDF info <code>signature-key</code> (0x60 bytes) into k1 / k2 / k3 for MAC,
+        staging, and CTR paths. Classic Auth Ford ciphertext lengths sit in
+        <code>[0x12, 65536]</code>; larger multi-key bags need a host ByteRange at least as long as
+        <code>ctLen</code>, with a sanity cap in the multi-mebibyte range.
+      </p>
+
+      <h2>7. Data ChunkInfo after Ford</h2>
+      <p>
+        Data chunks carry a 21-byte checksum; MAC verification uses the trailing 20 bytes
+        (<code>VerifyDigest</code> / <code>VerifyDigestWithChunkKey</code> in
+        <code>FordMmcsDecryptor</code>). Staging headers are length <code>0x28</code>; the
+        little-endian <code>u64</code> at <code>hdr[0x20]</code> is the wire data length. Lead byte
+        <code>0x04</code> at host offset&nbsp;0 usually marks Ford ciphertext; valid <em>data</em>
+        chunks may start with <code>0xC4</code> and other non-<code>0x04</code> values, including
+        large bodies. Treating every non-<code>0x04</code> lead as broken Ford was a classifier bug;
+        fixing it unlocked protocol-complete downloads for material that still lived on the edge
+        (see Day&nbsp;7).
+      </p>
+      <p>
+        Parallel decrypt workers and in-memory budgets are coordinated through
+        <code>Services/Download/BackupDecryptWorkerQueue.cs</code> so large PrivilegedBatch waves do
+        not turn a correct plan into an OOM.
+      </p>
+
+      <h2>8. Where the map sits in the tree</h2>
+      <p>
+        For readers jumping into the repository, this is the condensed index:
+      </p>
+      <ul class="evidence-list">
+        <li>
+          <code>Protocol/MmcsAuthBuilder.cs</code> &mdash; <code>x-apple-mmcs-auth</code> build /
+          extract; snapshot-aware.
+        </li>
+        <li>
+          <code>Protocol/UbChunkBuilder.cs</code> &mdash; ubchunk protobuf, FileGroups, Ford
+          descriptors vs data ChunkInfo, ownership gates.
+        </li>
+        <li>
+          <code>Services/Download/MmcsContentEndpoints.cs</code> &mdash; authorizeGet hosts;
+          incomplete-plan checks.
+        </li>
+        <li>
+          <code>Services/Backup/CloudKitAssetService.cs</code> /
+          <code>Services/Download/BackupDownloadService.cs</code> &mdash; batching, Anisette refresh,
+          download orchestration, Lock preparation upstream of MMCS.
+        </li>
+        <li>
+          <code>Services/Download/MmcsChunkStore.cs</code> /
+          <code>MmcsChunkAssemblySession.cs</code> &mdash; edge bodies, <code>.chunks/</code> cache,
+          per-domain isolation.
+        </li>
+        <li>
+          <code>Services/Escrow/FileGroupFillDecrypt.cs</code> &mdash; SpillOpen / FillChunks /
+          LiveFill ordering against an <code>AuthorizeGetDecryptPlan</code>.
+        </li>
+        <li>
+          <code>Services/Escrow/FordMmcsDecryptor.cs</code> &mdash; PCSMMCS2 HKDF, AES-SIV Ford open,
+          per-chunk keys, VerifyDigest.
+        </li>
+        <li>
+          <code>Services/Escrow/PcsProtectionZone.cs</code> (and neighbors) &mdash; zone-master unwrap
+          of <code>protectionInfo</code> into IKM.
+        </li>
+        <li>
+          <code>Protocol/CloudKitAssetProto.cs</code>, <code>BackupAssetContentsParser.cs</code>,
+          <code>FileListSqliteParser.cs</code> / <code>DomainFileListParser.cs</code> &mdash; asset
+          metadata and file-list sides that feed signatures into authorizeGet, without substituting
+          for IKM.
+        </li>
+      </ul>
+
+      <h2>What this map is not</h2>
+      <p>
+        It is not a claim that Apple&rsquo;s private MMCS will stay frozen, and it is not a guide to
+        anyone else&rsquo;s product. It is a reading of <em>this</em> codebase: how IKE turns a locked
+        <code>mbksync</code> session into verified plaintext when the edge still holds the assets and
+        the account holds the keys (zone masters, Octagon bottle or Recovery Key as required). For
+        the chronological evidence behind each invariant, stay with
+        <a href="./2026-10-29-day-11-stable-protocol-evidence.html">Day 11</a>; for the tooling that
+        made early captures possible, see
+        <a href="./2026-11-05-themida-x64dbg-mcp-frida-memcpy.html">the companion lab note</a>.
+      </p>
+
+      <a class="back-link" href="../">&larr; All notes</a>
+      <aside class="diary-ai-note">
+        <p>
+          These diary entries are drafted with help from an AI coding assistant to speed up the
+          writing. If you spot inconsistencies or errors, please tell me by email:
+          <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>.
+        </p>
+      </aside>
+    </article>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <span>&copy; Forensis-Lab &middot; Giordano Sconti</span>
+      <span><a href="../">Notes</a> &middot; <a href="../../">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>
