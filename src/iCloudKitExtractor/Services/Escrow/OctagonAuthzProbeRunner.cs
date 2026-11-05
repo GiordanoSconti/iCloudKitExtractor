@@ -1,6 +1,8 @@
 using System.IO;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using iCloudKitExtractor.Models;
 
 namespace iCloudKitExtractor.Services.Escrow;
@@ -117,6 +119,10 @@ public static class OctagonAuthzProbeRunner
                 var unwrapped = recov.TlkByView.Count;
                 var critical = id != "R1a" && unwrapped > 0;
 
+                // Observation only: who are the returned shares wrapped for?
+                // Reads bytes already fetched by this (our) session — no unwrap, no forge.
+                var inventory = BuildReceiverInventory(caseDir, self);
+
                 results.Add(new
                 {
                     id,
@@ -127,12 +133,14 @@ public static class OctagonAuthzProbeRunner
                     shareRecords = recov.ShareRecords,
                     views,
                     unwrappedWithOurKey = unwrapped,
+                    receiverInventory = inventory,
                     criticalHint = critical
                 });
 
                 log?.Report(
                     $"    rpc={(recov.Success ? "ok" : "fail")} shares={recov.ShareRecords} " +
-                    $"unwrapWithUs={unwrapped} views=[{string.Join(",", views)}]" +
+                    $"unwrapWithUs={unwrapped} recv={inventory.DistinctReceivers}" +
+                    $"(nonSelf={inventory.NonSelfReceivers}) views=[{string.Join(",", views)}]" +
                     (critical ? " CRITICAL" : ""));
             }
         }
@@ -146,7 +154,9 @@ public static class OctagonAuthzProbeRunner
             generatedAtUtc = DateTime.UtcNow,
             peerSelf = self,
             note =
-                "unwrappedWithOurKey>0 on non-R1a = possible entitlement/ECIES binding bug (lab).",
+                "unwrappedWithOurKey>0 on non-R1a = possible entitlement/ECIES binding bug (lab). " +
+                "receiverInventory.nonSelfReceivers>0 = server returned shares addressed to other " +
+                "peers (over-return / inventory mode); still inert unless unwrappedWithOurKey>0.",
             cases = results
         };
 
@@ -160,4 +170,97 @@ public static class OctagonAuthzProbeRunner
 
     private static string Trim(string forPeer) =>
         forPeer.Length > 120 ? forPeer[..120] + "…" : forPeer;
+
+    /// <summary>Per-case receiver metadata for one case. Counts only — no key material.</summary>
+    public sealed record ReceiverInventory(
+        int DistinctReceivers,
+        int NonSelfReceivers,
+        IReadOnlyList<ReceiverCount> Receivers);
+
+    public sealed record ReceiverCount(string Receiver, int Count, bool IsSelf);
+
+    private static readonly Regex ShareNameRegex = new(
+        @"tlkshare-[0-9A-Fa-f-]{36}::(RK-[A-Za-z0-9+/]{64}|SHA256:[A-Za-z0-9+/=]{20,})",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// Inventory of which receiver each returned TLKShare is wrapped for.
+    /// Re-parses the <c>octagon_*.bin</c> dumps this session already wrote to
+    /// <paramref name="caseDir"/>; it never unwraps and never forges an identity.
+    /// Surfaces server over-return (shares addressed to peers that are not us).
+    /// </summary>
+    private static ReceiverInventory BuildReceiverInventory(string caseDir, string selfPeerId)
+    {
+        var byReceiver = new Dictionary<string, int>(StringComparer.Ordinal);
+        var selfNorm = NormalizeReceiver(selfPeerId);
+
+        if (Directory.Exists(caseDir))
+        {
+            foreach (var f in Directory.EnumerateFiles(caseDir, "octagon_*.bin"))
+            {
+                byte[] raw;
+                try
+                {
+                    raw = File.ReadAllBytes(f);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                // Structured records: tlkshare → field "receiver".
+                try
+                {
+                    var (shares, _) = OctagonCuttlefishService.ParseRecoverableResponse(raw);
+                    foreach (var rec in shares)
+                    {
+                        if (!rec.Type.Equals("tlkshare", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        var r = rec.FieldString("receiver");
+                        if (!string.IsNullOrWhiteSpace(r))
+                            Bump(byReceiver, NormalizeReceiver(r));
+                    }
+                }
+                catch
+                {
+                    // ignore: live f1 bodies often don't parse structurally
+                }
+
+                // Wire heuristic: receiver embedded in tlkshare-UUID::RECEIVER names.
+                var ascii = Encoding.ASCII.GetString(raw);
+                foreach (Match m in ShareNameRegex.Matches(ascii))
+                    Bump(byReceiver, NormalizeReceiver(m.Groups[1].Value));
+            }
+        }
+
+        var receivers = byReceiver
+            .Select(kv => new ReceiverCount(
+                Trim(kv.Key),
+                kv.Value,
+                string.Equals(kv.Key, selfNorm, StringComparison.Ordinal)))
+            .OrderByDescending(x => x.Count)
+            .ToList();
+
+        return new ReceiverInventory(
+            receivers.Count,
+            receivers.Count(r => !r.IsSelf),
+            receivers);
+    }
+
+    private static void Bump(Dictionary<string, int> d, string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return;
+        d[key] = d.TryGetValue(key, out var c) ? c + 1 : 1;
+    }
+
+    private static string NormalizeReceiver(string? r)
+    {
+        if (string.IsNullOrWhiteSpace(r))
+            return "";
+        r = r.Trim();
+        return r.StartsWith("RK-", StringComparison.Ordinal)
+            ? OctagonRecoveryKey.NormalizeRkPeerId(r)
+            : r;
+    }
 }

@@ -437,9 +437,16 @@ public static class FileGroupFillDecrypt
 
         if (fordN > 0 && fordIkm.Length == 0)
         {
+            var ikmWhy = asset.CkFileAsset?.IkmSource
+                ?? (string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex)
+                    ? "no-wrap"
+                    : "ike-no-unwrapped-key");
+            var wrapHint = string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex)
+                ? "wrap=missing"
+                : $"wrapLen≈{asset.AssetProtectionInfoHex.Length / 2}";
             var noIkm = new StageTrace(
                 storages, fordN, 0, 0, 0, 0, 0, 0, null,
-                "manca IKM asset (FillFordIkmFromContents)",
+                $"manca IKM asset (FillFordIkmFromContents; {ikmWhy}; {wrapHint})",
                 "no-ikm");
             TryDumpOraclePair(
                 asset, authBody, plan, fordIkm, storages, null, null, null, noIkm, sibCache);

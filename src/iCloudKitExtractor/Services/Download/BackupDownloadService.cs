@@ -5888,8 +5888,10 @@ public sealed class BackupDownloadService
             },
             async (asset, token) =>
             {
+                // Non saltare sotto throttle: WaitGatewayThrottle dentro TryResolve.
+                // Skip → 0 wrap → no-ikm massivo (line_search / AppDomain).
                 if (_assets.IsGatewayThrottled)
-                    return;
+                    await _assets.WaitGatewayThrottleAsync(token).ConfigureAwait(false);
                 await EnsureAssetRecordPayloadAsync(session, asset, log, token)
                     .ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex)

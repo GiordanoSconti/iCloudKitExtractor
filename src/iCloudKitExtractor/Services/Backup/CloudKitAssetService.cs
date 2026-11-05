@@ -3908,9 +3908,10 @@ public sealed class CloudKitAssetService
         // Senza Anisette non martellare CloudKit (401×N → GET remota×N → 429).
         if (AnisetteRefreshBlocked)
             return null;
-        // Durante Error-Info hold: niente query/retrieve parallele (prefetch owned).
+        // Hold/pace PB: attendi — non return null (altrimenti wrap miss → no-ikm a raffica
+        // su AppDomain mentre decrypt prosegue senza contents).
         if (IsGatewayThrottled)
-            return null;
+            await WaitGatewayThrottleAsync(ct).ConfigureAwait(false);
 
         var refreshed = false;
         for (var attempt = 0; attempt < 2; attempt++)
