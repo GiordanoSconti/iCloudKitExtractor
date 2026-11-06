@@ -17,7 +17,7 @@
 
 <p align="center">
   <strong>WPF forensic lab tool</strong> for Apple ID sign-in, Escrow/PCS unlock, device backup download, and CloudKit data export — built on undocumented Apple protocols.<br/>
-  <em>Public experimental phase · .NET 10 · Windows · MIT (© Giordano Sconti — use/collaboration grant)</em>
+  <em>Public experimental phase · .NET 10 · Windows · MIT (© Giordano Sconti — use/collaboration grant to Forensis-Lab)</em>
 </p>
 
 <p align="center">
@@ -47,7 +47,7 @@
 
 Commercial extractors often fail when **iCloud.com is off**, **ADP** is enabled, or **Lockdown Mode** is on. After ~**seven months** of protocol research, this tool completed **stable, full downloads** of personal backups with ADP both on and off (with the Octagon PIN or Recovery Key when required).
 
-Built by **Giordano Sconti** ([Experimental Lab](https://giordanosconti.github.io/iCloudKitExtractor/)) — released under MIT as a **use/collaboration grant** (ownership retained by the author) so extreme forensic recoveries of backups and CloudKit data remain possible when the only alternative is the physical device.
+Built by **Giordano Sconti**, who works with **Forensis-Lab** — the author **holds possession** of this codebase and **grants Forensis-Lab use, collaboration, and representation** of the code (MIT to the public does not transfer that title). Released so extreme forensic recoveries of backups and CloudKit data remain possible when the only alternative is the physical device.
 
 ---
 
@@ -382,9 +382,9 @@ Lab probes, capture corpora, and private tooling stay out of this public tree.
 
 ## About & contact
 
-**Giordano Sconti** — software researcher and technical consultant (Consulente Tecnico); public experimental work under **Experimental Lab**.
+**Giordano Sconti** — software researcher and technical consultant (Consulente Tecnico), working with **Forensis-Lab**.
 
-**I retain ownership of this codebase.** The MIT license does **not** transfer title: it grants permission to **use, study, modify, and collaborate** on these lines of code, subject to the copyright notice and attribution conditions. Contributors do not become co-owners by submitting a PR; accepted contributions are licensed back under the same terms, with authorship credited, while ownership of the project remains with me.
+This software is **by Giordano Sconti**. He **holds possession** of the codebase and **grants Forensis-Lab use, collaboration, and representation** of these lines of code. That grant does **not** assign ownership away from the author; Forensis-Lab may represent and work with the code under that concession. The public **MIT** license likewise grants permission to use and collaborate under the copyright notice — it is **not** a transfer of title. Contributors do not become co-owners by submitting a PR; accepted contributions are licensed back under the same terms, with authorship credited.
 
 Apple’s internal APIs can change overnight — treat every build as experimental.
 
@@ -392,9 +392,9 @@ Contributions, careful PRs, and feedback are welcome. Prefer paid coding-agent m
 
 **Email:** [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gruppoinformaticiforensi.it) · [giordano.sconti@gmail.com](mailto:giordano.sconti@gmail.com)
 
-If you want to buy a coffee, prefer recognition for the lab / author instead of a payment link.
+If you want to buy a coffee, thank **Forensis-Lab** or another form of recognition instead.
 
-Keep the copyright notice and attribution on every copy or substantial portion you use or redistribute.
+Keep the copyright notice and attribution (**Giordano Sconti** / Forensis-Lab representation) on every copy or substantial portion you use or redistribute.
 
 ---
 
@@ -402,6 +402,6 @@ Keep the copyright notice and attribution on every copy or substantial portion y
 
 **MIT** — see [`LICENSE`](LICENSE).
 
-Copyright © **Giordano Sconti**. You receive a **license to use and collaborate**, not ownership of the software. Ownership, copyright, and required attribution remain with the author; the MIT grant is permission to deal in the Software under those conditions, not an assignment of rights.
+Copyright © **Giordano Sconti**. Possession of the code remains with the author, who grants **Forensis-Lab** use, collaboration, and representation rights. Recipients under MIT receive a **license to use and collaborate**, not ownership. The MIT grant is permission to deal in the Software under the copyright conditions — **not** an assignment of rights.
 
 This software talks to Apple services in unofficial ways. Endpoints may change at any time. The authors are not responsible for data loss, account suspension, or other damages.
