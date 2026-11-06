@@ -19,6 +19,11 @@ public sealed class VoiceMemosAudioDownloader
     public const string ContainerId = "com.apple.VoiceMemosContainer";
     public const string MessagesContainerId = "com.apple.messages.cloud";
     public const string SyncZone = "com.apple.coredata.cloudkit.zone";
+    /// <summary>
+    /// Zona sistema CloudKit spesso advertisa in zone/retrieve Voice Memos.
+    /// Tentativo controllato di record/sync (può RetryAfter).
+    /// </summary>
+    public const string MetadataZone = "metadata_zone";
 
     private readonly HttpClient _http;
 

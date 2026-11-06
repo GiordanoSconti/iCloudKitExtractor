@@ -332,14 +332,21 @@ public sealed class ICloudSyncDataProbeService
             zones.RemoveWhere(IsCloudKitSystemZone);
             zones.RemoveWhere(static z => !IsPlausibleCustomZone(z));
 
-            // Voice Memos: se zone/sync ha solo rumore, forza la zona Core Data nota.
-            if (zones.Count == 0
-                && binding.ContainerId.Equals(
+            // Voice Memos: forza zona Core Data + tentativo controllato di metadata_zone
+            // (advertised in zone/retrieve; può RetryAfter — RecordSync lo gestisce).
+            if (binding.ContainerId.Equals(
                     VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase))
             {
+                var before = zones.Count;
                 zones.Add(VoiceMemosAudioDownloader.SyncZone);
-                log?.Report(
-                    $"  Voice Memos: seed zona {VoiceMemosAudioDownloader.SyncZone}");
+                zones.Add(VoiceMemosAudioDownloader.MetadataZone);
+                if (zones.Count > before)
+                {
+                    log?.Report(
+                        $"  Voice Memos: seed zone " +
+                        $"{VoiceMemosAudioDownloader.SyncZone}, " +
+                        $"{VoiceMemosAudioDownloader.MetadataZone}");
+                }
             }
 
             if (zones.Count == 0)
@@ -401,8 +408,9 @@ public sealed class ICloudSyncDataProbeService
             }
 
             // Voice Memos / Messages: download CKAsset via content.icloud.com dopo PCS.
-            if (binding.ContainerId.Equals(
-                    VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase)
+            var isVoiceMemos = binding.ContainerId.Equals(
+                VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase);
+            if (isVoiceMemos
                 || binding.ContainerId.Equals(
                     VoiceMemosAudioDownloader.MessagesContainerId, StringComparison.OrdinalIgnoreCase))
             {
@@ -427,6 +435,18 @@ public sealed class ICloudSyncDataProbeService
                 catch (Exception ex)
                 {
                     log?.Report($"  MMCS asset download skip: {ex.Message}");
+                }
+            }
+
+            if (isVoiceMemos)
+            {
+                try
+                {
+                    _ = VoiceMemosInventoryBuilder.Build(outDir, log);
+                }
+                catch (Exception ex)
+                {
+                    log?.Report($"  Voice Memos inventory skip: {ex.Message}");
                 }
             }
 
@@ -626,6 +646,7 @@ public sealed class ICloudSyncDataProbeService
 
     /// <summary>
     /// Zone custom su cui ha senso record/sync (no hex fingerprint, no rumore binario).
+    /// Voice Memos può re-inserire <c>metadata_zone</c> dopo i filtri (seed dedicato).
     /// </summary>
     private static bool IsPlausibleCustomZone(string zone)
     {
