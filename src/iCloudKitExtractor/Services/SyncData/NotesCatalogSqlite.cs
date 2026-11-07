@@ -1,4 +1,5 @@
 using System.IO;
+using iCloudKitExtractor.Services.Forensics;
 using Microsoft.Data.Sqlite;
 
 namespace iCloudKitExtractor.Services.SyncData;
@@ -13,12 +14,31 @@ public sealed class NotesCatalogSqlite : IAsyncDisposable
 
     public static async Task<NotesCatalogSqlite> OpenAsync(string notesDir, CancellationToken ct = default)
     {
+        SqliteBootstrap.EnsureInitialized();
         Directory.CreateDirectory(notesDir);
         var dbPath = Path.Combine(notesDir, "Notes.db");
-        var conn = new SqliteConnection($"Data Source={dbPath}");
-        await conn.OpenAsync(ct);
-        await EnsureSchemaAsync(conn, ct);
-        return new NotesCatalogSqlite(conn) { _opened = true };
+        try
+        {
+            var conn = new SqliteConnection($"Data Source={dbPath}");
+            await conn.OpenAsync(ct);
+            await EnsureSchemaAsync(conn, ct);
+            return new NotesCatalogSqlite(conn) { _opened = true };
+        }
+        catch (Exception ex) when (ex is TypeInitializationException or InvalidOperationException)
+        {
+            throw new InvalidOperationException(
+                "Apertura Notes.db fallita (SQLite provider). " +
+                Flatten(ex),
+                ex);
+        }
+    }
+
+    private static string Flatten(Exception ex)
+    {
+        var parts = new List<string>();
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+            parts.Add($"{e.GetType().Name}: {e.Message}");
+        return string.Join(" → ", parts);
     }
 
     private static async Task EnsureSchemaAsync(SqliteConnection conn, CancellationToken ct)
@@ -171,10 +191,112 @@ public sealed class NotesCatalogSqlite : IAsyncDisposable
         };
     }
 
+    public async Task<IReadOnlyList<FolderRow>> ListFoldersAsync(CancellationToken ct = default)
+    {
+        await using var cmd = _conn.CreateCommand();
+        cmd.CommandText =
+            """
+            SELECT record_name, name, folder_key, folder_hash_id, is_system, sync_tag
+            FROM folders
+            ORDER BY is_system DESC, name COLLATE NOCASE, record_name COLLATE NOCASE;
+            """;
+        var list = new List<FolderRow>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            list.Add(new FolderRow(
+                RecordName: reader.GetString(0),
+                Name: reader.IsDBNull(1) ? null : reader.GetString(1),
+                FolderKey: reader.IsDBNull(2) ? null : reader.GetString(2),
+                FolderHashId: reader.IsDBNull(3) ? null : reader.GetString(3),
+                IsSystem: reader.GetInt64(4) != 0,
+                SyncTag: reader.IsDBNull(5) ? null : reader.GetString(5)));
+        }
+
+        return list;
+    }
+
+    public async Task<IReadOnlyList<NoteRow>> ListNotesAsync(CancellationToken ct = default)
+    {
+        await using var cmd = _conn.CreateCommand();
+        cmd.CommandText =
+            """
+            SELECT record_name, title, snippet, folder_key, folder_record_name,
+                   record_type, deleted, sync_tag
+            FROM notes
+            ORDER BY deleted ASC, title COLLATE NOCASE, record_name COLLATE NOCASE;
+            """;
+        var list = new List<NoteRow>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            list.Add(new NoteRow(
+                RecordName: reader.GetString(0),
+                Title: reader.IsDBNull(1) ? null : reader.GetString(1),
+                Snippet: reader.IsDBNull(2) ? null : reader.GetString(2),
+                FolderKey: reader.IsDBNull(3) ? null : reader.GetString(3),
+                FolderRecordName: reader.IsDBNull(4) ? null : reader.GetString(4),
+                RecordType: reader.GetString(5),
+                Deleted: reader.GetInt64(6) != 0,
+                SyncTag: reader.IsDBNull(7) ? null : reader.GetString(7)));
+        }
+
+        return list;
+    }
+
+    public async Task<IReadOnlyList<PlaintextRow>> ListPlaintextForNoteAsync(
+        string recordName,
+        CancellationToken ct = default)
+    {
+        await using var cmd = _conn.CreateCommand();
+        cmd.CommandText =
+            """
+            SELECT field_name, plain_path, text_preview
+            FROM note_plaintext
+            WHERE record_name = $r
+            ORDER BY field_name COLLATE NOCASE;
+            """;
+        cmd.Parameters.AddWithValue("$r", recordName);
+        var list = new List<PlaintextRow>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            list.Add(new PlaintextRow(
+                FieldName: reader.GetString(0),
+                PlainPath: reader.GetString(1),
+                TextPreview: reader.IsDBNull(2) ? null : reader.GetString(2)));
+        }
+
+        return list;
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_opened)
             await _conn.DisposeAsync();
         _opened = false;
     }
+
+    public sealed record FolderRow(
+        string RecordName,
+        string? Name,
+        string? FolderKey,
+        string? FolderHashId,
+        bool IsSystem,
+        string? SyncTag);
+
+    public sealed record NoteRow(
+        string RecordName,
+        string? Title,
+        string? Snippet,
+        string? FolderKey,
+        string? FolderRecordName,
+        string RecordType,
+        bool Deleted,
+        string? SyncTag);
+
+    public sealed record PlaintextRow(
+        string FieldName,
+        string PlainPath,
+        string? TextPreview);
 }

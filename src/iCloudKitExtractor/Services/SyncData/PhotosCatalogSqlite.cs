@@ -1,4 +1,5 @@
 using System.IO;
+using iCloudKitExtractor.Services.Forensics;
 using Microsoft.Data.Sqlite;
 
 namespace iCloudKitExtractor.Services.SyncData;
@@ -13,6 +14,7 @@ public sealed class PhotosCatalogSqlite : IAsyncDisposable
 
     public static async Task<PhotosCatalogSqlite> OpenAsync(string photosDir, CancellationToken ct = default)
     {
+        SqliteBootstrap.EnsureInitialized();
         Directory.CreateDirectory(photosDir);
         var dbPath = Path.Combine(photosDir, "Photos.db");
         var conn = new SqliteConnection($"Data Source={dbPath}");

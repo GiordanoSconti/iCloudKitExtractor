@@ -128,26 +128,42 @@
           <ListBox Grid.Row="1" x:Name="ConnectionList"
                    Margin="0,10,0,8"
                    SelectionMode="Single"
-                   SelectionChanged="ConnectionList_OnSelectionChanged">
+                   SelectionChanged="ConnectionList_OnSelectionChanged"
+                   PointerPressed="ConnectionList_OnPointerPressed">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="sys:String">
-                <TextBlock TextWrapping="Wrap" FontFamily="Consolas,Menlo,monospace" FontSize="12"
+                <TextBlock TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                           FontFamily="Consolas,Menlo,monospace" FontSize="12"
                            Text="{Binding}"/>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
 
-          <ScrollViewer Grid.Row="2" MaxHeight="140" Margin="0,0,0,8">
-            <TextBox x:Name="ConnectionSelectedDetail"
-                     IsReadOnly="True"
-                     AcceptsReturn="True"
-                     TextWrapping="Wrap"
-                     FontFamily="Consolas,Menlo,monospace"
-                     FontSize="11"
-                     BorderThickness="1"
-                     MinHeight="60"
-                     PlaceholderText="Select a connection to view headers"/>
-          </ScrollViewer>
+          <Border Grid.Row="2" x:Name="ConnectionDetailPanel" IsVisible="False"
+                  Margin="0,0,0,8" BorderBrush="#33000000" BorderThickness="1" CornerRadius="6"
+                  Padding="8,6" MaxHeight="180">
+            <Grid RowDefinitions="Auto,*">
+              <DockPanel Margin="0,0,0,6">
+                <TextBlock Text="Dettaglio headers" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <Button DockPanel.Dock="Right" Content="Chiudi"
+                        Click="CollapseConnectionDetail_OnClick"
+                        Padding="10,3" HorizontalAlignment="Right"
+                        ToolTip.Tip="Comprime il dettaglio (o clicca di nuovo la riga selezionata)"/>
+              </DockPanel>
+              <ScrollViewer Grid.Row="1"
+                            VerticalScrollBarVisibility="Auto"
+                            HorizontalScrollBarVisibility="Disabled">
+                <TextBox x:Name="ConnectionSelectedDetail"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         FontFamily="Consolas,Menlo,monospace"
+                         FontSize="11"
+                         BorderThickness="0"
+                         Background="Transparent"/>
+              </ScrollViewer>
+            </Grid>
+          </Border>
 
           <Border Grid.Row="3" Padding="12" BorderBrush="#33000000" BorderThickness="1" CornerRadius="6">
             <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,Auto,*">
@@ -170,13 +186,20 @@
                           ToolTip.Tip="Allow only this client IP (safe for shared proxy labels)"/>
                 </StackPanel>
               </StackPanel>
-              <StackPanel Grid.Column="2" Grid.Row="0" Grid.RowSpan="3" Spacing="6">
+              <Grid Grid.Column="2" Grid.Row="0" Grid.RowSpan="3" RowDefinitions="Auto,*,Auto" MinHeight="200">
                 <DockPanel>
                   <TextBlock FontWeight="SemiBold" Text="Pending (denied)" VerticalAlignment="Center"/>
                   <Button DockPanel.Dock="Right" Content="Clear" Click="ClearVpnPending_OnClick"
                           Padding="10,4" HorizontalAlignment="Right"/>
                 </DockPanel>
-                <ListBox x:Name="VpnPendingList" MinHeight="120" SelectionMode="Single">
+                <!-- MaxHeight obbligatorio: in StackPanel/Auto il ListBox cresce all'infinito e non scrolla. -->
+                <ListBox Grid.Row="1" x:Name="VpnPendingList"
+                         MinHeight="120" MaxHeight="260"
+                         Margin="0,6,0,6"
+                         SelectionMode="Single"
+                         ScrollViewer.VerticalScrollBarVisibility="Visible"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.AllowAutoHide="False">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="sys:String">
                       <TextBlock Text="{Binding}" FontFamily="Consolas,Menlo,monospace" FontSize="11"
@@ -184,13 +207,13 @@
                     </DataTemplate>
                   </ListBox.ItemTemplate>
                 </ListBox>
-                <StackPanel Orientation="Horizontal" Spacing="8">
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
                   <Button Content="Allow pending (name)" Click="AllowPendingVpn_OnClick" Padding="12,6"
                           ToolTip.Tip="Allow suggested provider pattern"/>
                   <Button Content="Allow pending IP" Click="AllowPendingVpnIp_OnClick" Padding="12,6"
                           ToolTip.Tip="Allow only the pending client IP"/>
                 </StackPanel>
-              </StackPanel>
+              </Grid>
             </Grid>
           </Border>
         </Grid>

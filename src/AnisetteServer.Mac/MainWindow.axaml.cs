@@ -1,5 +1,6 @@
 using AnisetteServer.Mac.Services;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using iCloudKitExtractor.AnisetteLicense;
@@ -391,18 +392,43 @@ public partial class MainWindow : Window
         RefreshConnections();
     }
 
+    private void ConnectionList_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        // Secondo click sulla riga già selezionata → comprimi (SelectionChanged non scatta).
+        Control? cur = e.Source as Control;
+        while (cur is not null && cur is not ListBoxItem)
+            cur = cur.Parent as Control;
+        if (cur is not ListBoxItem { IsSelected: true })
+            return;
+
+        Dispatcher.UIThread.Post(CollapseConnectionDetail, DispatcherPriority.Input);
+        e.Handled = true;
+    }
+
     private void ConnectionList_OnSelectionChanged(object? sender, SelectionChangedEventArgs e) =>
         ShowSelectedConnectionHeaders();
+
+    private void CollapseConnectionDetail_OnClick(object? sender, RoutedEventArgs e) =>
+        CollapseConnectionDetail();
+
+    private void CollapseConnectionDetail()
+    {
+        ConnectionList.SelectedIndex = -1;
+        ConnectionDetailPanel.IsVisible = false;
+        ConnectionSelectedDetail.Text = "";
+    }
 
     private void RefreshConnections()
     {
         var selected = ConnectionList.SelectedIndex;
+        var detailOpen = ConnectionDetailPanel.IsVisible;
         _connectionRows = _host.ConnectionLog.Snapshot().ToList();
         ConnectionList.ItemsSource = _connectionRows.Select(FormatConnection).ToList();
-        if (selected >= 0 && selected < _connectionRows.Count)
+        // Non auto-aprire la prima riga: il dettaglio resta chiuso finché l'utente non clicca.
+        if (detailOpen && selected >= 0 && selected < _connectionRows.Count)
             ConnectionList.SelectedIndex = selected;
-        else if (_connectionRows.Count > 0 && ConnectionList.SelectedIndex < 0)
-            ConnectionList.SelectedIndex = 0;
+        else
+            ConnectionList.SelectedIndex = -1;
 
         var denied = _connectionRows.Count(c => c.Outcome == "VPN_DENIED");
         ConnectionLogHint.Text =
@@ -417,9 +443,8 @@ public partial class MainWindow : Window
         var i = ConnectionList.SelectedIndex;
         if (i < 0 || i >= _connectionRows.Count)
         {
-            ConnectionSelectedDetail.Text = _connectionRows.Count == 0
-                ? "No inbound connections yet."
-                : "Select a row to view all request headers (Cloudflare CF-*, X-Forwarded-*, …).";
+            ConnectionDetailPanel.IsVisible = false;
+            ConnectionSelectedDetail.Text = "";
             return;
         }
 
@@ -428,6 +453,7 @@ public partial class MainWindow : Window
             $"{e.AtUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}  {e.Method} {e.Scheme}://{e.Host}{e.Path}{e.Query}\n" +
             $"client_ip={e.ClientIp}  [{e.Outcome}/{e.StatusCode}]  vpn={e.VpnHint}\n" +
             $"-- headers --\n{e.AllHeaders}";
+        ConnectionDetailPanel.IsVisible = true;
     }
 
     private static string FormatConnection(ConnectionLogEntry e)

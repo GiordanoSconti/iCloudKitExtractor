@@ -12,11 +12,21 @@ public static class NotesSyncRecordParser
         @"([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    /// <summary>
+    /// Record name compositi share/device overlay — non sono recuperabili col solo UUID finale.
+    /// </summary>
+    private static readonly Regex UserSpecificNameRegex = new(
+        @"(Note_UserSpecific|Attachment_UserSpecific|Folder_UserSpecific)::(" +
+        @"_[0-9a-fA-F]+/Private::Notes::_[0-9a-fA-F]+::" +
+        @"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     private static readonly HashSet<string> SkipStrings = new(StringComparer.Ordinal)
     {
         "Note", "Folder", "Notes", "Hashtag", "Attachment", "CreationDate", "ModificationDate",
         "FoldersModificationDate", "Folders", "Deleted", "iPhone", "IsPinned", "IsSystemPaper",
         "PaperStyleType", "AttachmentViewType", "NoteUUID", "MinimumSupportedNotesVersion",
+        "Note_UserSpecific", "Attachment_UserSpecific", "Folder_UserSpecific",
     };
 
     public sealed record ParsedRecord(
@@ -32,12 +42,40 @@ public static class NotesSyncRecordParser
             return [];
 
         var results = new List<ParsedRecord>();
+        // Marker "Note\"%" non matcha Note_UserSpecific — UUID UserSpecific arrivavano
+        // solo perché FindLastUuid prendeva l'UUID successivo nella finestra (falso positivo).
         ScanMarker(payload, "Note\"%"u8, "Note", results);
         ScanMarker(payload, "Folder\"%"u8, "Folder", results);
         ScanMarker(payload, "Hashtag\"%"u8, "Hashtag", results);
         ScanMarker(payload, "Attachment\"%"u8, "Attachment", results);
+        ScanUserSpecificNames(payload, results);
 
         return Deduplicate(results);
+    }
+
+    /// <summary>
+    /// UUID da usare in <c>record/retrieve</c>: solo Note/Folder/Hashtag/Attachment
+    /// con record name = UUID. Esclude overlay <c>*_UserSpecific::…</c> (nome composto).
+    /// </summary>
+    public static IReadOnlyList<string> RetrieveRecordNames(byte[] payload) =>
+        ParseRecords(payload)
+            .Where(static r =>
+                r.RecordType is "Note" or "Folder" or "Hashtag" or "Attachment"
+                && UuidRegex.IsMatch(r.RecordName)
+                && r.RecordName.Length == 36)
+            .Select(static r => r.RecordName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static void ScanUserSpecificNames(byte[] payload, List<ParsedRecord> results)
+    {
+        var text = Encoding.UTF8.GetString(payload);
+        foreach (Match m in UserSpecificNameRegex.Matches(text))
+        {
+            var type = m.Groups[1].Value;
+            var fullName = m.Value; // Type::owner/Private::Notes::owner::UUID
+            results.Add(new ParsedRecord(fullName, type, null, null, null));
+        }
     }
 
     private static void ScanMarker(
@@ -53,9 +91,11 @@ public static class NotesSyncRecordParser
             if (at < 0)
                 break;
 
-            var windowStart = Math.Max(0, at - 384);
+            // UUID del record è tipicamente PRIMA del type marker — non dopo
+            // (dopo spesso c'è un Note_UserSpecific::…::UUID vicino → ck1onjkgg).
+            var lookback = Math.Min(at, 256);
+            var recordName = FindUuidClosestToEnd(payload.AsSpan(at - lookback, lookback));
             var windowEnd = Math.Min(payload.Length, at + 1536);
-            var recordName = FindLastUuid(payload.AsSpan(windowStart, windowEnd - windowStart));
             var strings = ExtractAsciiStrings(payload.AsSpan(at, windowEnd - at), maxLen: 4000);
 
             var folderKey = strings.FirstOrDefault(static s =>
@@ -106,12 +146,28 @@ public static class NotesSyncRecordParser
         return deduped;
     }
 
-    private static string? FindLastUuid(ReadOnlySpan<byte> window)
+    /// <summary>UUID più vicino alla fine dello span (= più vicino al type marker).</summary>
+    private static string? FindUuidClosestToEnd(ReadOnlySpan<byte> window)
     {
+        if (window.IsEmpty)
+            return null;
         var text = Encoding.UTF8.GetString(window);
         Match? last = null;
         foreach (Match m in UuidRegex.Matches(text))
+        {
+            // Evita UUID che sono solo coda di *UserSpecific::…::UUID nello stesso lookback.
+            var before = text[..m.Index];
+            if (before.Contains("UserSpecific::", StringComparison.Ordinal))
+            {
+                var us = before.LastIndexOf("UserSpecific::", StringComparison.Ordinal);
+                var slice = before[us..];
+                if (slice.Contains("Private::Notes::", StringComparison.Ordinal))
+                    continue;
+            }
+
             last = m;
+        }
+
         return last?.Groups[1].Value.ToUpperInvariant();
     }
 

@@ -112,6 +112,9 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _imapCts;
     private ImapMessageFilter? _imapFilter;
 
+    /// <summary>Ultima cartella Sync Data completata (per Apri Messages).</summary>
+    private string? _lastSyncDataOutputDir;
+
     public MainWindow()
 
     {
@@ -2482,8 +2485,16 @@ public partial class MainWindow : Window
 
 
             var ok = result.Containers.Count(static c => c.Ok);
+            var messagesOk = result.Containers.Any(static c =>
+                c.Ok && c.ContainerId.Contains("messages", StringComparison.OrdinalIgnoreCase));
+            var inventoryPath = MessagesChatCatalog.FindInventoryPath(result.OutputDirectory);
+            var hasMessagesInventory = inventoryPath is not null
+                && File.Exists(inventoryPath)
+                && new FileInfo(inventoryPath).Length > 4;
+
             await Dispatcher.InvokeAsync(() =>
             {
+                _lastSyncDataOutputDir = result.OutputDirectory;
                 AppendSyncDataLog($"Fatto: {ok}/{result.Containers.Count} container → {result.OutputDirectory}");
                 if (!string.IsNullOrEmpty(result.RunLogPath))
                     AppendSyncDataLog($"Log run: {result.RunLogPath}");
@@ -2493,16 +2504,25 @@ public partial class MainWindow : Window
                 SyncDataStatusText.Text = result.Containers.Count == 0
                     ? $"Completato → {Path.GetFileName(result.OutputDirectory)}"
                     : $"Completato: {ok}/{result.Containers.Count} OK";
-                MessageBox.Show(this,
-                    $"Sync Data completato.\n{result.OutputDirectory}\n" +
-                    (result.Containers.Count == 0
-                        ? "accountinfo/ senza container CloudKit.\n"
-                        : $"Container OK: {ok}/{result.Containers.Count}\n") +
-                    (string.IsNullOrEmpty(result.RunLogPath) ? "" : $"Log: {result.RunLogPath}\n") +
-                    "accountinfo/ + ck/<container>/.",
-                    "iCloud Sync Data",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
+
+                if (messagesOk && hasMessagesInventory)
+                {
+                    AppendSyncDataLog("Messages inventory pronto — apro visualizzatore chat.");
+                    OpenMessagesChatViewer(result.OutputDirectory);
+                }
+                else
+                {
+                    MessageBox.Show(this,
+                        $"Sync Data completato.\n{result.OutputDirectory}\n" +
+                        (result.Containers.Count == 0
+                            ? "accountinfo/ senza container CloudKit.\n"
+                            : $"Container OK: {ok}/{result.Containers.Count}\n") +
+                        (string.IsNullOrEmpty(result.RunLogPath) ? "" : $"Log: {result.RunLogPath}\n") +
+                        "accountinfo/ + ck/<container>/.",
+                        "iCloud Sync Data",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
             });
         }
         catch (Exception ex)
@@ -2523,6 +2543,53 @@ public partial class MainWindow : Window
                 SyncDataProbeButton.IsEnabled = true;
                 SyncDataProgressBar.IsIndeterminate = false;
             });
+        }
+    }
+
+    private void SyncDataOpenMessagesButton_Click(object sender, RoutedEventArgs e)
+    {
+        var root = _lastSyncDataOutputDir;
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            root = SyncDataOutputTextBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+        {
+            MessageBox.Show(this,
+                "Nessuna cartella Sync Data. Esegui prima «Recupera Sync Data» con Messages.",
+                "Messages",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        if (MessagesChatCatalog.FindInventoryPath(root) is null)
+        {
+            MessageBox.Show(this,
+                "messages_inventory.json non trovato.\n" +
+                "Recupera Sync Data con Messages selezionato (serve anche PCS/decrypt).",
+                "Messages",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        OpenMessagesChatViewer(root);
+    }
+
+    private void OpenMessagesChatViewer(string syncDataRoot)
+    {
+        var own = new List<string>();
+        if (_session is not null && !string.IsNullOrWhiteSpace(_session.AppleId))
+            own.Add(_session.AppleId);
+
+        var win = MessagesChatViewerWindow.TryOpen(this, syncDataRoot, own);
+        if (win is null)
+        {
+            MessageBox.Show(this,
+                "Impossibile aprire Messages: inventory assente o vuoto.",
+                "Messages",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
         }
     }
 
@@ -4017,7 +4084,7 @@ public partial class MainWindow : Window
             async session =>
             {
                 await TryRefreshAnisetteForExploratoryAsync(session).ConfigureAwait(false);
-                var candidates = BuildCloudKitProbeCandidates(extrasRaw);
+                var candidates = BuildCloudKitProbeCandidates(extrasRaw, session);
                 var progress = new Progress<string>(msg =>
                     Dispatcher.BeginInvoke(() =>
                     {
@@ -4025,26 +4092,41 @@ public partial class MainWindow : Window
                             ExploratoryServicesStatusText.Text =
                                 "CloudKitContainers: " + TrimUiStatus(msg, 120);
                     }));
-                return await new CloudKitContainerProbeService(Orchestrator)
+                return await new CloudKitContainerProbeService(Orchestrator, Http)
                     .ProbeAsync(session, candidates, progress)
                     .ConfigureAwait(false);
             });
     }
 
     private static List<CloudKitContainerProbeService.Candidate> BuildCloudKitProbeCandidates(
-        string? extrasRaw)
+        string? extrasRaw,
+        ICloudSession session)
     {
         var list = new List<CloudKitContainerProbeService.Candidate>(
             CloudKitContainerProbeService.DefaultCandidates);
-        if (string.IsNullOrWhiteSpace(extrasRaw))
-            return list;
 
-        foreach (var line in extrasRaw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        // Priorità: container legati alle dataclass dell'account (catalogo + entitlement candidates).
+        if (session.AvailableDataclasses.Count > 0)
         {
-            var id = line.Trim();
-            if (id.Length == 0 || id.StartsWith('#'))
-                continue;
-            list.Add(new CloudKitContainerProbeService.Candidate(id, "custom", InCatalog: false));
+            foreach (var c in SyncDataCategoryCatalog.DiscoveryCandidatesForDataclasses(
+                         session.AvailableDataclasses))
+            {
+                list.Add(new CloudKitContainerProbeService.Candidate(
+                    c.ContainerId,
+                    $"dataclass → {c.BundleId}",
+                    InCatalog: true));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(extrasRaw))
+        {
+            foreach (var line in extrasRaw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                var id = line.Trim();
+                if (id.Length == 0 || id.StartsWith('#'))
+                    continue;
+                list.Add(new CloudKitContainerProbeService.Candidate(id, "custom", InCatalog: false));
+            }
         }
 
         return list;
@@ -4433,15 +4515,18 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Elenco: recuperabili vs «(presto)».
+        // Elenco: candidati CK (dataclass/entitlement) selezionabili; FileVault → KVS.
         SyncDataServicesHintText.Text =
-            "Attivi: Photos, Account Info, Voice Memos, Calls, Messages; le altre sono in arrivo (presto). " +
-            "Calls: Phone & FaceTime in iCloud + Escrow/Octagon. " +
-            "Messages: sync CloudKit + tentativo MMCS su content.icloud.com (come Voice Memos) se ci sono ckAsset.";
+            "Test: zone/retrieve → zone/sync → record/sync (dump zona; record/retrieve solo con record name noti). " +
+            "Attivi: Photos, Account Info, Messages, Voice Memos, Notes. " +
+            "FileVault2: tipicamente KeyValue/sbd o Keychain, non CloudKit.";
 
         foreach (var cat in SyncDataCategoryCatalog.All)
         {
             var canRecover = SyncDataCategoryCatalog.IsRecoverable(cat);
+            var needsDiscovery = SyncDataCategoryCatalog.NeedsContainerDiscovery(cat);
+            var isFileVault = string.Equals(cat.Id, "filevault", StringComparison.OrdinalIgnoreCase);
+            var isCalls = string.Equals(cat.Id, SyncDataCategoryCatalog.CallsId, StringComparison.OrdinalIgnoreCase);
             var cb = new CheckBox
             {
                 Content = cat.DisplayName + (canRecover ? "" : " (presto)"),
@@ -4453,8 +4538,13 @@ public partial class MainWindow : Window
                 ToolTip = canRecover
                     ? (cat.IncludeAccountInfo
                         ? "GSA Account Info (profilo, payment, security, devices)"
-                        : (cat.RequiredDataclass ?? "CloudKit (CKDatabaseService)"))
-                    : "Recupero non ancora implementato (presto)"
+                        : $"{cat.Containers.Count} container candidato — " +
+                          (cat.RequiredDataclass ?? "CloudKit (CKDatabaseService)"))
+                    : isCalls
+                        ? "Calls disabilitato — CallHistory spesso ckm4qn70 (optional feature disabled)"
+                        : isFileVault || needsDiscovery
+                            ? "Nessun container CK: FileVault→KVS/Keychain; altri→probe Containers"
+                            : "Recupero non ancora implementato (presto)"
             };
             if (string.Equals(cat.Id, SyncDataCategoryCatalog.PhotosId, StringComparison.OrdinalIgnoreCase))
             {

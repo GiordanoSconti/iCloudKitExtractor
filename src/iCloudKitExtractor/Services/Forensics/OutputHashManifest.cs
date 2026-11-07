@@ -52,8 +52,10 @@ public static class OutputHashManifest
         {
             ct.ThrowIfCancellationRequested();
             var rel = Path.GetRelativePath(rootDirectory, path).Replace('\\', '/');
-            if (string.Equals(rel, Sha256FileName, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(rel, JsonFileName, StringComparison.OrdinalIgnoreCase))
+            var leaf = Path.GetFileName(path);
+            // Skip manifest files at any depth (viewer nested HASHES/integrity).
+            if (string.Equals(leaf, Sha256FileName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(leaf, JsonFileName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
             string hex;

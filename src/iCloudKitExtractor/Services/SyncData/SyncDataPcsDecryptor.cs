@@ -251,25 +251,37 @@ public static class SyncDataPcsDecryptor
 
                 consecutiveFail = 0;
 
-                // Associazione CloudKit: il record è quello del PI la cui chiave apre
-                // il ciphertext — non il CPLMaster “più vicino” (sbaglia ~25% su CPL).
-                var recordName = TryRecordNameForZone(keyToRecord, openZone);
-                if (string.IsNullOrWhiteSpace(recordName)
-                    && openZone is not null
-                    && !string.IsNullOrWhiteSpace(nearName))
+                // Photos CPL: il PI che apre il ciphertext identifica il record.
+                // Messages Manatee: molte record condividono lo stesso master PCS —
+                // TryRecordNameForZone collassa tutto su un solo nome; preferisci
+                // il 64-hex più vicino al campo (nearName).
+                string? recordName;
+                if (messagesContainer
+                    && nearName is { Length: 64 }
+                    && nearName.All(static c => Uri.IsHexDigit(c)))
                 {
-                    // Zona aperta dal PI locale ma non ancora indicizzata (light-only):
-                    // registra per i campi successivi dello stesso master.
-                    RememberZoneRecord(keyToRecord, openZone, nearName);
                     recordName = nearName;
                 }
+                else
+                {
+                    recordName = TryRecordNameForZone(keyToRecord, openZone);
+                    if (string.IsNullOrWhiteSpace(recordName)
+                        && openZone is not null
+                        && !string.IsNullOrWhiteSpace(nearName))
+                    {
+                        RememberZoneRecord(keyToRecord, openZone, nearName);
+                        recordName = nearName;
+                    }
 
-                recordName ??= nearName ?? "";
+                    recordName ??= nearName ?? "";
+                }
 
                 okInGroup++;
                 decrypted++;
-                var decoded = NotesPlaintextDecoder.DecodeField(fieldName, plain);
-                var processed = PostProcess(fieldName, decoded.Processed);
+                // Notes TextData: spesso gzip DOPO PCS — decodifica testo solo sul plain espanso.
+                var processed = PostProcess(fieldName, plain);
+                var decoded = NotesPlaintextDecoder.DecodeField(fieldName, processed);
+                processed = decoded.Processed;
                 var ext = GuessExtension(processed);
                 var path = Path.Combine(fieldDir, $"{idx:D4}{ext}");
                 File.WriteAllBytes(path, processed);
@@ -332,11 +344,15 @@ public static class SyncDataPcsDecryptor
                 richestZones = data;
         }
 
+        // Notes: i ciphertext (TitleEncrypted / TextDataEncrypted) stanno nei
+        // record/retrieve batch, non nel record/sync (solo metadati/delta).
         var syncFiles = Directory.GetFiles(containerDirectory, "record_sync_*.bin")
             .Concat(Directory.GetFiles(containerDirectory, "query_*.bin"))
+            .Concat(EnumerateRecordRetrieveBatchBins(containerDirectory))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (syncFiles.Length == 0)
-            return new DecryptSummary(0, 0, 0, "nessun record_sync/query");
+            return new DecryptSummary(0, 0, 0, "nessun record_sync/query/retrieve");
 
         var totalFields = 0;
         var totalDecrypted = 0;
@@ -348,7 +364,7 @@ public static class SyncDataPcsDecryptor
         {
             var sf = syncFiles[i];
             var payload = File.ReadAllBytes(sf);
-            var tag = Path.GetFileNameWithoutExtension(sf);
+            var tag = CryptoTagForPayloadFile(sf, containerDirectory);
             log?.Report($"  PCS file {i + 1}/{syncFiles.Length}: {tag} ({payload.Length:N0} B)");
             var outDir = Path.Combine(cryptoRoot, tag);
             var zoneFromTag = TryParseZoneFromSyncTag(tag);
@@ -752,20 +768,59 @@ public static class SyncDataPcsDecryptor
         return null;
     }
 
+    private static IEnumerable<string> EnumerateRecordRetrieveBatchBins(string containerDirectory)
+    {
+        if (!Directory.Exists(containerDirectory))
+            yield break;
+
+        foreach (var dir in Directory.GetDirectories(containerDirectory, "record_retrieve_*"))
+        {
+            foreach (var bin in Directory.GetFiles(dir, "batch*.bin"))
+                yield return bin;
+        }
+    }
+
     /// <summary>
-    /// <c>record_sync_messageManateeZone_p1</c> → <c>messageManateeZone</c>.
+    /// Tag stabile sotto <c>crypto/</c>: sync → nome file; retrieve →
+    /// <c>record_retrieve_Notes_batch01</c>.
+    /// </summary>
+    private static string CryptoTagForPayloadFile(string filePath, string containerDirectory)
+    {
+        var file = Path.GetFileNameWithoutExtension(filePath);
+        var parent = Path.GetFileName(Path.GetDirectoryName(filePath) ?? "");
+        if (parent.StartsWith("record_retrieve_", StringComparison.OrdinalIgnoreCase))
+            return $"{parent}_{file}";
+        return file;
+    }
+
+    /// <summary>
+    /// <c>record_sync_messageManateeZone_p1</c> → <c>messageManateeZone</c>;
+    /// <c>record_retrieve_Notes_batch01</c> → <c>Notes</c>.
     /// </summary>
     private static string? TryParseZoneFromSyncTag(string tag)
     {
-        const string prefix = "record_sync_";
-        if (!tag.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        const string syncPrefix = "record_sync_";
+        const string retrievePrefix = "record_retrieve_";
+        string rest;
+        if (tag.StartsWith(syncPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            rest = tag[syncPrefix.Length..];
+            var pIdx = rest.LastIndexOf("_p", StringComparison.OrdinalIgnoreCase);
+            if (pIdx > 0
+                && pIdx + 2 < rest.Length
+                && rest[(pIdx + 2)..].All(char.IsDigit))
+                rest = rest[..pIdx];
+        }
+        else if (tag.StartsWith(retrievePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            rest = tag[retrievePrefix.Length..];
+            var batchIdx = rest.LastIndexOf("_batch", StringComparison.OrdinalIgnoreCase);
+            if (batchIdx > 0)
+                rest = rest[..batchIdx];
+        }
+        else
             return null;
-        var rest = tag[prefix.Length..];
-        var pIdx = rest.LastIndexOf("_p", StringComparison.OrdinalIgnoreCase);
-        if (pIdx > 0
-            && pIdx + 2 < rest.Length
-            && rest[(pIdx + 2)..].All(char.IsDigit))
-            rest = rest[..pIdx];
+
         return string.IsNullOrWhiteSpace(rest) ? null : rest;
     }
 
@@ -914,9 +969,10 @@ public static class SyncDataPcsDecryptor
 
     private static byte[] PostProcess(string fieldName, byte[] plain)
     {
-        // Notes TextDataEncrypted: spesso gzip/zlib dopo PCS.
+        // Notes TextDataEncrypted / Messages msgProto*: spesso gzip/zlib dopo PCS.
         if (fieldName.Contains("TextData", StringComparison.OrdinalIgnoreCase)
-            || fieldName.Contains("StandardizedContent", StringComparison.OrdinalIgnoreCase))
+            || fieldName.Contains("StandardizedContent", StringComparison.OrdinalIgnoreCase)
+            || fieldName.StartsWith("msgProto", StringComparison.OrdinalIgnoreCase))
         {
             if (TryGunzip(plain, out var gz))
                 return gz;

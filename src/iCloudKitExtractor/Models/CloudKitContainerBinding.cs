@@ -50,5 +50,16 @@ public sealed record CloudKitContainerBinding(string ContainerId, string BundleI
         new("com.apple.SafariShared.CloudTabs", "com.apple.SafariBookmarksSyncAgent"),
         new("com.apple.SafariShared.WBSCloudHistoryStore", "com.apple.Safari"),
         new("com.apple.VoiceMemosContainer", "com.apple.voicememod"),
+        // Candidati discovery (dataclass / entitlement reverse-DNS) — validare con probe.
+        new("com.apple.mobilecal", "com.apple.mobilecal"),
+        new("com.apple.Calendar", "com.apple.mobilecal"),
+        new("com.apple.contacts", "com.apple.MobileAddressBook"),
+        new("com.apple.AddressBook", "com.apple.MobileAddressBook"),
+        new("com.apple.ScreenTimeAgent", "com.apple.ScreenTimeAgent"),
+        new("com.apple.screentime.cloudkit", "com.apple.ScreenTimeAgent"),
+        new("com.apple.Passbook", "com.apple.Passbook"),
+        new("com.apple.passd", "com.apple.passd"),
+        new("com.apple.wifi", "com.apple.wifi"),
+        new("com.apple.wifid.sync", "com.apple.wifid"),
     ];
 }

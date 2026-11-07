@@ -1290,7 +1290,7 @@
                         <Border Style="{StaticResource SectionCardStyle}">
                             <StackPanel>
                                 <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14"
-                                           Text="Dopo login: Photos (ON di default), Account Info, Voice Memos, Calls e Messages sono recuperabili; le altre categorie Sync Data compaiono come (presto). Messages: sync CloudKit + tentativo download MMCS su content.icloud.com se ci sono ckAsset. Calls: Phone &amp; FaceTime in iCloud + Escrow/Octagon."/>
+                                           Text="Dopo login: Photos (ON di default), Account Info, Messages, Voice Memos e Notes sono recuperabili. Calls, Maps, Calendars, Contacts, Health, iBooks, Keychain, Safari, Screen Time, Wallet e Wi‑Fi sono disabilitati (presto). Messages: sync CloudKit + tentativo download MMCS su content.icloud.com se ci sono ckAsset."/>
                                 <Grid Margin="0,0,0,14">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="120"/>
@@ -1323,6 +1323,11 @@
                                                 Style="{StaticResource PrimaryButtonStyle}"
                                                 HorizontalAlignment="Left" MinWidth="200"
                                                 Click="SyncDataProbeButton_Click"/>
+                                        <Button x:Name="SyncDataOpenMessagesButton" Content="Apri Messages"
+                                                Style="{StaticResource GhostButtonStyle}"
+                                                Margin="10,0,0,0" Padding="12,6"
+                                                Click="SyncDataOpenMessagesButton_Click"
+                                                ToolTip="Apre il visualizzatore chat da messages_inventory.json"/>
                                         <ProgressBar x:Name="SyncDataProgressBar" Width="220" Height="10"
                                                      Margin="16,0,0,0" VerticalAlignment="Center"
                                                      Maximum="100" Value="0"
@@ -1334,8 +1339,8 @@
                                     </StackPanel>
                                     <StackPanel x:Name="SyncDataPhasePanel" Orientation="Horizontal"
                                                 Margin="0,8,0,0" Visibility="Collapsed">
-                                        <TextBlock x:Name="SyncDataPhaseLabel" Width="100"
-                                                   VerticalAlignment="Center"
+                                        <TextBlock x:Name="SyncDataPhaseLabel" MinWidth="110" Width="Auto"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"
                                                    Style="{StaticResource FieldLabelStyle}"
                                                    Text="Fase"/>
                                         <ProgressBar x:Name="SyncDataPhaseProgressBar" Width="220" Height="10"

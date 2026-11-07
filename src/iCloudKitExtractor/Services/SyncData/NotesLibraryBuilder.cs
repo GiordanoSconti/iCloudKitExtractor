@@ -90,20 +90,34 @@ public static class NotesLibraryBuilder
         {
             ct.ThrowIfCancellationRequested();
             var hasText = rows.Any(static r =>
-                r.Field.Equals("TextDataEncrypted", StringComparison.Ordinal));
+                r.Field.Equals("TextDataEncrypted", StringComparison.Ordinal)
+                || r.Field.Equals("StandardizedContentEncrypted", StringComparison.Ordinal));
             if (!hasText)
                 continue;
 
-            var title = BestText(rows, "TitleEncrypted");
-            var snippet = BestText(rows, "SnippetEncrypted")
-                          ?? BestText(rows, "DisplayTextEncrypted");
-            var body = BestText(rows, "TextDataEncrypted");
+            // Preferisci re-decode dai .bin (TSV preview spesso replica-map o pre-gunzip).
+            var title = BestDecodedText(rows, "TitleEncrypted");
+            var snippet = BestDecodedText(rows, "SnippetEncrypted")
+                          ?? BestDecodedText(rows, "DisplayTextEncrypted");
+            var body = BestDecodedText(rows, "TextDataEncrypted")
+                       ?? BestDecodedText(rows, "StandardizedContentEncrypted");
+
+            if (NotesPlaintextDecoder.IsReplicaMapPreview(body))
+                body = null;
+            if (NotesPlaintextDecoder.IsReplicaMapPreview(title))
+                title = null;
+            if (NotesPlaintextDecoder.IsReplicaMapPreview(snippet))
+                snippet = null;
 
             if (string.IsNullOrWhiteSpace(snippet) && !string.IsNullOrWhiteSpace(body))
                 snippet = TruncatePreview(body, 240);
 
             if (string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(body))
-                title = TruncatePreview(body, 80);
+                title = TruncatePreview(body.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0], 80);
+
+            // Senza titolo né corpo utile — salta (solo metadati CRDT).
+            if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(body))
+                continue;
 
             parsedByRecord.TryGetValue($"Note:{recordName}", out var parsed);
             var folderKey = parsed?.FolderKey ?? "DefaultFolder-CloudKit";
@@ -123,11 +137,16 @@ public static class NotesLibraryBuilder
 
             foreach (var row in rows)
             {
+                var preview = DecodeFieldFile(row.Field, row.PlainPath) ?? row.Text;
+                if (NotesPlaintextDecoder.IsReplicaMapPreview(preview)
+                    && !row.Field.Contains("ReplicaID", StringComparison.OrdinalIgnoreCase))
+                    preview = null;
+
                 await db.UpsertPlaintextAsync(
                     recordName,
                     row.Field,
                     row.PlainPath,
-                    row.Text,
+                    preview,
                     ct);
                 plainCount++;
             }
@@ -178,14 +197,49 @@ public static class NotesLibraryBuilder
         folderByKey[folderKey] = recordName;
     }
 
-    private static string? BestText(IReadOnlyList<FieldRow> rows, string fieldName)
+    private static string? BestDecodedText(IReadOnlyList<FieldRow> rows, string fieldName)
     {
-        return rows
-            .Where(r => r.Field.Equals(fieldName, StringComparison.Ordinal))
-            .Select(static r => r.Text?.Trim())
-            .Where(static t => !string.IsNullOrWhiteSpace(t))
-            .OrderByDescending(static t => t!.Length)
-            .FirstOrDefault();
+        string? best = null;
+        foreach (var row in rows.Where(r => r.Field.Equals(fieldName, StringComparison.Ordinal)))
+        {
+            var decoded = DecodeFieldFile(row.Field, row.PlainPath);
+            var candidate = FirstNonEmpty(decoded, row.Text);
+            if (string.IsNullOrWhiteSpace(candidate)
+                || NotesPlaintextDecoder.IsReplicaMapPreview(candidate))
+                continue;
+            if (best is null || candidate!.Length > best.Length)
+                best = candidate;
+        }
+
+        return best;
+    }
+
+    private static string? DecodeFieldFile(string fieldName, string plainPath)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(plainPath) || !File.Exists(plainPath))
+                return null;
+            var bytes = File.ReadAllBytes(plainPath);
+            if (bytes.Length == 0)
+                return null;
+            return NotesPlaintextDecoder.DecodeField(fieldName, bytes).TextPreview;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v))
+                return v.Trim();
+        }
+
+        return null;
     }
 
     private static string? ExtractFolderDisplayName(string folderKey)
