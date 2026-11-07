@@ -7,9 +7,8 @@ using iCloudKitExtractor.Protocol;
 namespace iCloudKitExtractor.Services.SyncData;
 
 /// <summary>
-/// Inventario Voice Memos: tutti i record <c>CD_*</c> da <c>record/sync</c>,
-/// titoli PCS da <c>crypto/field_records.tsv</c>, audio scaricati in <c>audio/</c>.
-/// Scrive <c>voicememos_inventory.tsv</c> + <c>voicememos_inventory.json</c>.
+/// Inventario Voice Memos: record <c>CD_*</c>, device <c>metadata_zone</c>,
+/// titoli PCS e audio in <c>audio/</c> con sidecar <c>*.meta.json</c>.
 /// </summary>
 public static class VoiceMemosInventoryBuilder
 {
@@ -17,11 +16,14 @@ public static class VoiceMemosInventoryBuilder
         int Records,
         int CloudRecordings,
         int Migrations,
+        int Devices,
         int WithAudio,
+        int Sidecars,
         string TsvPath,
         string JsonPath);
 
     private sealed record Row(
+        string Kind,
         string RecordName,
         string RecordType,
         string? EntityName,
@@ -29,10 +31,16 @@ public static class VoiceMemosInventoryBuilder
         string? UniqueId,
         string? DateUtc,
         string? DeviceHint,
+        double? DurationSeconds,
         bool HasCkAsset,
         string? AudioFile,
+        string? AudioMetaFile,
         string SyncTag,
-        string Fields);
+        string Fields,
+        string? OsType = null,
+        string? OsVersion = null,
+        string? OsBuild = null,
+        string? SoftwareBundleId = null);
 
     public static InventorySummary Build(
         string containerDirectory,
@@ -42,6 +50,10 @@ public static class VoiceMemosInventoryBuilder
         var titles = LoadTitles(containerDirectory);
         var audioByTitle = IndexAudioFiles(containerDirectory);
         var rows = new List<Row>();
+        var sidecars = 0;
+        var parsedDevices = new List<VoiceMemosSyncRecordParser.ParsedMetadataDevice>();
+        var parsedRecordings = new List<(VoiceMemosSyncRecordParser.ParsedRecord Rec, string? Title, string Tag)>();
+        string? migrationDeviceHint = null;
 
         foreach (var syncPath in Directory.GetFiles(containerDirectory, "record_sync_*.bin")
                      .OrderBy(static p => p, StringComparer.OrdinalIgnoreCase))
@@ -57,62 +69,195 @@ public static class VoiceMemosInventoryBuilder
                 continue;
             }
 
+            var isMetadataZone = tag.Contains("metadata_zone", StringComparison.OrdinalIgnoreCase);
+
+            if (isMetadataZone)
+            {
+                foreach (var dev in VoiceMemosSyncRecordParser.ParseMetadataDevices(payload))
+                {
+                    parsedDevices.Add(dev);
+                    rows.Add(new Row(
+                        Kind: "device",
+                        RecordName: dev.RecordName,
+                        RecordType: "metadata_device",
+                        EntityName: "metadata_device",
+                        Title: null,
+                        UniqueId: dev.DeviceId,
+                        DateUtc: null,
+                        DeviceHint: dev.DeviceClass,
+                        DurationSeconds: null,
+                        HasCkAsset: false,
+                        AudioFile: null,
+                        AudioMetaFile: null,
+                        SyncTag: tag,
+                        Fields: "DeviceOSBuild,DeviceOSVersion,DeviceOSType",
+                        OsType: dev.OsType,
+                        OsVersion: dev.OsVersion,
+                        OsBuild: dev.OsBuild,
+                        SoftwareBundleId: dev.SoftwareBundleId));
+                }
+
+                continue;
+            }
+
             foreach (var rec in VoiceMemosSyncRecordParser.ParseRecords(payload))
             {
                 titles.TryGetValue(rec.RecordName, out var title);
-                string? audio = null;
-                if (!string.IsNullOrWhiteSpace(title)
-                    && audioByTitle.TryGetValue(title.Trim(), out var byTitle))
-                    audio = byTitle;
-                else if (rec.HasCkAsset)
-                    audio = GuessAudioNearRecord(audioByTitle.Values, title);
+                var isRecording = rec.RecordType.Contains("CloudRecording", StringComparison.OrdinalIgnoreCase)
+                                  || rec.RecordType.Contains("SavedRecording", StringComparison.OrdinalIgnoreCase);
 
-                rows.Add(new Row(
-                    rec.RecordName,
-                    rec.RecordType,
-                    rec.EntityName,
-                    title,
-                    rec.UniqueId,
-                    rec.DateUtc,
-                    rec.DeviceHint,
-                    rec.HasCkAsset,
-                    audio,
-                    tag,
-                    string.Join(",", rec.FieldNames)));
+                if (isRecording)
+                    parsedRecordings.Add((rec, title, tag));
+                else
+                {
+                    if (!string.IsNullOrWhiteSpace(rec.DeviceHint))
+                        migrationDeviceHint ??= rec.DeviceHint;
+                    rows.Add(new Row(
+                        Kind: "migration",
+                        RecordName: rec.RecordName,
+                        RecordType: rec.RecordType,
+                        EntityName: rec.EntityName,
+                        Title: null,
+                        UniqueId: null,
+                        DateUtc: rec.DateUtc,
+                        DeviceHint: rec.DeviceHint,
+                        DurationSeconds: null,
+                        HasCkAsset: false,
+                        AudioFile: null,
+                        AudioMetaFile: null,
+                        SyncTag: tag,
+                        Fields: string.Join(",", rec.FieldNames)));
+                }
             }
         }
 
-        // Dedup by type:name, prefer row with title/audio.
-        rows = rows
-            .GroupBy(static r => $"{r.RecordType}:{r.RecordName}", StringComparer.OrdinalIgnoreCase)
-            .Select(static g => g
-                .OrderByDescending(static r => !string.IsNullOrWhiteSpace(r.Title))
-                .ThenByDescending(static r => !string.IsNullOrWhiteSpace(r.AudioFile))
-                .ThenByDescending(static r => r.HasCkAsset)
-                .First())
-            .OrderBy(static r => r.RecordType, StringComparer.Ordinal)
-            .ThenBy(static r => r.DateUtc ?? "", StringComparer.Ordinal)
-            .ThenBy(static r => r.RecordName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        foreach (var (rec, title, tag) in parsedRecordings)
+        {
+            string? audio = null;
+            string? metaFile = null;
+            if (!string.IsNullOrWhiteSpace(title)
+                && audioByTitle.TryGetValue(title.Trim(), out var byTitle))
+                audio = byTitle;
+            else if (rec.HasCkAsset && audioByTitle.Count == 1)
+                audio = audioByTitle.Values.First();
+
+            var deviceHint = rec.DeviceHint ?? migrationDeviceHint;
+            var relatedDevices = parsedDevices
+                .Where(d =>
+                    !string.IsNullOrWhiteSpace(deviceHint)
+                    && string.Equals(d.DeviceClass, deviceHint, StringComparison.OrdinalIgnoreCase)
+                    && (!string.IsNullOrWhiteSpace(d.OsBuild) || !string.IsNullOrWhiteSpace(d.OsVersion)))
+                // Prefer richer / newer OS rows, keep distinct builds.
+                .GroupBy(static d => d.OsBuild ?? d.OsVersion ?? d.DeviceId, StringComparer.OrdinalIgnoreCase)
+                .Select(static g => g.First())
+                .Take(8)
+                .ToList();
+
+            if (!string.IsNullOrWhiteSpace(audio))
+            {
+                metaFile = WriteAudioSidecar(
+                    containerDirectory,
+                    audio,
+                    rec with { DeviceHint = deviceHint },
+                    title,
+                    relatedDevices);
+                if (metaFile is not null)
+                    sidecars++;
+            }
+
+            rows.Add(new Row(
+                Kind: "recording",
+                RecordName: rec.RecordName,
+                RecordType: rec.RecordType,
+                EntityName: rec.EntityName,
+                Title: title,
+                UniqueId: rec.UniqueId,
+                DateUtc: rec.DateUtc,
+                DeviceHint: deviceHint,
+                DurationSeconds: rec.DurationSeconds,
+                HasCkAsset: rec.HasCkAsset,
+                AudioFile: audio,
+                AudioMetaFile: metaFile,
+                SyncTag: tag,
+                Fields: string.Join(",", rec.FieldNames)));
+        }
+
+        rows = DedupRows(rows);
 
         var tsvPath = Path.Combine(containerDirectory, "voicememos_inventory.tsv");
         var jsonPath = Path.Combine(containerDirectory, "voicememos_inventory.json");
         WriteTsv(tsvPath, rows);
         WriteJson(jsonPath, rows);
 
-        var recordings = rows.Count(static r =>
-            r.RecordType.Contains("CloudRecording", StringComparison.OrdinalIgnoreCase));
-        var migrations = rows.Count(static r =>
-            r.RecordType.Contains("Migration", StringComparison.OrdinalIgnoreCase));
+        var recordings = rows.Count(static r => r.Kind == "recording");
+        var migrations = rows.Count(static r => r.Kind == "migration");
+        var devices = rows.Count(static r => r.Kind == "device");
         var withAudio = rows.Count(static r => !string.IsNullOrWhiteSpace(r.AudioFile));
 
         log?.Report(
-            $"  Voice Memos inventory: {rows.Count} record " +
-            $"(CloudRecording={recordings}, Migration={migrations}, audio={withAudio}) " +
-            $"→ {Path.GetFileName(tsvPath)}");
+            $"  Voice Memos inventory: {rows.Count} rows " +
+            $"(recordings={recordings}, migrations={migrations}, devices={devices}, " +
+            $"audio={withAudio}, sidecars={sidecars}) → {Path.GetFileName(tsvPath)}");
 
         return new InventorySummary(
-            rows.Count, recordings, migrations, withAudio, tsvPath, jsonPath);
+            rows.Count, recordings, migrations, devices, withAudio, sidecars, tsvPath, jsonPath);
+    }
+
+    private static List<Row> DedupRows(List<Row> rows) =>
+        rows
+            .GroupBy(static r => $"{r.Kind}:{r.RecordType}:{r.RecordName}", StringComparer.OrdinalIgnoreCase)
+            .Select(static g => g
+                .OrderByDescending(static r => !string.IsNullOrWhiteSpace(r.Title))
+                .ThenByDescending(static r => !string.IsNullOrWhiteSpace(r.AudioFile))
+                .ThenByDescending(static r => !string.IsNullOrWhiteSpace(r.OsBuild))
+                .First())
+            .OrderBy(static r => r.Kind, StringComparer.Ordinal)
+            .ThenBy(static r => r.DateUtc ?? r.OsVersion ?? "", StringComparer.Ordinal)
+            .ThenBy(static r => r.RecordName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static string? WriteAudioSidecar(
+        string containerDirectory,
+        string audioFileName,
+        VoiceMemosSyncRecordParser.ParsedRecord rec,
+        string? title,
+        IReadOnlyList<VoiceMemosSyncRecordParser.ParsedMetadataDevice> relatedDevices)
+    {
+        var audioDir = Path.Combine(containerDirectory, "audio");
+        var audioPath = Path.Combine(audioDir, audioFileName);
+        if (!File.Exists(audioPath))
+            return null;
+
+        var metaName = Path.GetFileNameWithoutExtension(audioFileName) + ".meta.json";
+        var metaPath = Path.Combine(audioDir, metaName);
+        var payload = new
+        {
+            audioFile = audioFileName,
+            title,
+            recordName = rec.RecordName,
+            recordType = rec.RecordType,
+            entityName = rec.EntityName,
+            uniqueId = rec.UniqueId,
+            dateUtc = rec.DateUtc,
+            deviceHint = rec.DeviceHint,
+            durationSeconds = rec.DurationSeconds,
+            hasCkAsset = rec.HasCkAsset,
+            fields = rec.FieldNames,
+            relatedDevices = relatedDevices.Select(static d => new
+            {
+                deviceId = d.DeviceId,
+                deviceClass = d.DeviceClass,
+                osType = d.OsType,
+                osVersion = d.OsVersion,
+                osBuild = d.OsBuild,
+                softwareBundleId = d.SoftwareBundleId,
+            }),
+            associatedAtUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+        };
+        File.WriteAllText(
+            metaPath,
+            JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+        return metaName;
     }
 
     private static Dictionary<string, string> LoadTitles(string containerDirectory)
@@ -165,38 +310,29 @@ public static class VoiceMemosInventoryBuilder
         return map;
     }
 
-    private static string? GuessAudioNearRecord(
-        IEnumerable<string> audioFiles,
-        string? title)
-    {
-        if (!string.IsNullOrWhiteSpace(title))
-        {
-            var hit = audioFiles.FirstOrDefault(a =>
-                Path.GetFileNameWithoutExtension(a)
-                    .Contains(title.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (hit is not null)
-                return hit;
-        }
-
-        return audioFiles.Count() == 1 ? audioFiles.First() : null;
-    }
-
     private static void WriteTsv(string path, List<Row> rows)
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "record_name\trecord_type\tentity\ttitle\tunique_id\tdate_utc\tdevice\thas_ckasset\taudio_file\tsync_tag\tfields");
+            "kind\trecord_name\trecord_type\tentity\ttitle\tunique_id\tdate_utc\tduration_s\tdevice\thas_ckasset\taudio_file\taudio_meta\tos_type\tos_version\tos_build\tbundle\tsync_tag\tfields");
         foreach (var r in rows)
         {
-            sb.Append(Esc(r.RecordName)).Append('\t')
+            sb.Append(Esc(r.Kind)).Append('\t')
+                .Append(Esc(r.RecordName)).Append('\t')
                 .Append(Esc(r.RecordType)).Append('\t')
                 .Append(Esc(r.EntityName)).Append('\t')
                 .Append(Esc(r.Title)).Append('\t')
                 .Append(Esc(r.UniqueId)).Append('\t')
                 .Append(Esc(r.DateUtc)).Append('\t')
+                .Append(r.DurationSeconds?.ToString(CultureInfo.InvariantCulture) ?? "").Append('\t')
                 .Append(Esc(r.DeviceHint)).Append('\t')
                 .Append(r.HasCkAsset ? "1" : "0").Append('\t')
                 .Append(Esc(r.AudioFile)).Append('\t')
+                .Append(Esc(r.AudioMetaFile)).Append('\t')
+                .Append(Esc(r.OsType)).Append('\t')
+                .Append(Esc(r.OsVersion)).Append('\t')
+                .Append(Esc(r.OsBuild)).Append('\t')
+                .Append(Esc(r.SoftwareBundleId)).Append('\t')
                 .Append(Esc(r.SyncTag)).Append('\t')
                 .Append(Esc(r.Fields))
                 .AppendLine();
@@ -211,25 +347,38 @@ public static class VoiceMemosInventoryBuilder
         {
             generatedAtUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
             count = rows.Count,
-            records = rows.Select(static r => new
-            {
-                recordName = r.RecordName,
-                recordType = r.RecordType,
-                entityName = r.EntityName,
-                title = r.Title,
-                uniqueId = r.UniqueId,
-                dateUtc = r.DateUtc,
-                deviceHint = r.DeviceHint,
-                hasCkAsset = r.HasCkAsset,
-                audioFile = r.AudioFile,
-                syncTag = r.SyncTag,
-                fields = r.Fields.Split(',', StringSplitOptions.RemoveEmptyEntries),
-            }),
+            recordings = rows.Where(static r => r.Kind == "recording").Select(ToJsonRow),
+            migrations = rows.Where(static r => r.Kind == "migration").Select(ToJsonRow),
+            devices = rows.Where(static r => r.Kind == "device").Select(ToJsonRow),
         };
         File.WriteAllText(
             path,
             JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
     }
+
+    private static object ToJsonRow(Row r) => new
+    {
+        kind = r.Kind,
+        recordName = r.RecordName,
+        recordType = r.RecordType,
+        entityName = r.EntityName,
+        title = r.Title,
+        uniqueId = r.UniqueId,
+        dateUtc = r.DateUtc,
+        durationSeconds = r.DurationSeconds,
+        deviceHint = r.DeviceHint,
+        hasCkAsset = r.HasCkAsset,
+        audioFile = r.AudioFile,
+        audioMetaFile = r.AudioMetaFile,
+        osType = r.OsType,
+        osVersion = r.OsVersion,
+        osBuild = r.OsBuild,
+        softwareBundleId = r.SoftwareBundleId,
+        syncTag = r.SyncTag,
+        fields = string.IsNullOrWhiteSpace(r.Fields)
+            ? Array.Empty<string>()
+            : r.Fields.Split(',', StringSplitOptions.RemoveEmptyEntries),
+    };
 
     private static string Esc(string? s)
     {
