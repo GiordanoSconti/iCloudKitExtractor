@@ -1,9 +1,11 @@
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Protocol;
 using iCloudKitExtractor.Services;
+using iCloudKitExtractor.Services.Forensics;
 using Microsoft.Data.Sqlite;
 
 namespace iCloudKitExtractor.Services.Backup;
@@ -30,10 +32,31 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
         string snapshotDirectory,
         CancellationToken ct = default)
     {
+        SqliteBootstrap.EnsureInitialized();
         Directory.CreateDirectory(snapshotDirectory);
         var dbPath = Path.Combine(snapshotDirectory, "Manifest.db");
-        var conn = new SqliteConnection($"Data Source={dbPath};Default Timeout=30");
-        await conn.OpenAsync(ct);
+        // Path snapshot spesso contiene `[GUID][timestamp]` — ConnectionStringBuilder
+        // evita che `[…]` spezzi la connection string (TargetInvocationException).
+        var cs = new SqliteConnectionStringBuilder
+        {
+            DataSource = dbPath,
+            DefaultTimeout = 30,
+        }.ToString();
+        SqliteConnection conn;
+        try
+        {
+            conn = new SqliteConnection(cs);
+            await conn.OpenAsync(ct);
+        }
+        catch (Exception ex) when (ex is TypeInitializationException
+                                       or TargetInvocationException
+                                       or InvalidOperationException
+                                       or SqliteException)
+        {
+            throw new InvalidOperationException(
+                $"Apertura Manifest.db fallita ({dbPath}). {Flatten(ex)}",
+                ex);
+        }
 
         await using (var cmd = conn.CreateCommand())
         {
@@ -343,6 +366,14 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
         var chars = name.Select(c =>
             char.IsLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_').ToArray();
         return new string(chars);
+    }
+
+    private static string Flatten(Exception ex)
+    {
+        var parts = new List<string>();
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+            parts.Add($"{e.GetType().Name}: {e.Message}");
+        return string.Join(" → ", parts);
     }
 
     public async ValueTask DisposeAsync()

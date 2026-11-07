@@ -181,10 +181,16 @@ public static class CloudKitResponseParser
         // Mai trattare il solo nome header come reason (falso positivo PB/MMCS).
         if (IsAppleHttpHeaderName(s))
             return false;
+        // Bundle ID / dominio backup (es. com.apple.askpermissiond) NON sono errori:
+        // "permission" da solo faceva scartare M: validi come payload vuoto.
+        if (LooksLikeAppleBundleOrDomain(s))
+            return false;
         return s.Contains("error", StringComparison.OrdinalIgnoreCase)
             || s.Contains("notFound", StringComparison.OrdinalIgnoreCase)
             || s.Contains("not found", StringComparison.OrdinalIgnoreCase)
-            || s.Contains("permission", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("permission denied", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("PERMISSION_DENIED", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("insufficient permissions", StringComparison.OrdinalIgnoreCase)
             || s.Contains("retry", StringComparison.OrdinalIgnoreCase)
             || s.Contains("missing filter", StringComparison.OrdinalIgnoreCase)
             || s.Contains("BAD_SYNTAX", StringComparison.OrdinalIgnoreCase)
@@ -200,6 +206,30 @@ public static class CloudKitResponseParser
             || s.Contains("forbidden", StringComparison.OrdinalIgnoreCase)
             || s.Contains("quota", StringComparison.OrdinalIgnoreCase)
             || s.Contains("throttl", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Bundle ID / entitlement / domain tipici nei record Manifest (files),
+    /// non messaggi di errore CloudKit.
+    /// </summary>
+    private static bool LooksLikeAppleBundleOrDomain(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s))
+            return false;
+        var t = s.TrimStart('-', '+', ' ', '\t');
+        return t.StartsWith("com.apple.", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("group.com.apple.", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("systemgroup.", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("AppDomain-", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("AppDomainGroup-", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("HomeDomain", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("CameraRollDomain", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("MediaDomain", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("WirelessDomain", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("DatabaseDomain", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("KeychainDomain", StringComparison.OrdinalIgnoreCase)
+               || t.StartsWith("RootDomain", StringComparison.OrdinalIgnoreCase)
+               || t.Contains("CanModifyAppLinkPermissions", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool LooksLikeUuidOrOwner(string s)

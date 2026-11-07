@@ -431,7 +431,7 @@ public sealed class BackupDownloadService
 
         EnFetchResult? enFetch = _assets.LastEnFetch;
         if (enFetch is null
-            && catalog.Source.StartsWith("modern", StringComparison.OrdinalIgnoreCase)
+            && IsModernOrDualCatalog(catalog.Source)
             && catalog.CnEntryCount > 0)
         {
             progress?.Report(new DownloadProgressReport { Status = "EN: file list post-Lock…" });
@@ -500,8 +500,7 @@ public sealed class BackupDownloadService
         var assets = await ResolveAssetsForCatalogAsync(
             session, job, catalog, log, ct, enFetch);
 
-        var isModernCn = string.Equals(
-            catalog.Source, "modern-CN", StringComparison.OrdinalIgnoreCase);
+        var isModernCn = IsModernOrDualCatalog(catalog.Source);
         var kalamaSeeds = enFetch is not null
             ? CollectKaLaMaSeeds(enFetch, job.Device)
             : [];
@@ -3239,6 +3238,11 @@ public sealed class BackupDownloadService
     /// <summary>
     /// Conta come «Cifrati» solo se scritto in Backup/ e MMCS/Ford non ha prodotto plaintext.
     /// </summary>
+    private static bool IsModernOrDualCatalog(string? source) =>
+        !string.IsNullOrWhiteSpace(source)
+        && (source.StartsWith("modern", StringComparison.OrdinalIgnoreCase)
+            || source.StartsWith("dual", StringComparison.OrdinalIgnoreCase));
+
     private static bool CountsAsCiphertextOnDisk(in AssetDownloadOutcome one) =>
         one.WrittenSharded && !one.MmcsDecrypted;
 
@@ -5610,11 +5614,12 @@ public sealed class BackupDownloadService
         var byF2 = MmcsAuthBuilder.IndexAuthsByChecksum(preAuth);
         log?.Report($"  PreAuth auth disponibili: {preAuth.Count} (indice f2={byF2.Count})");
 
-        // Path moderno: :CN: → EN: (capture); fallback discovery/PreAuth.
-        if (string.Equals(catalog.Source, "modern-CN", StringComparison.OrdinalIgnoreCase))
+        // Path moderno / dual: :CN: → EN: (capture); fallback discovery/PreAuth.
+        // dual-CN+M ha già confrontato M: in catalogo; il download resta su EN:.
+        if (IsModernOrDualCatalog(catalog.Source))
         {
             log?.Report(
-                "  catalogo modern-CN — auth MMCS da EN: (preferito) / PreAuth / query KA:MA");
+                $"  catalogo {catalog.Source} — auth MMCS da EN: (preferito) / PreAuth / query KA:MA");
             return await ResolveModernCnDownloadAssetsAsync(
                 session, job, byF2, log, ct, enFetch);
         }

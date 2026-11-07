@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Protocol;
 
@@ -8,7 +9,10 @@ namespace iCloudKitExtractor.Services.Backup;
 /// <summary>Risultato del catalogo file deterministico (classico M: o moderno :CN:).</summary>
 public sealed class DeterministicFileCatalog
 {
-    /// <summary><c>classic-M</c> oppure <c>modern-CN</c>.</summary>
+    /// <summary>
+    /// <c>classic-M</c>, <c>modern-CN</c>, oppure <c>dual-CN+M</c>
+    /// (download su :CN:, M: risolto in sequenza per confronto).
+    /// </summary>
     public required string Source { get; init; }
 
     public required IReadOnlyList<string> ManifestIds { get; init; }
@@ -16,6 +20,9 @@ public sealed class DeterministicFileCatalog
     public required IReadOnlyDictionary<string, int> FilesPerManifest { get; init; }
     public int CnEntryCount { get; init; }
     public byte[]? SnapshotPayload { get; init; }
+
+    /// <summary>Nomi file dal path M: quando è stato eseguito in dual-mode (diagnostica).</summary>
+    public IReadOnlyList<string> ClassicFileRecordNames { get; init; } = [];
 }
 
 /// <summary>
@@ -97,17 +104,142 @@ public sealed class BackupDeterministicCatalogService
             }, new JsonSerializerOptions { WriteIndented = true }),
             ct);
 
-        // Preferisci classico solo se M: è davvero presente; altrimenti path moderno :CN:.
+        // Se entrambi presenti: esegui :CN: e M: in sequenza, confronta UUID,
+        // download resta sul path moderno (allineato a N:/EN: post-Lock).
+        if (cnEntries.Count > 0 && manifestIds.Count > 0)
+        {
+            log?.Report(
+                $"  catalogo dual: :CN: ({cnEntries.Count} file UUID) + M: ({manifestIds.Count}) " +
+                "in sequenza — confronto UUID, download su :CN:");
+            var modern = await ResolveModernCnAsync(
+                snapshot, outputDirectory, sPayload, cnEntries, log, ct);
+            var classic = await ResolveClassicMAsync(
+                session, snapshot, outputDirectory, sPayload, manifestIds, restore, log, ct);
+            return await MergeDualCatalogAsync(
+                outputDirectory, sPayload, modern, classic, log, ct);
+        }
+
+        if (cnEntries.Count > 0)
+            return await ResolveModernCnAsync(
+                snapshot, outputDirectory, sPayload, cnEntries, log, ct);
+
         if (manifestIds.Count > 0)
             return await ResolveClassicMAsync(
                 session, snapshot, outputDirectory, sPayload, manifestIds, restore, log, ct);
 
-        if (cnEntries.Count > 0)
-            return await ResolveModernCnAsync(snapshot, outputDirectory, sPayload, cnEntries, log, ct);
-
         throw new InvalidOperationException(
             $"Nessun catalogo file nel snapshot {snapshot.RecordName}: " +
             "manifestIDs(M:)=0 e voci :CN:=0.");
+    }
+
+    private static async Task<DeterministicFileCatalog> MergeDualCatalogAsync(
+        string outputDirectory,
+        byte[] sPayload,
+        DeterministicFileCatalog modern,
+        DeterministicFileCatalog classic,
+        IProgress<string>? log,
+        CancellationToken ct)
+    {
+        var cnUuids = modern.FileRecordNames
+            .Select(TryExtractUuid)
+            .Where(static u => u is not null)
+            .Cast<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var mUuids = classic.FileRecordNames
+            .Select(TryExtractUuid)
+            .Where(static u => u is not null)
+            .Cast<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var onlyCn = cnUuids.Except(mUuids, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var onlyM = mUuids.Except(cnUuids, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var both = cnUuids.Intersect(mUuids, StringComparer.OrdinalIgnoreCase).Count();
+
+        // Nomi M: senza UUID riconoscibile (F:/KA: opachi) — conta a parte.
+        var classicNoUuid = classic.FileRecordNames
+            .Where(n => TryExtractUuid(n) is null)
+            .ToList();
+
+        log?.Report(
+            $"  dual confronto UUID: :CN:={cnUuids.Count}, M:={mUuids.Count}, " +
+            $"intersezione={both}, solo:CN:={onlyCn.Count}, solo:M:={onlyM.Count}" +
+            (classicNoUuid.Count > 0
+                ? $", M: senza UUID parseable={classicNoUuid.Count}"
+                : ""));
+
+        if (onlyM.Count > 0)
+        {
+            log?.Report(
+                $"  ATTENZIONE: {onlyM.Count} UUID solo in M: (assenti da :CN:) — " +
+                "sample: " + string.Join(", ", onlyM.Take(8)));
+        }
+
+        if (onlyCn.Count > 0)
+        {
+            log?.Report(
+                $"  dual: {onlyCn.Count} UUID solo in :CN: (assenti da M:) — " +
+                "sample: " + string.Join(", ", onlyCn.Take(8)));
+        }
+
+        var perManifest = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var kv in classic.FilesPerManifest)
+            perManifest[kv.Key] = kv.Value;
+        perManifest[":CN:"] = modern.FileRecordNames.Count;
+        perManifest["M:unique"] = classic.FileRecordNames.Count;
+        perManifest["uuid:only-CN"] = onlyCn.Count;
+        perManifest["uuid:only-M"] = onlyM.Count;
+        perManifest["uuid:both"] = both;
+
+        await File.WriteAllTextAsync(
+            Path.Combine(outputDirectory, "catalog_m_vs_cn.json"),
+            JsonSerializer.Serialize(new
+            {
+                source = "dual-CN+M",
+                downloadSource = "modern-CN",
+                cnRecordCount = modern.FileRecordNames.Count,
+                classicRecordCount = classic.FileRecordNames.Count,
+                cnUuidCount = cnUuids.Count,
+                classicUuidCount = mUuids.Count,
+                uuidIntersection = both,
+                uuidOnlyInCn = onlyCn.Count,
+                uuidOnlyInM = onlyM.Count,
+                classicNamesWithoutUuid = classicNoUuid.Count,
+                uuidOnlyInCnSample = onlyCn.Take(64),
+                uuidOnlyInMSample = onlyM.Take(64),
+                classicNoUuidSample = classicNoUuid.Take(32),
+                classicManifestIds = classic.ManifestIds,
+                note = "Download usa :CN:/EN:. M: eseguito in sequenza solo per confronto."
+            }, new JsonSerializerOptions { WriteIndented = true }),
+            ct);
+
+        return new DeterministicFileCatalog
+        {
+            Source = "dual-CN+M",
+            ManifestIds = classic.ManifestIds,
+            // Download moderno legge Source dual/modern → ResolveModernCnDownloadAssetsAsync
+            FileRecordNames = modern.FileRecordNames,
+            FilesPerManifest = perManifest,
+            CnEntryCount = modern.CnEntryCount,
+            SnapshotPayload = sPayload,
+            ClassicFileRecordNames = classic.FileRecordNames,
+        };
+    }
+
+    private static readonly Regex UuidRegex = new(
+        @"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}",
+        RegexOptions.Compiled);
+
+    private static string? TryExtractUuid(string? recordName)
+    {
+        if (string.IsNullOrWhiteSpace(recordName))
+            return null;
+        var m = UuidRegex.Match(recordName);
+        return m.Success ? m.Value.ToUpperInvariant() : null;
     }
 
     private static async Task<DeterministicFileCatalog> ResolveModernCnAsync(
@@ -258,12 +390,17 @@ public sealed class BackupDeterministicCatalogService
                 [recordName],
                 restore?.ToRequestContext());
             var payload = await _gateway.RecordRetrieveAsync(session, body, ct, restore);
-            if (payload.Length >= 64
-                && !CloudKitResponseParser.IsCloudKitErrorPayload(payload, out _))
+            // Record M: validi contengono domini tipo com.apple.askpermissiond —
+            // non usare solo IsCloudKitErrorPayload (falsi positivi su "permission").
+            if (LooksLikeManifestRecordPayload(payload))
                 return payload;
 
-            if (CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err))
+            if (payload.Length > 0
+                && CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err))
                 log?.Report($"  retrieve {recordName}: {err}");
+            else if (payload.Length > 0)
+                log?.Report(
+                    $"  retrieve {recordName}: risposta {payload.Length:N0} B non riconosciuta come M:");
         }
         catch (Exception ex)
         {
@@ -273,8 +410,7 @@ public sealed class BackupDeterministicCatalogService
         try
         {
             var payload = await _query.QueryFetchPayloadAsync(session, recordName, restore, ct);
-            if (payload.Length >= 64
-                && !CloudKitResponseParser.IsCloudKitErrorPayload(payload, out _))
+            if (LooksLikeManifestRecordPayload(payload))
             {
                 log?.Report($"  query M: OK ({payload.Length:N0} byte)");
                 return payload;
@@ -286,6 +422,28 @@ public sealed class BackupDeterministicCatalogService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Payload M: tipico: abbastanza grande e/o contiene il campo <c>files</c>
+    /// (anche se IsCloudKitErrorPayload darebbe falso positivo su bundle ID).
+    /// </summary>
+    private static bool LooksLikeManifestRecordPayload(byte[]? payload)
+    {
+        if (payload is not { Length: >= 64 })
+            return false;
+        if (!CloudKitResponseParser.IsCloudKitErrorPayload(payload, out _))
+            return true;
+
+        // Falso positivo sospetto: body sostanzioso con marker "files" / F: / KA:.
+        if (payload.Length < 200)
+            return false;
+        var text = System.Text.Encoding.Latin1.GetString(payload);
+        return text.Contains("files", StringComparison.Ordinal)
+               || text.Contains("F:", StringComparison.Ordinal)
+               || text.Contains("KA:", StringComparison.Ordinal)
+               || text.Contains("MA:", StringComparison.Ordinal)
+               || text.Contains("Manifest", StringComparison.Ordinal);
     }
 
     private static string Sanitize(string name)

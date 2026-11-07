@@ -10,9 +10,14 @@ namespace iCloudKitExtractor.Protocol;
 /// </summary>
 public static class CloudKitManifestCatalogParser
 {
-    /// <summary><c>M:&lt;uuid&gt;:&lt;hmacBase64&gt;</c> (senza suffisso <c>:0</c>).</summary>
+    /// <summary>
+    /// <c>M:&lt;uuid&gt;:&lt;hmacBase64&gt;</c> (senza suffisso <c>:0</c>).
+    /// La signature è base64 «strict»: body <c>[A-Za-z0-9+/_-]+</c> + padding <c>={0,2}</c>.
+    /// Non mettere <c>=</c> nel body — altrimenti il match mangia byte protobuf dopo il padding
+    /// (es. <c>…Yp0=ZG</c> invece di <c>…Yp0=</c>) e record/retrieve torna vuoto.
+    /// </summary>
     private static readonly Regex ManifestIdRegex = new(
-        @"M:[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}:[A-Za-z0-9+/=_-]{8,96}",
+        @"M:(?<uuid>[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}):(?<sig>[A-Za-z0-9+/_-]{8,88}={0,2})",
         RegexOptions.Compiled);
 
     /// <summary>Riferimenti file nel campo <c>files</c> (F:/KA:/MA:/…).</summary>
@@ -106,14 +111,65 @@ public static class CloudKitManifestCatalogParser
         if (string.IsNullOrWhiteSpace(raw))
             return null;
         var id = raw.Trim();
-        // Match regex può includere caratteri di confini; taglia a M:…:hash
+        while (id.EndsWith(":0", StringComparison.Ordinal))
+            id = id[..^2];
+
         var m = ManifestIdRegex.Match(id);
         if (!m.Success)
             return null;
-        id = m.Value;
-        while (id.EndsWith(":0", StringComparison.Ordinal))
-            id = id[..^2];
-        return id;
+
+        var uuid = m.Groups["uuid"].Value;
+        var sig = TrimBase64Signature(m.Groups["sig"].Value);
+        if (sig is null)
+            return null;
+
+        return $"M:{uuid}:{sig}";
+    }
+
+    /// <summary>
+    /// HMAC tipico SHA-1 (28 char con <c>=</c>) o SHA-256 (44). Taglia garbage dopo il padding.
+    /// </summary>
+    private static string? TrimBase64Signature(string sig)
+    {
+        if (string.IsNullOrWhiteSpace(sig) || sig.Length < 8)
+            return null;
+
+        // Se c'è padding, tutto dopo l'ultimo blocco =… è junk protobuf.
+        var pad = sig.IndexOf('=');
+        if (pad >= 0)
+        {
+            var end = pad;
+            while (end < sig.Length && sig[end] == '=')
+                end++;
+            // Max 2 byte di padding base64.
+            if (end - pad > 2)
+                end = pad + 2;
+            sig = sig[..end];
+        }
+
+        if (sig.Length is < 8 or > 88)
+            return null;
+
+        // Decodifica: lunghezza digest 16/20/32 (MD5/SHA1/SHA256) tipica Apple.
+        try
+        {
+            var b64 = sig.Replace('-', '+').Replace('_', '/');
+            switch (b64.Length % 4)
+            {
+                case 2: b64 += "=="; break;
+                case 3: b64 += "="; break;
+            }
+
+            var bytes = Convert.FromBase64String(b64);
+            if (bytes.Length is not (16 or 20 or 32))
+                return null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+
+        return sig;
     }
 
     private static string? SliceAfterMarker(string text, string marker, int maxChars)
