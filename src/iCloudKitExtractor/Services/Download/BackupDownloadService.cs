@@ -3057,6 +3057,16 @@ public sealed class BackupDownloadService
                 $"(falliti={uiFailed:N0}, cifrati={uiCipher:N0}, staged={stagedChunks}, " +
                 $"MMCS={mmcsOk}, AES={fileDecryptOk}) → Backup/"
         });
+        // Chiudi Manifest.db (WAL checkpoint) prima delle firme SHA-256.
+        try
+        {
+            await fsWriter.CloseForHashingAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            log?.Report($"  Manifest.db close pre-HASH: {ex.Message}");
+        }
+
         await WriteOutputHashManifestAsync(snapshotRoot, progress, log, ct)
             .ConfigureAwait(false);
         }

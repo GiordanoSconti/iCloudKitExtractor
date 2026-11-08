@@ -96,7 +96,9 @@ public static class NotesHtmlViewerPublisher
         string containerDirectory,
         CancellationToken ct)
     {
-        await using var db = await NotesCatalogSqlite.OpenAsync(containerDirectory, ct);
+        var db = await NotesCatalogSqlite.OpenAsync(containerDirectory, ct);
+        try
+        {
         var folders = await db.ListFoldersAsync(ct);
         var notes = await db.ListNotesAsync(ct);
 
@@ -163,6 +165,11 @@ public static class NotesHtmlViewerPublisher
             NoteCount: noteDtos.Count,
             Folders: folderDtos,
             Notes: noteDtos);
+        }
+        finally
+        {
+            await db.CloseForHashingAsync(ct).ConfigureAwait(false);
+        }
     }
 
     private static void EnsureVirtualFolder(

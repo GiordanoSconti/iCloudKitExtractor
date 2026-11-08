@@ -41,6 +41,7 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
         {
             DataSource = dbPath,
             DefaultTimeout = 30,
+            Pooling = false,
         }.ToString();
         SqliteConnection conn;
         try
@@ -376,11 +377,50 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
         return string.Join(" → ", parts);
     }
 
+    /// <summary>
+    /// Checkpoint WAL + chiudi connessione così HASH/integrità può leggere
+    /// <c>Manifest.db</c> senza lock (e -wal/-shm si consolidano).
+    /// </summary>
+    public async Task CloseForHashingAsync(CancellationToken ct = default)
+    {
+        if (!_opened)
+            return;
+
+        try
+        {
+            await _dbWrite.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await using var cmd = _conn.CreateCommand();
+                cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                _dbWrite.Release();
+            }
+        }
+        catch
+        {
+            // Checkpoint best-effort: chiudi comunque.
+        }
+
+        await DisposeAsync().ConfigureAwait(false);
+    }
+
     public async ValueTask DisposeAsync()
     {
-        if (_opened)
-            await _conn.DisposeAsync();
-        _dbWrite.Dispose();
+        if (!_opened)
+            return;
+        _opened = false;
+        try
+        {
+            await _conn.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _dbWrite.Dispose();
+        }
     }
 
     // #region agent log

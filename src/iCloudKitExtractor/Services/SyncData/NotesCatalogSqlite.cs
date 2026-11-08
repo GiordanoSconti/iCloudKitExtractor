@@ -19,7 +19,14 @@ public sealed class NotesCatalogSqlite : IAsyncDisposable
         var dbPath = Path.Combine(notesDir, "Notes.db");
         try
         {
-            var conn = new SqliteConnection($"Data Source={dbPath}");
+            // Pooling=False: altrimenti dopo Dispose il pool tiene il file lock
+            // e HASH su Notes.db / -wal / -shm fallisce ("used by another process").
+            var cs = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Pooling = false,
+            }.ToString();
+            var conn = new SqliteConnection(cs);
             await conn.OpenAsync(ct);
             await EnsureSchemaAsync(conn, ct);
             return new NotesCatalogSqlite(conn) { _opened = true };
@@ -46,6 +53,8 @@ public sealed class NotesCatalogSqlite : IAsyncDisposable
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
             """
+            PRAGMA journal_mode=WAL;
+            PRAGMA busy_timeout=30000;
             CREATE TABLE IF NOT EXISTS folders (
               record_name TEXT PRIMARY KEY,
               name TEXT,
@@ -270,11 +279,31 @@ public sealed class NotesCatalogSqlite : IAsyncDisposable
         return list;
     }
 
+    /// <summary>Checkpoint WAL + chiusura prima di HASH sull'albero Sync Data.</summary>
+    public async Task CloseForHashingAsync(CancellationToken ct = default)
+    {
+        if (!_opened)
+            return;
+        try
+        {
+            await using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // best-effort
+        }
+
+        await DisposeAsync().ConfigureAwait(false);
+    }
+
     public async ValueTask DisposeAsync()
     {
-        if (_opened)
-            await _conn.DisposeAsync();
+        if (!_opened)
+            return;
         _opened = false;
+        await _conn.DisposeAsync().ConfigureAwait(false);
     }
 
     public sealed record FolderRow(

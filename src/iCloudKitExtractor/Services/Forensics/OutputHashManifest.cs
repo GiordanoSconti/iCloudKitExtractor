@@ -40,6 +40,11 @@ public static class OutputHashManifest
                     excluded.Add(n.Trim());
         }
 
+        // Rilascia handle residui del pool Microsoft.Data.Sqlite (Notes.db / Photos.db /
+        // Manifest.db) prima di aprire i file in sola lettura.
+        try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); }
+        catch { /* ignore */ }
+
         var files = EnumerateFiles(rootDirectory, excluded)
             .OrderBy(p => Path.GetRelativePath(rootDirectory, p).Replace('\\', '/'), StringComparer.Ordinal)
             .ToList();
@@ -62,7 +67,13 @@ public static class OutputHashManifest
             long size;
             try
             {
-                await using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                // ReadWrite|Delete: Manifest.db (+ -wal/-shm) può restare aperto da SQLite
+                // in WAL durante il download; FileShare.Read esclusivo faceva "hash skip".
+                await using var stream = File.Open(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
                 size = stream.Length;
                 var hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
                 hex = Convert.ToHexString(hash).ToLowerInvariant();
@@ -116,7 +127,11 @@ public static class OutputHashManifest
         {
             if (!File.Exists(path))
                 return null;
-            using var stream = File.OpenRead(path);
+            using var stream = File.Open(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
             return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
         }
         catch

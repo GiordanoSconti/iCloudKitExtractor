@@ -178,7 +178,7 @@ public static class NotesLibraryBuilder
         log?.Report(
             $"  Notes.db: cartelle={folderCount}, note={noteCount}, plaintext={plainCount} → {dbPath}");
 
-        await db.DisposeAsync();
+        await db.CloseForHashingAsync(ct).ConfigureAwait(false);
         return new BuildSummary(folderCount, noteCount, plainCount, dbPath);
     }
 
