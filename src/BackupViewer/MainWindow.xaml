@@ -1,0 +1,244 @@
+﻿<Window x:Class="BackupViewer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:BackupViewer.Views"
+        Title="Backup Viewer"
+        Height="860" Width="1360"
+        MinHeight="640" MinWidth="1000"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource CanvasBrush}"
+        FontFamily="{StaticResource UiFont}"
+        TextOptions.TextFormattingMode="Display">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="52"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="28"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top bar -->
+        <Border Grid.Row="0" Background="{StaticResource PaperBrush}"
+                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+            <DockPanel Margin="16,0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Backup Viewer"
+                               FontSize="16" FontWeight="SemiBold"
+                               Foreground="{StaticResource InkBrush}"/>
+                    <TextBlock x:Name="PathLabel" Margin="16,0,0,0" FontSize="12"
+                               Foreground="{StaticResource MutedBrush}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="720"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                            HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Content="Apri backup…" Style="{StaticResource ToolButton}"
+                            Click="OpenBackup_OnClick"/>
+                    <TextBox x:Name="SearchBox" Width="220" Height="30"
+                             VerticalContentAlignment="Center" Padding="10,2"
+                             BorderBrush="{StaticResource LineBrush}"
+                             Background="{StaticResource PanelBrush}"
+                             TextChanged="SearchBox_OnTextChanged"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" MinWidth="180"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- AFV-style module sidebar -->
+            <Border Grid.Column="0" Background="{StaticResource PanelBrush}"
+                    BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Margin="16,16,16,8"
+                               FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource SubtleBrush}"
+                               Text="MODULI"/>
+                    <ListBox x:Name="ModuleList"
+                             BorderThickness="0" Background="Transparent"
+                             Padding="4,0,4,12"
+                             ItemContainerStyle="{StaticResource ModuleNavItem}"
+                             SelectionChanged="ModuleList_OnSelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel>
+                                    <TextBlock Text="{Binding Glyph}" Width="22"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="15" VerticalAlignment="Center"
+                                               Foreground="{StaticResource AccentBrush}"/>
+                                    <TextBlock Text="{Binding Caption}" FontSize="13"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource InkBrush}"/>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- Content host -->
+            <Grid Grid.Column="1">
+                <views:OverviewView x:Name="OverviewPanel" Visibility="Collapsed"
+                                    ModuleRequested="Overview_OnModuleRequested"/>
+
+                <Grid x:Name="CoreHost" Visibility="Collapsed"
+                      Background="{StaticResource PaperBrush}">
+                    <views:ChatView x:Name="ChatPanel" Visibility="Collapsed"/>
+                    <views:CallsView x:Name="CallsPanel" Visibility="Collapsed"/>
+                    <views:CalendarView x:Name="CalendarPanel" Visibility="Collapsed"/>
+                    <views:ContactsView x:Name="ContactsPanel" Visibility="Collapsed"/>
+                </Grid>
+
+                <!-- Files browser (path tree + preview) -->
+                <Grid x:Name="FilesHost" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="220" MinWidth="140"/>
+                        <ColumnDefinition Width="4"/>
+                        <ColumnDefinition Width="*" MinWidth="200"/>
+                        <ColumnDefinition Width="4"/>
+                        <ColumnDefinition Width="2*" MinWidth="280"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Background="{StaticResource PaperBrush}"
+                            BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Margin="14,14,14,6"
+                                       FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource SubtleBrush}"
+                                       Text="FILTRI"/>
+                            <TreeView x:Name="NavTree" BorderThickness="0" Background="Transparent"
+                                      Padding="6,0,6,12"
+                                      SelectedItemChanged="NavTree_OnSelectedItemChanged"
+                                      ItemContainerStyle="{StaticResource NavItem}">
+                                <TreeView.ItemTemplate>
+                                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                        <TextBlock Text="{Binding Caption}" TextTrimming="CharacterEllipsis"/>
+                                    </HierarchicalDataTemplate>
+                                </TreeView.ItemTemplate>
+                            </TreeView>
+                        </DockPanel>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                                  Background="{StaticResource CanvasBrush}"
+                                  ResizeBehavior="PreviousAndNext"/>
+
+                    <Border x:Name="BrowserHost" Grid.Column="2" Background="{StaticResource PaperBrush}">
+                        <DockPanel>
+                            <TextBlock x:Name="ListHeader" DockPanel.Dock="Top"
+                                       Margin="14,14,14,8" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource SubtleBrush}" Text="CONTENUTO"/>
+                            <TreeView x:Name="PathTree" BorderThickness="0" Background="Transparent"
+                                      Padding="4,0,4,8"
+                                      VirtualizingStackPanel.IsVirtualizing="True"
+                                      VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                      SelectedItemChanged="PathTree_OnSelectedItemChanged"
+                                      ItemContainerStyle="{StaticResource NavItem}">
+                                <TreeView.ItemTemplate>
+                                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                        <TextBlock Text="{Binding Caption}"
+                                                   TextTrimming="CharacterEllipsis" MaxWidth="460"/>
+                                    </HierarchicalDataTemplate>
+                                </TreeView.ItemTemplate>
+                            </TreeView>
+                        </DockPanel>
+                    </Border>
+
+                    <GridSplitter x:Name="BrowserSplitter" Grid.Column="3" Width="4"
+                                  HorizontalAlignment="Stretch"
+                                  Background="{StaticResource CanvasBrush}"
+                                  ResizeBehavior="PreviousAndNext"/>
+
+                    <Border x:Name="PreviewHost" Grid.Column="4" Background="{StaticResource PaperBrush}"
+                            BorderBrush="{StaticResource LineBrush}" BorderThickness="1,0,0,0">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Top" Padding="14,12"
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+                                <DockPanel>
+                                    <TextBlock x:Name="PreviewTitle" FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource InkBrush}" Text="Anteprima"/>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                                HorizontalAlignment="Right">
+                                        <Button x:Name="SaveFileButton" Content="Salva come…"
+                                                Style="{StaticResource ToolButton}"
+                                                Visibility="Collapsed"
+                                                Click="SaveFile_OnClick"/>
+                                        <StackPanel x:Name="MediaControls" Orientation="Horizontal"
+                                                    Visibility="Collapsed">
+                                            <Button Content="Play" Style="{StaticResource ToolButton}" Click="MediaPlay_OnClick"/>
+                                            <Button Content="Pause" Style="{StaticResource ToolButton}" Click="MediaPause_OnClick"/>
+                                            <Button Content="Stop" Style="{StaticResource ToolButton}" Click="MediaStop_OnClick"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Grid Margin="8">
+                                <TextBox x:Name="PreviewText" Visibility="Collapsed" IsReadOnly="True"
+                                         TextWrapping="NoWrap" AcceptsReturn="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                         BorderThickness="0" Background="Transparent"/>
+                                <ScrollViewer x:Name="PreviewImageHost" Visibility="Collapsed"
+                                              HorizontalScrollBarVisibility="Auto"
+                                              VerticalScrollBarVisibility="Auto">
+                                    <Image x:Name="PreviewImage" Stretch="Uniform" SnapsToDevicePixels="True"/>
+                                </ScrollViewer>
+                                <Border x:Name="PreviewMediaHost" Visibility="Collapsed" Background="#0F172A"/>
+                                <Grid x:Name="PreviewSqliteHost" Visibility="Collapsed">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="180" MinWidth="120"/>
+                                        <ColumnDefinition Width="4"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <DockPanel Grid.Column="0">
+                                        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,6"
+                                                   FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource SubtleBrush}" Text="TABELLE"/>
+                                        <ListBox x:Name="SqliteTableList"
+                                                 BorderBrush="{StaticResource LineBrush}"
+                                                 SelectionChanged="SqliteTableList_OnSelectionChanged"
+                                                 DisplayMemberPath="Caption"/>
+                                    </DockPanel>
+                                    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                                                  Background="{StaticResource CanvasBrush}"
+                                                  ResizeBehavior="PreviousAndNext"/>
+                                    <DockPanel Grid.Column="2">
+                                        <TextBlock x:Name="SqliteStatus" DockPanel.Dock="Bottom"
+                                                   Margin="0,6,0,0" FontSize="11"
+                                                   Foreground="{StaticResource MutedBrush}"/>
+                                        <DataGrid x:Name="PreviewGrid" IsReadOnly="True"
+                                                  AutoGenerateColumns="True" CanUserAddRows="False"
+                                                  HeadersVisibility="Column"
+                                                  GridLinesVisibility="Horizontal" BorderThickness="0"
+                                                  FontFamily="{StaticResource MonoFont}" FontSize="11"
+                                                  EnableRowVirtualization="True"
+                                                  EnableColumnVirtualization="True"/>
+                                    </DockPanel>
+                                </Grid>
+                                <TextBlock x:Name="PreviewEmpty"
+                                           Text="Apri un backup iTunes/IKE e seleziona un file."
+                                           Foreground="{StaticResource MutedBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           TextWrapping="Wrap" Margin="24" FontSize="13"/>
+                            </Grid>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="2" Background="{StaticResource PanelBrush}"
+                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0">
+            <DockPanel Margin="12,0">
+                <TextBlock x:Name="StatusLeft" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{StaticResource MutedBrush}" Text="Pronto"/>
+                <TextBlock x:Name="StatusRight" DockPanel.Dock="Right"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

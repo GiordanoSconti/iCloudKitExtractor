@@ -1,0 +1,54 @@
+<UserControl x:Class="BackupViewer.Views.CallsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="clr-namespace:BackupViewer.Models">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="{StaticResource PaperBrush}"
+                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="12,10">
+            <DockPanel>
+                <TextBlock VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{StaticResource MutedBrush}" Text="CRONOLOGIA CHIAMATE"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock Text="App" VerticalAlignment="Center" Margin="0,0,8,0"
+                               Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                    <ComboBox x:Name="AppFilter" Width="150" Height="28"
+                              SelectionChanged="Filter_OnChanged"/>
+                    <TextBlock Text="Esito" VerticalAlignment="Center" Margin="16,0,8,0"
+                               Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                    <ComboBox x:Name="OutcomeFilter" Width="130" Height="28"
+                              SelectedIndex="0"
+                              SelectionChanged="Filter_OnChanged">
+                        <ComboBoxItem Content="Tutti" Tag=""/>
+                        <ComboBoxItem Content="Risposta" Tag="Answered"/>
+                        <ComboBoxItem Content="Persa" Tag="Missed"/>
+                        <ComboBoxItem Content="Rifiutata" Tag="Rejected"/>
+                        <ComboBoxItem Content="Annullata" Tag="Cancelled"/>
+                    </ComboBox>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <TextBlock x:Name="EmptyLabel" DockPanel.Dock="Bottom" Margin="12"
+                   Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+
+        <ListView x:Name="CallList" BorderThickness="0" Background="Transparent"
+                  VirtualizingStackPanel.IsVirtualizing="True">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Header="Quando" Width="150"
+                                    DisplayMemberBinding="{Binding WhenLabel}"/>
+                    <GridViewColumn Header="App" Width="100"
+                                    DisplayMemberBinding="{Binding App}"/>
+                    <GridViewColumn Header="Contatto" Width="260"
+                                    DisplayMemberBinding="{Binding Peer}"/>
+                    <GridViewColumn Header="Direzione" Width="100"
+                                    DisplayMemberBinding="{Binding DirectionLabel}"/>
+                    <GridViewColumn Header="Esito" Width="100"
+                                    DisplayMemberBinding="{Binding OutcomeLabel}"/>
+                    <GridViewColumn Header="Durata" Width="80"
+                                    DisplayMemberBinding="{Binding DurationLabel}"/>
+                </GridView>
+            </ListView.View>
+        </ListView>
+    </DockPanel>
+</UserControl>

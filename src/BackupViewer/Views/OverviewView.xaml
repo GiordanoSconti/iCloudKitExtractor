@@ -1,0 +1,40 @@
+<UserControl x:Class="BackupViewer.Views.OverviewView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,24"
+                  Background="{StaticResource CanvasBrush}">
+        <StackPanel MaxWidth="960" HorizontalAlignment="Left">
+            <DockPanel Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock x:Name="DeviceTitle" FontSize="26" FontWeight="SemiBold"
+                               Foreground="{StaticResource InkBrush}" Text="Backup"/>
+                    <TextBlock x:Name="DeviceSub" Margin="0,4,0,0" FontSize="13"
+                               Foreground="{StaticResource MutedBrush}" Text=""/>
+                </StackPanel>
+            </DockPanel>
+
+            <UniformGrid Columns="2" Margin="0,0,0,8">
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,8,12">
+                    <StackPanel>
+                        <TextBlock Text="BACKUP" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource SubtleBrush}"/>
+                        <TextBlock x:Name="BackupStats" Margin="0,10,0,0" FontSize="13"
+                                   Foreground="{StaticResource InkBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource CardBorder}" Margin="8,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="DATI PERSONALI" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource SubtleBrush}"/>
+                        <TextBlock x:Name="PersonalStats" Margin="0,10,0,0" FontSize="13"
+                                   Foreground="{StaticResource InkBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <TextBlock Text="MODULI" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,10"
+                       Foreground="{StaticResource SubtleBrush}"/>
+            <UniformGrid Columns="3" x:Name="ModuleGrid"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
