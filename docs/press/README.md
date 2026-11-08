@@ -23,4 +23,5 @@ Canonical links:
 - GitHub: https://github.com/GiordanoSconti/iCloudKitExtractor
 - Notes diary: https://giordanosconti.github.io/iCloudKitExtractor/blog/
 - Releases: https://github.com/GiordanoSconti/iCloudKitExtractor/releases
+- Acquisition matrix (IKE vs EPB / AXIOM / Cellebrite / Oxygen): [../COMPARISON_ICLOUD_ACQUISITION.md](../COMPARISON_ICLOUD_ACQUISITION.md)
 - Contact: giordano.sconti@gruppoinformaticiforensi.it

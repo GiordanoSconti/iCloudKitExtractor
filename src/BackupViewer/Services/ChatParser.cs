@@ -173,25 +173,28 @@ public static class ChatParser
             }
         }
 
+        var hasGroupEvent = SqliteOpen.ColumnExists(con, "ZWAMESSAGE", "ZGROUPEVENTTYPE");
         var list = new List<ChatMessage>();
         using (var cmd = con.CreateCommand())
         {
             var hasMediaTable = SqliteOpen.TableExists(con, "ZWAMEDIAITEM");
+            var groupEventCol = hasGroupEvent ? "m.ZGROUPEVENTTYPE" : "NULL";
             cmd.CommandText = hasMediaTable
-                ? """
+                ? $"""
                   SELECT m.Z_PK, m.ZISFROMME, m.ZMESSAGETYPE, m.ZMESSAGESTATUS, m.ZTEXT,
                          m.ZMESSAGEDATE, m.ZFROMJID, m.ZPUSHNAME, m.ZGROUPMEMBER,
                          mi.ZMEDIALOCALPATH, mi.ZTITLE, mi.ZFILESIZE, mi.ZMOVIEDURATION,
-                         mi.ZXMPPTHUMBPATH
+                         mi.ZXMPPTHUMBPATH, {groupEventCol}
                   FROM ZWAMESSAGE m
                   LEFT JOIN ZWAMEDIAITEM mi ON mi.Z_PK = m.ZMEDIAITEM
                   WHERE m.ZCHATSESSION = $id
                   ORDER BY COALESCE(m.ZSORT, m.Z_PK), m.Z_PK;
                   """
-                : """
+                : $"""
                   SELECT Z_PK, ZISFROMME, ZMESSAGETYPE, ZMESSAGESTATUS, ZTEXT,
                          ZMESSAGEDATE, ZFROMJID, ZPUSHNAME, ZGROUPMEMBER,
-                         NULL, NULL, NULL, NULL, NULL
+                         NULL, NULL, NULL, NULL, NULL,
+                         {(hasGroupEvent ? "ZGROUPEVENTTYPE" : "NULL")}
                   FROM ZWAMESSAGE
                   WHERE ZCHATSESSION = $id
                   ORDER BY COALESCE(ZSORT, Z_PK), Z_PK;
@@ -204,6 +207,7 @@ public static class ChatParser
                 var fromMe = !r.IsDBNull(1) && r.GetInt32(1) != 0;
                 var text = r.IsDBNull(4) ? null : r.GetString(4);
                 var status = r.IsDBNull(3) ? 0 : r.GetInt32(3);
+                var groupEvent = r.IsDBNull(14) ? 0 : Convert.ToInt32(r.GetValue(14));
                 var kind = ClassifyWa(type, fromMe, text, isStatusSession);
                 var mediaKind = MapMediaKind(type);
                 var mediaLocal = r.IsDBNull(9) ? null : r.GetString(9);
@@ -269,7 +273,7 @@ public static class ChatParser
                         senderId = partnerJid;
                 }
 
-                var body = BuildBody(kind, text, caption, mediaKind, fileName, type);
+                var body = BuildBody(kind, text, caption, mediaKind, fileName, type, fromMe, groupEvent);
 
                 list.Add(new ChatMessage
                 {
@@ -277,7 +281,7 @@ public static class ChatParser
                     ConversationId = conversationId,
                     Kind = kind,
                     Body = body,
-                    MediaHint = MediaHint(type),
+                    MediaHint = MediaHint(type, groupEvent, fromMe),
                     SentAt = AppleTime.FromCocoa(GetDouble(r, 5)),
                     Sender = fromMe ? null : senderName,
                     SenderId = fromMe ? null : FriendlyJid(senderId) ?? senderId,
@@ -441,10 +445,13 @@ public static class ChatParser
     {
         if (statusSession)
             return ChatMessageKind.Status;
-        if (type == 15 || IsDeletedText(text))
+        // 14 = revoked/deleted; 15 = sticker (not deleted)
+        if (type == 14 || IsDeletedText(text))
             return ChatMessageKind.Deleted;
-        if (type is 6 or 10 or 14)
+        // 10 = missed call notification (centered system-style)
+        if (type is 6 or 10 or 11)
             return ChatMessageKind.System;
+        // 59 = call event in-thread (outgoing/incoming bubbles)
         return fromMe ? ChatMessageKind.Sent : ChatMessageKind.Received;
     }
 
@@ -455,7 +462,16 @@ public static class ChatParser
             || text.Contains("hai eliminato", StringComparison.OrdinalIgnoreCase)
             || text.Contains("ha eliminato", StringComparison.OrdinalIgnoreCase));
 
-    private static string? MediaHint(int type) => type switch
+    private static bool IsWaCallType(int type) => type is 10 or 59;
+
+    /// <summary>
+    /// Heuristic video flag for call rows. Type 10 often pairs ge 56/58 with video;
+    /// type 59 uses ge 5 for incoming and 0 for outgoing (voice in observed samples).
+    /// </summary>
+    private static bool IsWaVideoCall(int type, int groupEventType) =>
+        type == 10 && groupEventType is 38 or 56 or 58;
+
+    private static string? MediaHint(int type, int groupEventType, bool fromMe) => type switch
     {
         1 => "Immagine",
         2 => "Video",
@@ -463,8 +479,13 @@ public static class ChatParser
         4 => "Contatto",
         5 => "Posizione",
         7 => "Link",
-        8 => "Documento",
-        15 => "Eliminato",
+        8 or 9 => "Documento",
+        10 => IsWaVideoCall(type, groupEventType) ? "Chiamata video persa" : "Chiamata vocale persa",
+        13 => "GIF",
+        15 => "Sticker",
+        59 => fromMe
+            ? (IsWaVideoCall(type, groupEventType) ? "Chiamata video effettuata" : "Chiamata vocale effettuata")
+            : (IsWaVideoCall(type, groupEventType) ? "Chiamata video in entrata" : "Chiamata vocale in entrata"),
         _ => null,
     };
 
@@ -474,6 +495,8 @@ public static class ChatParser
         2 => ChatMediaKind.Video,
         3 => ChatMediaKind.Audio,
         8 or 9 => ChatMediaKind.Document,
+        13 => ChatMediaKind.Image,
+        15 => ChatMediaKind.Other,
         _ => ChatMediaKind.None,
     };
 
@@ -483,19 +506,31 @@ public static class ChatParser
         string? caption,
         ChatMediaKind mediaKind,
         string? fileName,
-        int type)
+        int type,
+        bool fromMe,
+        int groupEventType)
     {
         if (kind == ChatMessageKind.Deleted)
             return "Messaggio eliminato";
+
+        if (IsWaCallType(type))
+            return FormatWaCallBody(type, fromMe, groupEventType);
+
         if (!string.IsNullOrWhiteSpace(text))
             return text.Trim();
         if (!string.IsNullOrWhiteSpace(caption))
             return caption.Trim();
+        if (type == 15)
+            return "[Sticker]";
+        if (type == 4)
+            return "[Contatto]";
+        if (type == 5)
+            return "[Posizione]";
         if (mediaKind != ChatMediaKind.None)
         {
             var label = mediaKind switch
             {
-                ChatMediaKind.Image => "Immagine",
+                ChatMediaKind.Image => type == 13 ? "GIF" : "Immagine",
                 ChatMediaKind.Video => "Video",
                 ChatMediaKind.Audio => "Audio",
                 ChatMediaKind.Document => "Documento",
@@ -505,8 +540,43 @@ public static class ChatParser
         }
 
         if (kind == ChatMessageKind.System)
-            return $"[Evento di sistema · tipo {type}]";
+            return FormatWaSystemBody(type, groupEventType, text);
+        if (type is 28 or 66 or 54 or 38 or 46)
+            return $"[Evento WhatsApp · tipo {type}]";
         return "(vuoto)";
+    }
+
+    private static string FormatWaCallBody(int type, bool fromMe, int groupEventType)
+    {
+        var video = IsWaVideoCall(type, groupEventType);
+        var channel = video ? "video" : "vocale";
+        if (type == 10)
+            return $"Chiamata {channel} persa";
+        // type 59
+        if (fromMe)
+            return $"Chiamata {channel} effettuata";
+        // Incoming call event in-thread (ringing / unanswered log when type 10 absent)
+        return $"Chiamata {channel} in entrata";
+    }
+
+    private static string FormatWaSystemBody(int type, int groupEventType, string? text)
+    {
+        if (!string.IsNullOrWhiteSpace(text))
+            return text.Trim();
+        if (type == 10)
+            return FormatWaCallBody(10, fromMe: false, groupEventType);
+        if (type == 6)
+            return groupEventType switch
+            {
+                1 => "Partecipante aggiunto al gruppo",
+                2 => "Partecipante rimosso dal gruppo",
+                3 => "Hai lasciato il gruppo",
+                4 => "Nome del gruppo aggiornato",
+                5 => "Icona del gruppo aggiornata",
+                6 => "Admin del gruppo aggiornato",
+                _ => $"[Evento di gruppo · {groupEventType}]",
+            };
+        return $"[Evento di sistema · tipo {type}]";
     }
 
     private static string? CleanName(string? raw)
