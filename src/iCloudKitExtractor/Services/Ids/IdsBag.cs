@@ -21,6 +21,7 @@ public sealed class IdsBag
             ["id-authenticate-ds-id"] = IdsConstants.FallbackAuthenticateDs,
             ["id-get-handles"] = IdsConstants.FallbackGetHandles,
             ["id-register"] = IdsConstants.FallbackRegister,
+            ["id-query"] = IdsConstants.FallbackIdQuery,
         };
 
         try
@@ -35,10 +36,14 @@ public sealed class IdsBag
             if (bag is null)
                 return;
 
-            foreach (var key in new[] { "id-authenticate-ds-id", "id-get-handles", "id-register" })
+            foreach (var key in new[]
+                     {
+                         "id-authenticate-ds-id", "id-get-handles", "id-register",
+                         "id-query", "id-query-alias",
+                     })
             {
                 if (bag.TryGetValue(key, out var val) && val is string url && !string.IsNullOrWhiteSpace(url))
-                    _urls[key] = url;
+                    _urls[key == "id-query-alias" ? "id-query" : key] = url;
             }
         }
         catch

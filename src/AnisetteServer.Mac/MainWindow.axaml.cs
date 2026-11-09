@@ -22,17 +22,21 @@ public partial class MainWindow : Window
                 RefreshConnections();
         });
         _host.VpnConsent.Changed += () => Dispatcher.UIThread.Post(RefreshVpnConsentUi);
+        _host.LicenseAllowlist.Changed += () => Dispatcher.UIThread.Post(RefreshLicenseAllowlistUi);
         // Bind LicensePaths to the OS data root before any SQLite / key access.
         _settings.ApplyToEnvironment();
         var dataRoot = string.IsNullOrWhiteSpace(_settings.DataRoot)
             ? MiddlewareSettings.DefaultDataRoot()
             : _settings.DataRoot!;
         _host.VpnConsent.Configure(dataRoot, _settings.RequireVpnConsent, _settings.VpnConsentAllow);
+        _host.LicenseAllowlist.Configure(
+            dataRoot, _settings.RequireLicenseAllowlist, _settings.LicenseAllowlist);
         LoadSettingsIntoUi();
         RefreshStatus();
         RefreshLicenses();
         RefreshConnections();
         RefreshVpnConsentUi();
+        RefreshLicenseAllowlistUi();
     }
 
     private void LoadSettingsIntoUi()
@@ -49,6 +53,8 @@ public partial class MainWindow : Window
             : _settings.DataRoot;
         RequireVpnConsentCheck.IsChecked = _settings.RequireVpnConsent;
         VpnAllowBox.Text = string.Join(Environment.NewLine, _settings.VpnConsentAllow);
+        RequireLicenseAllowlistCheck.IsChecked = _settings.RequireLicenseAllowlist;
+        LicenseAllowBox.Text = string.Join(Environment.NewLine, _settings.LicenseAllowlist);
     }
 
     private void CaptureSettingsFromUi()
@@ -67,6 +73,16 @@ public partial class MainWindow : Window
             .Where(s => s.Length > 0 && !s.StartsWith('#'))
             .Where(s => VpnHintProbe.LooksLikeIpLiteral(s) || !VpnHintProbe.IsGenericConsentToken(s))
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        _settings.RequireLicenseAllowlist = RequireLicenseAllowlistCheck.IsChecked == true;
+        _settings.LicenseAllowlist = (LicenseAllowBox.Text ?? "")
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => s.Length > 0 && !s.StartsWith('#'))
+            .Select(s => s.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? s["Bearer ".Length..].Trim()
+                : s)
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.Ordinal)
             .ToList();
     }
 
@@ -211,6 +227,85 @@ public partial class MainWindow : Window
         IssuedBundleBox.Focus();
         IssuedBundleBox.SelectionStart = 0;
         IssuedBundleBox.SelectionEnd = IssuedBundleBox.Text?.Length ?? 0;
+    }
+
+    private void RefreshLicenseAllowlistUi()
+    {
+        if (RequireLicenseAllowlistCheck is null || LicenseAllowBox is null)
+            return;
+        RequireLicenseAllowlistCheck.IsChecked = _host.LicenseAllowlist.IsEnforced;
+        LicenseAllowBox.Text = string.Join(Environment.NewLine, _host.LicenseAllowlist.AllowedEntries);
+        _settings.RequireLicenseAllowlist = _host.LicenseAllowlist.IsEnforced;
+        _settings.LicenseAllowlist = _host.LicenseAllowlist.AllowedEntries.ToList();
+    }
+
+    private void RequireLicenseAllowlist_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var enforce = RequireLicenseAllowlistCheck.IsChecked == true;
+        _host.LicenseAllowlist.SetEnforced(enforce);
+        _settings.RequireLicenseAllowlist = enforce;
+        _settings.Save();
+    }
+
+    private void SaveLicenseAllow_OnClick(object? sender, RoutedEventArgs e)
+    {
+        CaptureSettingsFromUi();
+        var dataRoot = string.IsNullOrWhiteSpace(_settings.DataRoot)
+            ? MiddlewareSettings.DefaultDataRoot()
+            : _settings.DataRoot!;
+        _host.LicenseAllowlist.Configure(
+            dataRoot, _settings.RequireLicenseAllowlist, _settings.LicenseAllowlist);
+        _settings.Save();
+        StatusText.Text =
+            $"Authorization allowlist saved ({_settings.LicenseAllowlist.Count} entries"
+            + ($", enforce={_settings.RequireLicenseAllowlist})");
+        RefreshLicenseAllowlistUi();
+    }
+
+    private void AllowSelectedLicense_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var row = SelectedRow();
+        if (row is null)
+        {
+            ErrorText.Text = "Select a license in the list first.";
+            return;
+        }
+
+        if (_host.LicenseAllowlist.TryAdd(row.LicenseId))
+        {
+            _settings.RequireLicenseAllowlist = _host.LicenseAllowlist.IsEnforced;
+            _settings.LicenseAllowlist = _host.LicenseAllowlist.AllowedEntries.ToList();
+            _settings.Save();
+            RefreshLicenseAllowlistUi();
+            StatusText.Text = "Allowlisted license id " + row.LicenseId;
+        }
+        else
+        {
+            StatusText.Text = "License id already on allowlist (or invalid).";
+        }
+    }
+
+    private void AllowIssuedBundle_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var bundle = IssuedBundleBox.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(bundle))
+        {
+            ErrorText.Text = "Issue a Package C first.";
+            return;
+        }
+
+        if (_host.LicenseAllowlist.TryAdd(bundle))
+        {
+            _settings.RequireLicenseAllowlist = _host.LicenseAllowlist.IsEnforced;
+            _settings.LicenseAllowlist = _host.LicenseAllowlist.AllowedEntries.ToList();
+            _settings.Save();
+            RefreshLicenseAllowlistUi();
+            StatusText.Text = "Allowlisted issued Package C.";
+        }
+        else
+        {
+            StatusText.Text = "Package C already on allowlist.";
+        }
     }
 
     private List<ConnectionLogEntry> _connectionRows = new();

@@ -50,6 +50,8 @@ public partial class MainWindow : Window
 
     private ApsSessionService? _apsSession;
 
+    private IdsSession? _idsSession;
+
     /// <summary>Sessione GSA parziale in attesa OTP per registrazione HSA2 (lista 2FA).</summary>
     private ICloudSession? _hsa2PartialSession;
 
@@ -165,6 +167,7 @@ public partial class MainWindow : Window
             LogAuth("Capture run: disattivata (nessun log in %AppData%\\iCloudKitExtractor\\logs)");
         }
         LoadAnisetteSettingsUi();
+        PopulateIdsLookupTopics();
         LogAuth($"Anisette: {AnisetteProviderFactory.ResolveServerUrl()} | mode: {AnisetteProviderFactory.ResolveAuthMode()}");
         LogAuth($"  config: {AnisetteProviderFactory.SettingsFilePath}");
         Loaded += MainWindow_Loaded;
@@ -3201,6 +3204,153 @@ public partial class MainWindow : Window
             if (IdsEnrollButton is not null)
                 IdsEnrollButton.IsEnabled = true;
         }
+    }
+
+    private void PopulateIdsLookupTopics()
+    {
+        if (IdsLookupTopicCombo is null)
+            return;
+        IdsLookupTopicCombo.Items.Clear();
+        foreach (var t in IdsServiceCatalog.MultiplexTopics)
+            IdsLookupTopicCombo.Items.Add(t);
+        if (IdsLookupTopicCombo.Items.Count > 0)
+            IdsLookupTopicCombo.SelectedIndex = 0;
+    }
+
+    private void UpdateIdsSessionStatusUi(string? extra = null)
+    {
+        if (IdsSessionStatusText is null)
+            return;
+        var open = _idsSession?.IsOpen == true;
+        var handles = open && _idsSession!.Handles.Count > 0
+            ? string.Join(", ", _idsSession.Handles)
+            : "(n/d)";
+        IdsSessionStatusText.Text =
+            $"Sessione IDS: {(open ? "aperta" : "chiusa")} | handles={handles}"
+            + (extra is null ? "" : " | " + extra);
+    }
+
+    private async void IdsOpenSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!IdsStorage.HasRegistration())
+            {
+                MessageBox.Show(this, "Esegui prima Enroll IDS.", "Sessione IDS",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var aps = GetApsSession();
+            if (!aps.IsConnected)
+                await aps.ConnectAsync().ConfigureAwait(true);
+
+            _idsSession?.Dispose();
+            _idsSession = new IdsSession(Http, aps, msg => Dispatcher.BeginInvoke(() =>
+            {
+                AppendApsLog("IDS: " + msg);
+                LogAuth("IDS: " + msg);
+            }));
+            _idsSession.MessageReceived += (_, ev) => Dispatcher.BeginInvoke(() =>
+            {
+                var m = ev.Message;
+                AppendApsLog(
+                    $"[IDS MSG] topic={m.Topic} cmd={m.Command} from={m.Sender} " +
+                    $"decrypted={m.Decrypted} plain={(m.Plaintext?.Length ?? 0)} B");
+            });
+
+            await _idsSession.OpenAsync(_session).ConfigureAwait(true);
+            if (IdsLookupUriTextBox is not null
+                && string.IsNullOrWhiteSpace(IdsLookupUriTextBox.Text)
+                && _idsSession.SelfHandle is not null)
+            {
+                IdsLookupUriTextBox.Text = _idsSession.SelfHandle;
+            }
+
+            UpdateIdsSessionStatusUi("open OK");
+            if (TrustedDevicesResultTextBox is not null)
+            {
+                TrustedDevicesResultTextBox.Text =
+                    _idsSession.FormatStatus()
+                    + Environment.NewLine + Environment.NewLine
+                    + TrustedDevicesResultTextBox.Text;
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendApsLog("IDS session open errore: " + ex.Message);
+            UpdateIdsSessionStatusUi("errore");
+            MessageBox.Show(this, ex.Message, "Sessione IDS", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void IdsCloseSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        _idsSession?.Dispose();
+        _idsSession = null;
+        UpdateIdsSessionStatusUi();
+        AppendApsLog("IDS session closed.");
+    }
+
+    private async void IdsLookupButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_idsSession is not { IsOpen: true })
+            {
+                MessageBox.Show(this, "Apri prima la sessione IDS.", "IDS Lookup",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var topic = IdsLookupTopicCombo?.SelectedItem as string
+                        ?? IdsConstants.MultiplexService;
+            var uri = IdsLookupUriTextBox?.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(uri))
+            {
+                MessageBox.Show(this, "Inserisci un URI (mailto:/tel:/urn:ds:).", "IDS Lookup");
+                return;
+            }
+
+            if (IdsLookupButton is not null)
+                IdsLookupButton.IsEnabled = false;
+            UpdateIdsSessionStatusUi("lookup…");
+            var result = await _idsSession.LookupAsync(topic, [uri]).ConfigureAwait(true);
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"=== IDS Lookup {DateTime.Now:HH:mm:ss} ===");
+            sb.AppendLine(result.RawSummary);
+            foreach (var id in result.Identities)
+            {
+                sb.AppendLine(
+                    $"  {id.Uri} push={(id.PushTokenHex.Length == 0 ? "?" : id.PushTokenHex[..Math.Min(16, id.PushTokenHex.Length)] + "…")} " +
+                    $"session={(id.SessionTokenHex.Length == 0 ? "?" : id.SessionTokenHex[..Math.Min(12, id.SessionTokenHex.Length)] + "…")} " +
+                    $"exp={id.SessionTokenExpiresSeconds?.ToString() ?? "?"}");
+            }
+
+            AppendApsLog(sb.ToString().TrimEnd());
+            UpdateIdsSessionStatusUi($"lookup identities={result.Identities.Count}");
+        }
+        catch (Exception ex)
+        {
+            AppendApsLog("IDS lookup errore: " + ex.Message);
+            UpdateIdsSessionStatusUi("lookup errore");
+            MessageBox.Show(this, ex.Message, "IDS Lookup", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            if (IdsLookupButton is not null)
+                IdsLookupButton.IsEnabled = true;
+        }
+    }
+
+    private void IdsStatusButton_Click(object sender, RoutedEventArgs e)
+    {
+        var text = _idsSession?.FormatStatus() ?? IdsStorage.FormatStatusSummary()
+            + Environment.NewLine + "Session open: False";
+        if (TrustedDevicesResultTextBox is not null)
+            TrustedDevicesResultTextBox.Text = text;
+        UpdateIdsSessionStatusUi();
+        LogAuth("IDS status refresh.");
     }
 
     private void ConfigureIdmsaOtpUi(PhoneVerificationOptions? options)

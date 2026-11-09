@@ -90,6 +90,30 @@ public static class IdsSigning
         headers["x-auth-cert" + postfix] = DearmourPem(authCertPem);
     }
 
+    /// <summary>Firme push + ID cert per <c>id-query</c> (lookup).</summary>
+    public static void AddIdAndPushSignatures(
+        IDictionary<string, string> headers,
+        byte[] body,
+        string bagKey,
+        string idKeyPem,
+        string idCertPem,
+        string pushKeyPem,
+        string pushCertPem,
+        byte[] pushToken)
+    {
+        var pushTokenB64 = Convert.ToBase64String(pushToken);
+        var (pushSig, pushNonce) = Sign(pushKeyPem, bagKey, "", pushToken, body);
+        headers["x-push-sig"] = pushSig;
+        headers["x-push-nonce"] = pushNonce;
+        headers["x-push-cert"] = DearmourPem(pushCertPem);
+        headers["x-push-token"] = pushTokenB64;
+
+        var (idSig, idNonce) = Sign(idKeyPem, bagKey, "", pushToken, body);
+        headers["x-id-sig"] = idSig;
+        headers["x-id-nonce"] = idNonce;
+        headers["x-id-cert"] = DearmourPem(idCertPem);
+    }
+
     public static string DearmourPem(string pem)
     {
         var lines = pem.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)

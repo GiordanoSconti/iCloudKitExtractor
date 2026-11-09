@@ -14,17 +14,23 @@ public sealed class LicenseAuthMiddleware
     private readonly RequestDelegate _next;
     private readonly LicenseValidator _validator;
     private readonly LicenseIssuer _issuer;
+    private readonly ILicenseAllowlist _allowlist;
 
     private static readonly HashSet<string> PublicExact = new(StringComparer.OrdinalIgnoreCase)
     {
         "/health",
     };
 
-    public LicenseAuthMiddleware(RequestDelegate next, LicenseValidator validator, LicenseIssuer issuer)
+    public LicenseAuthMiddleware(
+        RequestDelegate next,
+        LicenseValidator validator,
+        LicenseIssuer issuer,
+        ILicenseAllowlist? allowlist = null)
     {
         _next = next;
         _validator = validator;
         _issuer = issuer;
+        _allowlist = allowlist ?? PermissiveLicenseAllowlist.Instance;
     }
 
     public async Task InvokeAsync(HttpContext ctx)
@@ -66,9 +72,46 @@ public sealed class LicenseAuthMiddleware
                 return;
             }
 
+            var rawBearer = auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? auth["Bearer ".Length..].Trim()
+                : auth.Trim();
+            if (!_allowlist.IsAllowed(payload!, rawBearer))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await ctx.Response.WriteAsJsonAsync(new
+                {
+                    ok = false,
+                    error = "license_not_allowlisted",
+                    detail =
+                        "This license is valid but not on the server Authorization allowlist. " +
+                        "Add the license id / Package-C / Bearer in Anisette Middleware → Licenses.",
+                    license_id = payload!.LicenseId,
+                    subject = payload.Subject,
+                });
+                return;
+            }
+
             ctx.Items["anisette_license_id"] = payload!.LicenseId;
             ctx.Items["anisette_license_sub"] = payload.Subject;
             await _next(ctx);
+            return;
+        }
+
+        // When Authorization allowlist is enforced, do not auto-issue — operator must
+        // supply a Bearer already listed (license id / Package-C / token).
+        if (_allowlist.IsEnforced)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            ctx.Response.Headers.WWWAuthenticate = "Bearer";
+            await ctx.Response.WriteAsJsonAsync(new
+            {
+                ok = false,
+                error = "license_allowlist_enforced",
+                detail =
+                    "Authorization license allowlist is enabled. " +
+                    "Send Authorization: Bearer <allowlisted Package-C or token>. Auto-issue is disabled.",
+                client_ip = clientIp,
+            });
             return;
         }
 

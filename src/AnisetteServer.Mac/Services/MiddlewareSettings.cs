@@ -38,6 +38,19 @@ public sealed class MiddlewareSettings
     [JsonPropertyName("vpnConsentAllow")]
     public List<string> VpnConsentAllow { get; set; } = new();
 
+    /// <summary>
+    /// When true, remote clients need an Authorization Bearer whose license id /
+    /// Package-C / token is listed in <see cref="LicenseAllowlist"/>.
+    /// </summary>
+    [JsonPropertyName("requireLicenseAllowlist")]
+    public bool RequireLicenseAllowlist { get; set; }
+
+    /// <summary>
+    /// Allowed Authorization licenses: license id, subject, Package-C Base64, or raw Bearer token.
+    /// </summary>
+    [JsonPropertyName("licenseAllowlist")]
+    public List<string> LicenseAllowlist { get; set; } = new();
+
     public static string DefaultConfigPath()
     {
         var dir = DefaultDataRoot();

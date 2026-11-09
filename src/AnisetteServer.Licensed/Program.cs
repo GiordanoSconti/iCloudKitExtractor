@@ -39,6 +39,17 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton(sp =>
     new LicenseIssuer(privateKeyPath, publicKeyPath, sp.GetRequiredService<LicenseDatabase>()));
 
+// Optional Authorization allowlist: ANISETTE_LICENSE_ALLOWLIST_ENFORCE=1
+// entries in {ANISETTE_LICENSE_ROOT}/data/license-allowlist.json (or middleware seed).
+builder.Services.AddSingleton<ILicenseAllowlist>(_ =>
+{
+    var enforce = IsTruthy(Environment.GetEnvironmentVariable("ANISETTE_LICENSE_ALLOWLIST_ENFORCE"));
+    // File: {ANISETTE_LICENSE_ROOT}/data/license-allowlist.json
+    var store = new LicenseAllowlistStore();
+    store.Configure(LicensePaths.LabRoot, enforce, seed: null);
+    return store;
+});
+
 builder.Services.AddSingleton(_ =>
 {
     var handler = new SocketsHttpHandler
@@ -418,6 +429,13 @@ static int ResolvePort(string[] args)
         return envPort;
 
     return 6971;
+}
+
+static bool IsTruthy(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+        return false;
+    return value.Trim() is "1" or "true" or "TRUE" or "yes" or "YES" or "on" or "ON";
 }
 
 sealed class AnisetteResponse

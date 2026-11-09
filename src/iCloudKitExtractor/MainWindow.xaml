@@ -1206,6 +1206,17 @@
                                             MinWidth="140" Margin="0,0,10,8"
                                             Click="IdsEnrollButton_Click"
                                             ToolTip="Delegate PET → authenticateDS → id-register (multiplex1/FMF). Richiede APS token."/>
+                                    <Button x:Name="IdsOpenSessionButton"
+                                            Content="Apri sessione IDS"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="150" Margin="0,0,10,8"
+                                            Click="IdsOpenSessionButton_Click"
+                                            ToolTip="Runtime IDS multiplex1: richiede Enroll + APS connesso."/>
+                                    <Button x:Name="IdsCloseSessionButton"
+                                            Content="Chiudi sessione IDS"
+                                            Style="{StaticResource GhostButtonStyle}"
+                                            MinWidth="140" Margin="0,0,10,8"
+                                            Click="IdsCloseSessionButton_Click"/>
                                     <Button x:Name="Hsa2NewAdiButton"
                                             Content="Nuova identità ADI"
                                             Style="{StaticResource SecondaryButtonStyle}"
@@ -1230,6 +1241,31 @@
                                            TextWrapping="Wrap"
                                            FontFamily="Consolas"
                                            Text="Push token APS: (non connesso)"/>
+                                <TextBlock Text="IDS runtime (multiplex1)" Style="{StaticResource SectionLabelStyle}" Margin="0,8,0,6"/>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="IdsLookupTopicCombo" Grid.Column="0" Width="280" Margin="0,0,10,0"
+                                              ToolTip="Topic Alloy per id-query / messaging"/>
+                                    <TextBox x:Name="IdsLookupUriTextBox" Grid.Column="1" Margin="0,0,10,0"
+                                             ToolTip="URI da interrogare (mailto:… / tel:… / urn:ds:…)"/>
+                                    <Button x:Name="IdsLookupButton" Grid.Column="2" Content="Lookup"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="100" Margin="0,0,10,0"
+                                            Click="IdsLookupButton_Click"/>
+                                    <Button x:Name="IdsStatusButton" Grid.Column="3" Content="Stato IDS"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="100"
+                                            Click="IdsStatusButton_Click"/>
+                                </Grid>
+                                <TextBlock x:Name="IdsSessionStatusText"
+                                           Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                                           TextWrapping="Wrap"
+                                           Text="Sessione IDS: chiusa"/>
                                 <Border x:Name="IdmsaOtpPanel" Margin="0,8,0,0" Visibility="Collapsed"
                                         BorderBrush="#33000000" BorderThickness="1" CornerRadius="6" Padding="12">
                                     <StackPanel>

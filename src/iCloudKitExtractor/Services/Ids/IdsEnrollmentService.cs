@@ -5,7 +5,8 @@ using iCloudKitExtractor.Services.Push;
 namespace iCloudKitExtractor.Services.Ids;
 
 /// <summary>
-/// Pipeline enroll IDS: delegate → authenticateDS → handles → id-register (multiplex1/FMF).
+/// Pipeline enroll IDS: delegate → authenticateDS → handles → id-register
+/// (<see cref="IdsServiceCatalog.MultiplexFindMy"/>).
 /// </summary>
 public sealed class IdsEnrollmentService
 {

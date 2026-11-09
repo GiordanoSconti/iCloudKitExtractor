@@ -17,6 +17,8 @@ public sealed class ApsNotificationEventArgs : EventArgs
     public required IReadOnlyList<(byte Id, byte[] Value)> Fields { get; init; }
     public byte[]? Payload { get; init; }
     public byte[]? TopicHash { get; init; }
+    /// <summary>Topic risolto dalla mappa filter (se noto).</summary>
+    public string? Topic { get; init; }
     public byte[]? MessageId { get; init; }
     public string? PayloadText { get; init; }
     public string? ExtractedOtp { get; init; }

@@ -22,6 +22,7 @@ public sealed class ApsCourierClient : IAsyncDisposable
     public const string SandboxSni = "courier.sandbox.push.apple.com";
 
     private readonly object _gate = new();
+    private readonly Dictionary<string, string> _topicByHashHex = new(StringComparer.OrdinalIgnoreCase);
     private TcpClient? _tcp;
     private SslStream? _ssl;
     private X509Certificate2? _clientCert;
@@ -29,11 +30,13 @@ public sealed class ApsCourierClient : IAsyncDisposable
     private CancellationTokenSource? _loopCts;
     private Task? _receiveLoop;
     private Task? _keepAliveLoop;
+    private string[] _activeFilterTopics = DefaultAuthTopics;
 
     public byte[]? Token { get; private set; }
     public string? CourierHost { get; private set; }
     public bool IsConnected => _ssl is not null && _tcp?.Connected == true;
     public DateTimeOffset? ConnectedUtc { get; private set; }
+    public IReadOnlyList<string> ActiveFilterTopics => _activeFilterTopics;
 
     public event EventHandler<ApsNotificationEventArgs>? NotificationReceived;
     public event EventHandler<string>? Log;
@@ -208,7 +211,9 @@ public sealed class ApsCourierClient : IAsyncDisposable
         RaiseLog($"Push token: {ApsStorage.TokenHex(token)}");
 
         await ssl.WriteAsync(ApsProtocol.BuildSetState(1), ct).ConfigureAwait(false);
-        var topics = filterTopics ?? DefaultAuthTopics;
+        var topics = (filterTopics ?? DefaultAuthTopics).ToArray();
+        _activeFilterTopics = topics;
+        RebuildTopicHashMap(topics);
         await ssl.WriteAsync(ApsProtocol.BuildFilter(token, topics), ct).ConfigureAwait(false);
         await ssl.FlushAsync(ct).ConfigureAwait(false);
         RaiseLog($"Filter topics: {string.Join(", ", topics)}");
@@ -217,6 +222,51 @@ public sealed class ApsCourierClient : IAsyncDisposable
         var loopToken = _loopCts.Token;
         _receiveLoop = Task.Run(() => ReceiveLoopAsync(loopToken), CancellationToken.None);
         _keepAliveLoop = Task.Run(() => KeepAliveLoopAsync(loopToken), CancellationToken.None);
+    }
+
+    /// <summary>Invia frame APS grezzo (notifica uscente / HTTP-over-APNs).</summary>
+    public async Task SendRawAsync(byte[] frame, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        var ssl = _ssl ?? throw new InvalidOperationException("APS non connesso.");
+        await ssl.WriteAsync(frame, ct).ConfigureAwait(false);
+        await ssl.FlushAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task SendNotificationAsync(
+        string topic,
+        byte[] destinationToken,
+        byte[] payload,
+        byte[]? messageId = null,
+        CancellationToken ct = default)
+    {
+        messageId ??= Guid.NewGuid().ToByteArray();
+        var frame = ApsProtocol.BuildOutgoingNotification(
+            ApsProtocol.TopicHash(topic),
+            destinationToken,
+            payload,
+            messageId);
+        await SendRawAsync(frame, ct).ConfigureAwait(false);
+        RaiseLog($"TX NOTIF topic={topic} dest={Convert.ToHexString(destinationToken.AsSpan(0, Math.Min(8, destinationToken.Length)))}… payload={payload.Length} B");
+    }
+
+    public string? ResolveTopic(byte[]? topicHash)
+    {
+        if (topicHash is null || topicHash.Length == 0)
+            return null;
+        var hex = Convert.ToHexString(topicHash);
+        lock (_gate)
+            return _topicByHashHex.TryGetValue(hex, out var name) ? name : null;
+    }
+
+    private void RebuildTopicHashMap(IEnumerable<string> topics)
+    {
+        lock (_gate)
+        {
+            _topicByHashHex.Clear();
+            foreach (var t in topics)
+                _topicByHashHex[Convert.ToHexString(ApsProtocol.TopicHash(t))] = t;
+        }
     }
 
     public async Task DisconnectAsync()
@@ -309,19 +359,21 @@ public sealed class ApsCourierClient : IAsyncDisposable
 
                     var text = TryDecodePayload(payload);
                     var otp = TryExtractOtp(text);
+                    var topicName = ResolveTopic(topicHash);
                     NotificationReceived?.Invoke(this, new ApsNotificationEventArgs
                     {
                         Type = type,
                         Fields = fields,
                         Payload = payload,
                         TopicHash = topicHash,
+                        Topic = topicName,
                         MessageId = messageId,
                         PayloadText = text,
                         ExtractedOtp = otp,
                     });
                     RaiseLog(
                         otp is null
-                            ? $"NOTIF payload={text ?? Convert.ToHexString(payload ?? Array.Empty<byte>())}"
+                            ? $"NOTIF topic={topicName ?? "?"} payload={text ?? Convert.ToHexString(payload ?? Array.Empty<byte>())}"
                             : $"NOTIF OTP={otp} payload={text}");
                     continue;
                 }

@@ -103,6 +103,7 @@ public sealed class IdsRegisterClient
             .Select(u => (object?)new Dictionary<string, object?> { ["uri"] = u })
             .ToList();
 
+        var serviceDef = IdsServiceCatalog.MultiplexFindMy;
         var clientData = new Dictionary<string, object?>
         {
             ["public-message-identity-key"] = identity.EncodeLegacyIdentity(),
@@ -111,12 +112,9 @@ public sealed class IdsRegisterClient
             ["public-message-identity-ngm-version"] = 13,
             ["public-message-ngm-device-prekey-data-key"] = identity.BuildPreKeyData(),
             ["kt-version"] = 5,
-            ["supports-fmd-v2"] = true,
-            ["supports-incoming-fmd-v1"] = true,
-            ["supports-findmy-plugin-messages"] = true,
-            ["supports-beacon-sharing-v3"] = true,
-            ["supports-beacon-sharing-v2"] = true,
         };
+        foreach (var (k, v) in serviceDef.ClientDataFlags)
+            clientData[k] = v;
 
         var user = new Dictionary<string, object?>
         {
@@ -132,13 +130,13 @@ public sealed class IdsRegisterClient
             {
                 new Dictionary<string, object?>
                 {
-                    ["flags"] = 1,
-                    ["name"] = "com.apple.private.alloy",
+                    ["flags"] = serviceDef.CapabilityFlags,
+                    ["name"] = serviceDef.CapabilitiesName,
                     ["version"] = 1,
                 },
             },
-            ["service"] = IdsConstants.MultiplexService,
-            ["sub-services"] = IdsConstants.FindMySubServices.Cast<object?>().ToList(),
+            ["service"] = serviceDef.Name,
+            ["sub-services"] = serviceDef.SubServices.Cast<object?>().ToList(),
             ["users"] = new List<object?> { user },
         };
 
@@ -167,7 +165,9 @@ public sealed class IdsRegisterClient
         var xml = AppleXmlPlist.ToXmlBytes(bodyDict);
         var gzipped = IdsSigning.GzipMtime0(xml);
         log?.Invoke(
-            $"id-register: XML+gzip={gzipped.Length} B; services=1 subservices={IdsConstants.FindMySubServices.Length}; handles={handleUris.Count}; validation={(validationData?.Length ?? 0)} B");
+            $"id-register: XML+gzip={gzipped.Length} B; service={serviceDef.Name} " +
+            $"subservices={serviceDef.SubServices.Count}; handles={handleUris.Count}; " +
+            $"validation={(validationData?.Length ?? 0)} B");
 
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {

@@ -176,6 +176,29 @@ internal static class ApsProtocol
             (8, new byte[] { 0x00 }),
         });
 
+    /// <summary>
+    /// Notifica uscente verso un peer (IDS send / HTTP-over-APNs).
+    /// Field layout allineato ai client open-source: topic hash, dest token, payload, id.
+    /// </summary>
+    public static byte[] BuildOutgoingNotification(
+        byte[] topicHash,
+        byte[] destinationToken,
+        byte[] payload,
+        byte[] messageId)
+    {
+        ArgumentNullException.ThrowIfNull(topicHash);
+        ArgumentNullException.ThrowIfNull(destinationToken);
+        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(messageId);
+        return Serialize(TypeNotification, new List<(byte, byte[])>
+        {
+            (1, topicHash),
+            (2, destinationToken),
+            (3, payload),
+            (4, messageId),
+        });
+    }
+
     private static async Task<bool> ReadExactAsync(Stream stream, byte[] buffer, CancellationToken ct)
     {
         var read = 0;

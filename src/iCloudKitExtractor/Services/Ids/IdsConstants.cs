@@ -1,12 +1,14 @@
 namespace iCloudKitExtractor.Services.Ids;
 
-internal static class IdsConstants
+public static class IdsConstants
 {
     public const string ProtocolVersion = "1660";
     public const string DelegateService = "com.apple.private.ids";
     public const string MultiplexService = "com.apple.private.alloy.multiplex1";
     public const string InvitationUserAgent =
         "com.apple.invitation-registration macOS,13.2.1,22D68";
+    public const string LookupUserAgent =
+        "com.apple.madrid-lookup macOS,13.2.1,22D68";
 
     public const string SigninV2Url = "https://setup.icloud.com/setup/signin/v2/login";
     public const string LoginDelegatesUrl =
@@ -21,6 +23,12 @@ internal static class IdsConstants
         "https://profile.ess.apple.com/WebObjects/VCProfileService.woa/wa/idsGetHandles";
     public const string FallbackRegister =
         "https://identity.ess.apple.com/WebObjects/TDIdentityService.woa/wa/register";
+    /// <summary>Fallback query (HTTP diretto) se il bag non espone id-query.</summary>
+    public const string FallbackIdQuery =
+        "https://identity.ess.apple.com/WebObjects/TDIdentityService.woa/wa/idQuery";
+
+    /// <summary>Topic APS usato per HTTP-over-APNs (IDS control).</summary>
+    public const string IdsHttpOverApnsTopic = "com.apple.private.ids";
 
     public static readonly string[] FindMySubServices =
     [

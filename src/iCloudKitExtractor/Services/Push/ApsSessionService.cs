@@ -19,6 +19,11 @@ public sealed class ApsSessionService : IAsyncDisposable
     public event EventHandler<string>? Log;
     public event EventHandler<ApsNotificationEventArgs>? NotificationReceived;
 
+    /// <summary>Courier sottostante (IDS transport / send).</summary>
+    public ApsCourierClient Courier => _courier;
+
+    public bool IsConnected => _courier.IsConnected;
+
     public ApsPushState Snapshot() => new()
     {
         HasCertificate = ApsStorage.HasCertificate(),
@@ -28,6 +33,17 @@ public sealed class ApsSessionService : IAsyncDisposable
         LastError = _lastError,
         ConnectedUtc = _courier.ConnectedUtc,
     };
+
+    public Task SendNotificationAsync(
+        string topic,
+        byte[] destinationToken,
+        byte[] payload,
+        byte[]? messageId = null,
+        CancellationToken ct = default) =>
+        _courier.SendNotificationAsync(topic, destinationToken, payload, messageId, ct);
+
+    public Task SendRawAsync(byte[] frame, CancellationToken ct = default) =>
+        _courier.SendRawAsync(frame, ct);
 
     /// <summary>Token hex uppercase per GSA cpd <c>ptkn</c> (o null).</summary>
     public static string? TryGetPushTokenHex()

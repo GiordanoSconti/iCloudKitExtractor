@@ -106,6 +106,24 @@
                 <TextBox x:Name="IssuedBundleBox" IsReadOnly="True" Width="420" PlaceholderText="issued bundle Base64"/>
                 <Button Content="Copy" Click="CopyBundle_OnClick" Padding="12,6"/>
               </StackPanel>
+
+              <TextBlock Text="Authorization allowlist (Bearer)" FontWeight="SemiBold" Margin="0,10,0,0"/>
+              <TextBlock Opacity="0.7" FontSize="12" TextWrapping="Wrap"
+                         Text="When enforced, remote clients must send Authorization: Bearer with a listed license id, subject, Package-C Base64, or raw token. Auto-issue is disabled while enforced."/>
+              <CheckBox x:Name="RequireLicenseAllowlistCheck"
+                        Content="Enforce Authorization license allowlist"
+                        IsChecked="False"
+                        Click="RequireLicenseAllowlist_OnClick"/>
+              <TextBox x:Name="LicenseAllowBox" AcceptsReturn="True" TextWrapping="Wrap"
+                       MinHeight="80" FontFamily="Consolas,Menlo,monospace" FontSize="12"
+                       PlaceholderText="license-id-hex&#x0a;user@example.com&#x0a;# or paste full Package-C Base64 / Bearer token — one per line"/>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Save allowlist" Click="SaveLicenseAllow_OnClick" Padding="12,6"/>
+                <Button Content="Add selected license id" Click="AllowSelectedLicense_OnClick" Padding="12,6"
+                        ToolTip.Tip="Append the selected DB license id to the Authorization allowlist"/>
+                <Button Content="Add issued Package C" Click="AllowIssuedBundle_OnClick" Padding="12,6"
+                        ToolTip.Tip="Append the Package-C just issued above"/>
+              </StackPanel>
             </StackPanel>
           </Border>
         </Grid>
