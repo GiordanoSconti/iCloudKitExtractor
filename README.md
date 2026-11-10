@@ -26,14 +26,13 @@
   <img src="https://img.shields.io/badge/.NET-10-512BD4" alt=".NET 10" />
   <img src="https://img.shields.io/badge/platform-Windows-0078D4" alt="Windows" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" />
-  <a href="https://www.icloudkitextractor.eu"><img src="https://img.shields.io/badge/Anisette%20preview-OFFLINE-lightgrey" alt="Anisette preview OFFLINE" /></a>
+  <a href="https://www.icloudkitextractor.eu"><img src="https://img.shields.io/badge/Anisette%20preview-ONLINE-brightgreen" alt="Anisette preview ONLINE" /></a>
   <img src="https://img.shields.io/badge/institutional%20VPN-manual%20consent-0A66C2" alt="Institutional VPN manual consent" />
 </p>
 
 > [!IMPORTANT]
-> **Anisette preview — temporarily OFFLINE** · [https://www.icloudkitextractor.eu](https://www.icloudkitextractor.eu)  
-> Back online **tonight** (same evening). Until then, self-host or contact for access.  
-> When online again: leave the IKE **License** field empty on first connect to receive a Package-C license once.  
+> **Anisette preview — ONLINE** · [https://www.icloudkitextractor.eu](https://www.icloudkitextractor.eu)  
+> Leave the IKE **License** field empty on first connect to receive a Package-C license once.  
 > **VPN:** networks recognized as **institutions / universities** go through **manual operator consent** — access for later requests can be **allowed** or **denied**. Commercial / anonymous VPNs remain restricted under the acceptable-use rules in [Preview access](#preview-access-to-anisette-server).
 
 <p align="center">
@@ -181,7 +180,7 @@ Temporary public preview endpoint (leave the IKE **License** field empty on firs
 
 **https://www.icloudkitextractor.eu**
 
-> **Status — temporarily OFFLINE** (back **tonight**). Published via **Cloudflare Tunnel** when running (see below). Prefer self-host or contact for access while the preview is down.
+> **Status — currently active and running.** Published via **Cloudflare Tunnel** (see below). Prefer self-host or contact for access if the preview is temporarily down.
 
 > **Note — VPN / institutional access.** A **manual authorization** flow was added for VPNs recognized as institutions / universities: when such a network is detected, the operator can **allow** controlled access for subsequent requests or **deny** it. Commercial / anonymous VPNs remain subject to the acceptable-use rules below.
 
