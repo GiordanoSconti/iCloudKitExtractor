@@ -141,7 +141,7 @@ public sealed class AlbertPushActivation
         // Risposta Albert: HTML/XML con plist innestato.
         var plistXml = TryExtractPlistXml(responseText)
                        ?? throw new InvalidOperationException(
-                           "Albert: nessun plist nella risposta: " + Trim(responseText, 300));
+                           "Albert: no plist in response: " + Trim(responseText, 300));
 
         Dictionary<string, object?> root;
         try
@@ -150,14 +150,14 @@ public sealed class AlbertPushActivation
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException("Albert: plist non valido: " + ex.Message, ex);
+            throw new InvalidOperationException("Albert: invalid plist: " + ex.Message, ex);
         }
 
         if (!TryGetPath(root, out var certObj, "device-activation", "activation-record", "DeviceCertificate")
             && !TryGetPath(root, out certObj, "DeviceCertificate"))
         {
             throw new InvalidOperationException(
-                "Albert: DeviceCertificate assente. Chiavi: " + string.Join(", ", root.Keys));
+                "Albert: DeviceCertificate missing. Keys: " + string.Join(", ", root.Keys));
         }
 
         return certObj switch

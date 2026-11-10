@@ -1163,11 +1163,16 @@
                 <TabItem x:Name="TrustedDevicesTab" Header="Trusted devices (Work in progress)" IsEnabled="True">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
+                            <!-- Controlli alti: ScrollViewer con altezza * (come Escrow). -->
+                            <RowDefinition Height="3*" MinHeight="220"/>
+                            <RowDefinition Height="2*" MinHeight="160"/>
                         </Grid.RowDefinitions>
-                        <Border Style="{StaticResource SectionCardStyle}">
-                            <StackPanel>
+                        <Border Style="{StaticResource SectionCardStyle}" Margin="0,0,0,8">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          CanContentScroll="False"
+                                          Padding="0,0,4,0">
+                            <StackPanel MinWidth="520">
                                 <TextBlock Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,8"
                                            Text="Trust Apple ID / session token (after SRP GrandSlam login)."/>
                                 <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,14"
@@ -1197,7 +1202,7 @@
                                             MinWidth="140" Margin="0,0,10,8"
                                             Click="TrustedDevicesRefreshButton_Click"/>
                                     <Button x:Name="ApsActivateButton"
-                                            Content="Attiva Albert"
+                                            Content="Activate Albert"
                                             Style="{StaticResource SecondaryButtonStyle}"
                                             MinWidth="130" Margin="0,0,10,8"
                                             Click="ApsActivateButton_Click"
@@ -1214,6 +1219,24 @@
                                             MinWidth="140" Margin="0,0,10,8"
                                             Click="IdsEnrollButton_Click"
                                             ToolTip="Delegate PET → authenticateDS → id-register (multiplex1/FMF). Requires APS token."/>
+                                    <Button x:Name="MadridEnrollButton"
+                                            Content="Enroll Madrid"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            MinWidth="140" Margin="0,0,10,8"
+                                            Click="MadridEnrollButton_Click"
+                                            ToolTip="id-register com.apple.madrid for iMessage. Lab Apple ID only — ban risk."/>
+                                    <Button x:Name="MadridLoadPersonaButton"
+                                            Content="Load Mac persona"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="150" Margin="0,0,10,8"
+                                            Click="MadridLoadPersonaButton_Click"
+                                            ToolTip="Import Mac data.plist for NAC (serial/MLB/ROM). Capture on macOS with scripts/nac-pypush/capture_mac_persona.py. iPhone Frida ≠ NAC."/>
+                                    <Button x:Name="MadridLoadValidationButton"
+                                            Content="Load validation-data"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            MinWidth="160" Margin="0,0,10,8"
+                                            Click="MadridLoadValidationButton_Click"
+                                            ToolTip="Import Frida-captured IDS validation-data (.b64 / JSON). scripts/ios_akd_probe/fetch_ids_validation.py"/>
                                     <Button x:Name="Hsa2NewAdiButton"
                                             Content="New ADI identity"
                                             Style="{StaticResource SecondaryButtonStyle}"
@@ -1232,6 +1255,14 @@
                                             MinWidth="130" Margin="0,0,10,8"
                                             Click="ApsDisconnectButton_Click"/>
                                 </WrapPanel>
+                                <TextBlock x:Name="MadridStatusText"
+                                           Style="{StaticResource HintTextStyle}"
+                                           Margin="0,0,0,8"
+                                           TextWrapping="Wrap"
+                                           Text="Madrid: not enrolled."/>
+                                <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                                           TextWrapping="Wrap" Foreground="#A15C00"
+                                           Text="Lab Apple ID only. Unofficial IDS/Madrid enroll can trigger customer-code / account restrictions. Do not use a primary Apple ID."/>
                                 <TextBlock x:Name="ApsTokenText"
                                            Style="{StaticResource HintTextStyle}"
                                            Margin="0,4,0,8"
@@ -1272,16 +1303,64 @@
                                 <TextBlock x:Name="TrustedDevicesStatusText"
                                            Style="{StaticResource HintTextStyle}" Margin="0,10,0,0"
                                            Text="Waiting — sign in first."/>
+                                <Expander x:Name="MadridMessagesExpander" Header="Messages (iMessage / Madrid)"
+                                          Margin="0,12,0,0" IsExpanded="False">
+                                    <StackPanel Margin="0,8,0,0">
+                                    <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8"
+                                               TextWrapping="Wrap"
+                                               Text="Live RX needs APS Connect on the SAME push token used for Enroll Madrid (iPhone APS). Albert token ≠ Madrid token. Text MVP; history: Sync Data → Messages."/>
+                                    <Grid MinHeight="220">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="220"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <DockPanel Grid.Column="0" Margin="0,0,10,0">
+                                            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                                <TextBlock Text="Resolve handle" Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,4"/>
+                                                <DockPanel>
+                                                    <Button x:Name="MadridLookupButton" DockPanel.Dock="Right"
+                                                            Content="Lookup" MinWidth="70" Margin="6,0,0,0"
+                                                            Style="{StaticResource SecondaryButtonStyle}"
+                                                            Click="MadridLookupButton_Click"/>
+                                                    <TextBox x:Name="MadridLookupHandleTextBox"
+                                                             ToolTip="mailto:user@icloud.com or +phone"/>
+                                                </DockPanel>
+                                            </StackPanel>
+                                            <ListBox x:Name="MadridConversationsListBox"
+                                                     DisplayMemberPath="PeerHandle"
+                                                     SelectionChanged="MadridConversationsListBox_SelectionChanged"/>
+                                        </DockPanel>
+                                        <DockPanel Grid.Column="1">
+                                            <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                                                <Button x:Name="MadridSendButton" DockPanel.Dock="Right"
+                                                        Content="Send" MinWidth="80" Margin="8,0,0,0"
+                                                        Style="{StaticResource PrimaryButtonStyle}"
+                                                        Click="MadridSendButton_Click"/>
+                                                <TextBox x:Name="MadridComposeTextBox"
+                                                         ToolTip="Plain text only (MVP)"/>
+                                            </DockPanel>
+                                            <TextBox x:Name="MadridThreadTextBox"
+                                                     Style="{StaticResource LogTextBoxStyle}"
+                                                     IsReadOnly="True"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     Text="Select a conversation or look up a handle, then compose."/>
+                                        </DockPanel>
+                                    </Grid>
+                                    </StackPanel>
+                                </Expander>
                             </StackPanel>
+                            </ScrollViewer>
                         </Border>
                         <Border Grid.Row="1" Style="{StaticResource LogSectionCardStyle}">
                             <DockPanel LastChildFill="True">
-                                <TextBlock DockPanel.Dock="Top" Text="Trust status"
+                                <TextBlock DockPanel.Dock="Top" Text="Trust status / APS log"
                                            Style="{StaticResource SectionLabelStyle}"
                                            Margin="0,0,0,4"/>
                                 <TextBox x:Name="TrustedDevicesResultTextBox"
                                          Style="{StaticResource LogTextBoxStyle}"
                                          IsReadOnly="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"
                                          Text="After sign-in, ADSID/PET/trust status will appear."/>
                             </DockPanel>
                         </Border>

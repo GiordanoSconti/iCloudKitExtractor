@@ -105,7 +105,7 @@ internal static class ApsProtocol
         int flags = 65)
     {
         if (certificateDer is null || certificateDer.Length == 0)
-            throw new ArgumentException("Serve certificato APS DER.", nameof(certificateDer));
+            throw new ArgumentException("APS DER certificate required.", nameof(certificateDer));
         if (signSha1Pkcs1 is null)
             throw new ArgumentNullException(nameof(signSha1Pkcs1));
 
@@ -177,24 +177,20 @@ internal static class ApsProtocol
         });
 
     /// <summary>
-    /// Notifica uscente verso un peer (IDS send / HTTP-over-APNs).
-    /// Field layout allineato ai client open-source: topic hash, dest token, payload, id.
+    /// Device→courier notification publish (pypush send). Fields: topic hash, recipient token, payload, message id.
     /// </summary>
-    public static byte[] BuildOutgoingNotification(
-        byte[] topicHash,
-        byte[] destinationToken,
+    public static byte[] BuildNotification(
+        string topic,
+        byte[] recipientToken,
         byte[] payload,
-        byte[] messageId)
+        byte[]? messageId = null)
     {
-        ArgumentNullException.ThrowIfNull(topicHash);
-        ArgumentNullException.ThrowIfNull(destinationToken);
-        ArgumentNullException.ThrowIfNull(payload);
-        ArgumentNullException.ThrowIfNull(messageId);
+        messageId ??= RandomNumberGenerator.GetBytes(4);
         return Serialize(TypeNotification, new List<(byte, byte[])>
         {
-            (1, topicHash),
-            (2, destinationToken),
-            (3, payload),
+            (1, TopicHash(topic)),
+            (2, recipientToken),
+            (3, payload ?? []),
             (4, messageId),
         });
     }

@@ -136,15 +136,15 @@ public sealed class IdsIdentity
         // SEQUENCE { INTEGER r, INTEGER s }
         var i = 0;
         if (der[i++] != 0x30)
-            throw new InvalidOperationException("ECDSA DER non SEQUENCE.");
+            throw new InvalidOperationException("ECDSA DER is not SEQUENCE.");
         _ = ReadLen(der, ref i);
         if (der[i++] != 0x02)
-            throw new InvalidOperationException("ECDSA DER r mancante.");
+            throw new InvalidOperationException("ECDSA DER r missing.");
         var rLen = ReadLen(der, ref i);
         var r = der.AsSpan(i, rLen).ToArray();
         i += rLen;
         if (der[i++] != 0x02)
-            throw new InvalidOperationException("ECDSA DER s mancante.");
+            throw new InvalidOperationException("ECDSA DER s missing.");
         var sLen = ReadLen(der, ref i);
         var s = der.AsSpan(i, sLen).ToArray();
         // strip leading 00
@@ -191,7 +191,7 @@ public sealed class IdsIdentity
             return pem;
         }
 
-        throw new InvalidOperationException("Impossibile generare EC key con y <= P-y.");
+        throw new InvalidOperationException("Cannot generate EC key with y <= P-y.");
     }
 
     private static string LoadOrCreateRsa(string path, int bits)
@@ -224,7 +224,7 @@ public sealed class IdsIdentity
         {
             AsymmetricCipherKeyPair pair => pair.Private,
             AsymmetricKeyParameter key => key,
-            _ => throw new InvalidOperationException("PEM private key non valida."),
+            _ => throw new InvalidOperationException("Invalid PEM private key."),
         };
     }
 
@@ -237,7 +237,7 @@ public sealed class IdsIdentity
                 ec.Parameters.G.Multiply(ec.D).Normalize(),
                 ec.Parameters),
             RsaPrivateCrtKeyParameters rsa => new RsaKeyParameters(false, rsa.Modulus, rsa.PublicExponent),
-            _ => throw new InvalidOperationException($"Tipo chiave non supportato: {priv.GetType().Name}"),
+            _ => throw new InvalidOperationException($"Unsupported key type: {priv.GetType().Name}"),
         };
     }
 

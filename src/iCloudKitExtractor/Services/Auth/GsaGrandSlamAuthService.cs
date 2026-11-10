@@ -66,7 +66,12 @@ public sealed class GsaGrandSlamAuthService
             }
 
             session.Anisette = anisette;
-            var initCpd = GrandSlamCpdBuilder.Build(anisette, SrpProfile);
+            var pushHex = Services.Push.ApsSessionService.TryGetPushTokenHex();
+            var initCpd = GrandSlamCpdBuilder.Build(anisette, SrpProfile, pushHex);
+            if (!string.IsNullOrEmpty(pushHex) && pushHex != "0")
+                Report(AuthStep.Init, $"cpd.ptkn from APS ({pushHex.Length} hex chars)");
+            else
+                Report(AuthStep.Init, "cpd.ptkn=0 (no APS token — connect APS for HSA2 push OTP)");
             LogCpd("init", initCpd);
 
             Report(AuthStep.Init, _useFullIphoneAuth

@@ -73,7 +73,7 @@ public sealed class IdsAuthenticateDs
             var preview = Encoding.UTF8.GetString(unzipped);
             if (preview.Length > 300)
                 preview = preview[..300] + "…";
-            throw new InvalidOperationException($"authenticateDS: plist non valido: {ex.Message} — {preview}");
+            throw new InvalidOperationException($"authenticateDS: invalid plist: {ex.Message} — {preview}");
         }
 
         var status = AppleXmlPlist.GetInt(root, "status");
@@ -85,7 +85,7 @@ public sealed class IdsAuthenticateDs
 
         var certDer = AppleXmlPlist.GetData(root, "cert")
                       ?? throw new InvalidOperationException(
-                          "authenticateDS: cert assente. Chiavi: " + string.Join(", ", root.Keys));
+                          "authenticateDS: cert missing. Keys: " + string.Join(", ", root.Keys));
 
         var certPem = IdsSigning.ArmourCertDer(certDer);
         // valida parse

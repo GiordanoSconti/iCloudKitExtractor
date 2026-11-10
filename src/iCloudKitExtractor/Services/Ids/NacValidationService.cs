@@ -29,14 +29,31 @@ public sealed class NacValidationService
         var script = Path.Combine(_scriptRoot, "generate_validation_data.py");
         if (!File.Exists(script))
             throw new InvalidOperationException(
-                $"NAC script assente: {script}. Serve scripts/nac-pypush da pypush emulated.");
+                $"NAC script missing: {script}. Requires scripts/nac-pypush from pypush emulated.");
+
+        var dataPlist = MadridDevicePersona.HasPersona()
+            ? MadridDevicePersona.DataPlistPath
+            : null;
+        if (dataPlist is not null)
+            log?.Invoke("NAC: using imported Mac persona → " + dataPlist);
+        else
+            log?.Invoke("NAC: using bundled pypush data.plist (spoofed Mac) — import a real Mac persona for Madrid.");
 
         log?.Invoke($"NAC: {_pythonExe} {script} --json");
 
         // `py` launcher richiede -3; python/python3 no.
-        var args = string.Equals(Path.GetFileNameWithoutExtension(_pythonExe), "py", StringComparison.OrdinalIgnoreCase)
-            ? $"-3 \"{script}\" --json"
-            : $"\"{script}\" --json";
+        var argList = new List<string>();
+        if (string.Equals(Path.GetFileNameWithoutExtension(_pythonExe), "py", StringComparison.OrdinalIgnoreCase))
+            argList.Add("-3");
+        argList.Add(script);
+        argList.Add("--json");
+        if (dataPlist is not null)
+        {
+            argList.Add("--data-plist");
+            argList.Add(dataPlist);
+        }
+
+        var args = string.Join(" ", argList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
 
         var psi = new ProcessStartInfo
         {
@@ -48,6 +65,8 @@ public sealed class NacValidationService
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        if (dataPlist is not null)
+            psi.Environment["IKE_NAC_DATA_PLIST"] = dataPlist;
 
         using var proc = new Process { StartInfo = psi };
         var stdout = new StringBuilder();
@@ -61,7 +80,7 @@ public sealed class NacValidationService
         };
 
         if (!proc.Start())
-            throw new InvalidOperationException("NAC: impossibile avviare Python.");
+            throw new InvalidOperationException("NAC: cannot start Python.");
 
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
@@ -73,12 +92,12 @@ public sealed class NacValidationService
             if (string.IsNullOrEmpty(err))
                 err = stdout.ToString().Trim();
             throw new InvalidOperationException(
-                $"NAC exit={proc.ExitCode}: {(string.IsNullOrEmpty(err) ? "(nessun output)" : err)}");
+                $"NAC exit={proc.ExitCode}: {(string.IsNullOrEmpty(err) ? "(no output)" : err)}");
         }
 
         var text = stdout.ToString().Trim();
         if (string.IsNullOrEmpty(text))
-            throw new InvalidOperationException("NAC: stdout vuoto.");
+            throw new InvalidOperationException("NAC: empty stdout.");
 
         try
         {
@@ -86,7 +105,7 @@ public sealed class NacValidationService
             if (doc.RootElement.TryGetProperty("validation_data_b64", out var b64El))
             {
                 var b64 = b64El.GetString()
-                          ?? throw new InvalidOperationException("NAC JSON senza validation_data_b64.");
+                          ?? throw new InvalidOperationException("NAC JSON missing validation_data_b64.");
                 var bytes = Convert.FromBase64String(b64);
                 log?.Invoke($"NAC OK — validation-data {bytes.Length} B");
                 return bytes;

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using iCloudKitExtractor.Models;
+using iCloudKitExtractor.Services.Ids;
 using iCloudKitExtractor.Services.Push;
 
 namespace iCloudKitExtractor.Services.FindMy;
@@ -70,11 +71,11 @@ public sealed class TrustedDevicesService
         sb.AppendLine($"PCS KeySet Escrow: {(session.PcsEscrowedKeySet is { Length: > 32 } ? $"OK ({session.PcsEscrowedKeySet.Length} B)" : "NO")}");
 
         sb.AppendLine();
-        sb.AppendLine("Telefoni 2FA noti in sessione:");
+        sb.AppendLine("Known 2FA phones in session:");
         if (session.TrustedPhoneNumbers.Count == 0)
         {
-            sb.AppendLine("  (nessuno)");
-            sb.AppendLine("  Origine: challenge GSA (login HSA2).");
+            sb.AppendLine("  (none)");
+            sb.AppendLine("  Source: GSA challenge (HSA2 login) or security/devices.");
         }
         else
         {
@@ -85,7 +86,7 @@ public sealed class TrustedDevicesService
         sb.AppendLine();
         sb.AppendLine("=== APS push (Albert / courier) ===");
         sb.AppendLine(
-            $"Certificato: {(ApsStorage.HasCertificate() ? "OK (" + ApsStorage.DirectoryPath + ")" : "NO")}");
+            $"Certificate: {(ApsStorage.HasCertificate() ? "OK (" + ApsStorage.DirectoryPath + ")" : "NO")}");
         var pushTok = ApsSessionService.TryGetPushTokenHex();
         if (string.IsNullOrEmpty(pushTok))
             sb.AppendLine("Push token: (missing — run Albert activation + Connect APS)");
@@ -93,11 +94,26 @@ public sealed class TrustedDevicesService
             sb.AppendLine($"Push token: {pushTok}");
 
         sb.AppendLine();
+        sb.AppendLine("=== IDS / Madrid ===");
+        sb.AppendLine(IdsStorage.FormatStatusSummary());
+        sb.AppendLine(MadridDevicePersona.FormatStatusSummary());
+        sb.AppendLine(IphoneIdsIdentityStore.FormatStatusSummary());
+        sb.AppendLine(IdsValidationDataStore.FormatStatusSummary());
+
+        sb.AppendLine();
         sb.AppendLine("Note:");
         sb.AppendLine(
             "  · \"Register on 2FA list\" (HSA2/GSA) uses password + APS ptkn, then OTP from an already trusted device.");
         sb.AppendLine(
             "  · Web TrustToken (idmsa) is not used by this flow.");
+        sb.AppendLine(
+            "  · Enroll IDS = Find My multiplex1; Enroll Madrid = iMessage (com.apple.madrid).");
+        sb.AppendLine(
+            "  · Lab Apple ID only — unofficial Madrid enroll risks customer-code / account ban.");
+        sb.AppendLine(
+            "  · Attachments / groups / receipts are not wired (text MVP).");
+        sb.AppendLine(
+            "  · " + IMessage.MadridClient.CloudKitHistoryHint);
         return sb.ToString();
     }
 

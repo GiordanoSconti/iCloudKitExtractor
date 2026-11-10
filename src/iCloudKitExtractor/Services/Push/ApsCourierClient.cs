@@ -7,6 +7,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
 using iCloudKitExtractor.Protocol;
+using iCloudKitExtractor.Services.Ids;
 
 namespace iCloudKitExtractor.Services.Push;
 
@@ -22,7 +23,6 @@ public sealed class ApsCourierClient : IAsyncDisposable
     public const string SandboxSni = "courier.sandbox.push.apple.com";
 
     private readonly object _gate = new();
-    private readonly Dictionary<string, string> _topicByHashHex = new(StringComparer.OrdinalIgnoreCase);
     private TcpClient? _tcp;
     private SslStream? _ssl;
     private X509Certificate2? _clientCert;
@@ -30,13 +30,11 @@ public sealed class ApsCourierClient : IAsyncDisposable
     private CancellationTokenSource? _loopCts;
     private Task? _receiveLoop;
     private Task? _keepAliveLoop;
-    private string[] _activeFilterTopics = DefaultAuthTopics;
 
     public byte[]? Token { get; private set; }
     public string? CourierHost { get; private set; }
     public bool IsConnected => _ssl is not null && _tcp?.Connected == true;
     public DateTimeOffset? ConnectedUtc { get; private set; }
-    public IReadOnlyList<string> ActiveFilterTopics => _activeFilterTopics;
 
     public event EventHandler<ApsNotificationEventArgs>? NotificationReceived;
     public event EventHandler<string>? Log;
@@ -83,11 +81,11 @@ public sealed class ApsCourierClient : IAsyncDisposable
             catch (Exception ex) when (i < attempts.Count - 1 && IsRetryableConnectError(ex))
             {
                 last = ex;
-                RaiseLog($"Connect fallito ({ex.Message}) — prossimo tentativo…");
+                RaiseLog($"Connect failed ({ex.Message}) — next attempt…");
             }
         }
 
-        throw last ?? new InvalidOperationException("APS connect fallito.");
+        throw last ?? new InvalidOperationException("APS connect failed.");
     }
 
     private static bool IsRetryableConnectError(Exception ex) =>
@@ -158,7 +156,7 @@ public sealed class ApsCourierClient : IAsyncDisposable
             while (root.InnerException is not null)
                 root = root.InnerException;
             throw new AuthenticationException(
-                $"APS TLS fallito su {host} SNI={sni}: {ex.Message} | {root.Message}", ex);
+                $"APS TLS failed on {host} SNI={sni}: {ex.Message} | {root.Message}", ex);
         }
 
         _tcp = tcp;
@@ -170,13 +168,19 @@ public sealed class ApsCourierClient : IAsyncDisposable
         byte[] SignNonce(byte[] nonce) =>
             clientRsa.SignData(nonce, HashAlgorithmName.SHA1, RSASignaturePadding.Pkcs1);
 
+        // iPhone Device CA certs often use richer flag bits (wiki iOS ~0x26A);
+        // Albert/Windows path keeps pypush 0x41.
+        var useIosFlags = IsAppleIphoneDeviceCert(certDer);
+        var connectFlags = useIosFlags ? 0x26A : 65;
         var connectPayload = ApsProtocol.BuildConnect(
             existingToken,
             certDer,
             SignNonce,
-            flags: 65);
+            flags: connectFlags);
         RaiseLog(
-            $"TX Connect type=0x07 fields=cert+nonce+sig token={(existingToken is null ? "no" : "yes")}");
+            $"TX Connect type=0x07 flags=0x{connectFlags:X} "
+            + $"token={(existingToken is null ? "no" : "yes")} "
+            + $"cert={(useIosFlags ? "iPhone" : "Albert/other")}");
         await ssl.WriteAsync(connectPayload, ct).ConfigureAwait(false);
         await ssl.FlushAsync(ct).ConfigureAwait(false);
 
@@ -187,7 +191,7 @@ public sealed class ApsCourierClient : IAsyncDisposable
         {
             var msg = await ApsProtocol.ReadMessageAsync(ssl, ackCts.Token).ConfigureAwait(false);
             if (msg is null)
-                throw new InvalidOperationException("APS: stream chiuso durante connect.");
+                throw new InvalidOperationException("APS: stream closed during connect.");
             var (type, fields) = msg.Value;
             RaiseLog($"RX type=0x{type:X2} fields={fields.Count} [{FormatFields(fields)}]");
             if (type != ApsProtocol.TypeConnectAck)
@@ -202,7 +206,7 @@ public sealed class ApsCourierClient : IAsyncDisposable
 
             token = ApsProtocol.GetField(fields, 3) ?? existingToken;
             if (token is null || token.Length == 0)
-                throw new InvalidOperationException("APS connect ack senza token.");
+                throw new InvalidOperationException("APS connect ack without token.");
         }
 
         Token = token;
@@ -210,13 +214,19 @@ public sealed class ApsCourierClient : IAsyncDisposable
         ConnectedUtc = DateTimeOffset.UtcNow;
         RaiseLog($"Push token: {ApsStorage.TokenHex(token)}");
 
-        await ssl.WriteAsync(ApsProtocol.BuildSetState(1), ct).ConfigureAwait(false);
-        var topics = (filterTopics ?? DefaultAuthTopics).ToArray();
-        _activeFilterTopics = topics;
-        RebuildTopicHashMap(topics);
+        // pypush / JJTech: filter topics FIRST, then active SetState(1).
+        var topics = filterTopics
+                     ?? (useIosFlags ? MadridReceiveTopics : DefaultAuthTopics);
         await ssl.WriteAsync(ApsProtocol.BuildFilter(token, topics), ct).ConfigureAwait(false);
+        await ssl.WriteAsync(ApsProtocol.BuildSetState(1), ct).ConfigureAwait(false);
         await ssl.FlushAsync(ct).ConfigureAwait(false);
-        RaiseLog($"Filter topics: {string.Join(", ", topics)}");
+        RaiseLog($"Filter+SetState(1) topics: {string.Join(", ", topics)}");
+        if (useIosFlags)
+        {
+            RaiseLog(
+                "NOTE: same push token as the iPhone — put the phone in Airplane Mode "
+                + "(or sign out of iMessage) or apsd will steal the courier and you only see KeepAlive.");
+        }
 
         _loopCts = new CancellationTokenSource();
         var loopToken = _loopCts.Token;
@@ -224,48 +234,19 @@ public sealed class ApsCourierClient : IAsyncDisposable
         _keepAliveLoop = Task.Run(() => KeepAliveLoopAsync(loopToken), CancellationToken.None);
     }
 
-    /// <summary>Invia frame APS grezzo (notifica uscente / HTTP-over-APNs).</summary>
-    public async Task SendRawAsync(byte[] frame, CancellationToken ct = default)
+    private static bool IsAppleIphoneDeviceCert(byte[] certDer)
     {
-        ArgumentNullException.ThrowIfNull(frame);
-        var ssl = _ssl ?? throw new InvalidOperationException("APS non connesso.");
-        await ssl.WriteAsync(frame, ct).ConfigureAwait(false);
-        await ssl.FlushAsync(ct).ConfigureAwait(false);
-    }
-
-    public async Task SendNotificationAsync(
-        string topic,
-        byte[] destinationToken,
-        byte[] payload,
-        byte[]? messageId = null,
-        CancellationToken ct = default)
-    {
-        messageId ??= Guid.NewGuid().ToByteArray();
-        var frame = ApsProtocol.BuildOutgoingNotification(
-            ApsProtocol.TopicHash(topic),
-            destinationToken,
-            payload,
-            messageId);
-        await SendRawAsync(frame, ct).ConfigureAwait(false);
-        RaiseLog($"TX NOTIF topic={topic} dest={Convert.ToHexString(destinationToken.AsSpan(0, Math.Min(8, destinationToken.Length)))}… payload={payload.Length} B");
-    }
-
-    public string? ResolveTopic(byte[]? topicHash)
-    {
-        if (topicHash is null || topicHash.Length == 0)
-            return null;
-        var hex = Convert.ToHexString(topicHash);
-        lock (_gate)
-            return _topicByHashHex.TryGetValue(hex, out var name) ? name : null;
-    }
-
-    private void RebuildTopicHashMap(IEnumerable<string> topics)
-    {
-        lock (_gate)
+        try
         {
-            _topicByHashHex.Clear();
-            foreach (var t in topics)
-                _topicByHashHex[Convert.ToHexString(ApsProtocol.TopicHash(t))] = t;
+            using var cert = X509CertificateLoader.LoadCertificate(certDer);
+            var issuer = cert.IssuerName.Name ?? "";
+            var subject = cert.SubjectName.Name ?? "";
+            return issuer.Contains("iPhone Device CA", StringComparison.OrdinalIgnoreCase)
+                   || subject.Contains("OU=iPhone", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -353,27 +334,29 @@ public sealed class ApsCourierClient : IAsyncDisposable
                         }
                         catch (Exception ex)
                         {
-                            RaiseLog($"ACK fallito: {ex.Message}");
+                            RaiseLog($"ACK failed: {ex.Message}");
                         }
                     }
 
+                    // IDS HTTP-over-APNs responses (id-query) — complete waiter, don't treat as chat.
+                    if (TryCompleteHttpOverApns(payload))
+                        continue;
+
                     var text = TryDecodePayload(payload);
                     var otp = TryExtractOtp(text);
-                    var topicName = ResolveTopic(topicHash);
                     NotificationReceived?.Invoke(this, new ApsNotificationEventArgs
                     {
                         Type = type,
                         Fields = fields,
                         Payload = payload,
                         TopicHash = topicHash,
-                        Topic = topicName,
                         MessageId = messageId,
                         PayloadText = text,
                         ExtractedOtp = otp,
                     });
                     RaiseLog(
                         otp is null
-                            ? $"NOTIF topic={topicName ?? "?"} payload={text ?? Convert.ToHexString(payload ?? Array.Empty<byte>())}"
+                            ? $"NOTIF payload={text ?? Convert.ToHexString(payload ?? Array.Empty<byte>())}"
                             : $"NOTIF OTP={otp} payload={text}");
                     continue;
                 }
@@ -415,6 +398,16 @@ public sealed class ApsCourierClient : IAsyncDisposable
             RaiseLog($"KeepAlive: {ex.Message}");
         }
     }
+
+    /// <summary>Topics for live iMessage RX when using the cloned iPhone APS identity.</summary>
+    private static readonly string[] MadridReceiveTopics =
+    {
+        "com.apple.madrid",
+        "com.apple.private.ids",
+        "com.apple.private.alloy",
+        "com.apple.ess",
+        "com.apple.private.alloy.sms",
+    };
 
     private static readonly string[] DefaultAuthTopics =
     {
@@ -503,6 +496,119 @@ public sealed class ApsCourierClient : IAsyncDisposable
             return null;
         var m = Regex.Match(text, @"\b(\d{6})\b");
         return m.Success ? m.Groups[1].Value : null;
+    }
+
+    /// <summary>Publish a notification to a recipient push token on the given topic.</summary>
+    public async Task SendNotificationAsync(
+        string topic,
+        byte[] recipientToken,
+        byte[] payload,
+        byte[]? messageId = null,
+        CancellationToken ct = default)
+    {
+        var ssl = _ssl;
+        if (ssl is null || !IsConnected)
+            throw new InvalidOperationException("APS courier is not connected.");
+        if (recipientToken is null || recipientToken.Length == 0)
+            throw new ArgumentException("Recipient push token required.", nameof(recipientToken));
+
+        var frame = ApsProtocol.BuildNotification(topic, recipientToken, payload, messageId);
+        await ssl.WriteAsync(frame, ct).ConfigureAwait(false);
+        await ssl.FlushAsync(ct).ConfigureAwait(false);
+        RaiseLog($"TX NOTIF topic={topic} tokenLen={recipientToken.Length} payload={payload.Length} B");
+    }
+
+    /// <summary>Best-effort topic name from hash (filter map not kept in Madrid courier path).</summary>
+    public string? ResolveTopic(byte[]? topicHash) => null;
+
+    /// <summary>
+    /// IDS HTTP-over-APNs (pypush <c>ids/query.py</c>): send binary plist envelope on
+    /// <paramref name="topic"/> and wait for a matching response notification (<c>U</c>).
+    /// </summary>
+    public async Task<byte[]> HttpOverApnsAsync(
+        string topic,
+        string url,
+        IReadOnlyDictionary<string, string> headers,
+        byte[] gzippedBody,
+        CancellationToken ct = default,
+        TimeSpan? timeout = null)
+    {
+        var ssl = _ssl;
+        var token = Token;
+        if (ssl is null || !IsConnected || token is null || token.Length == 0)
+            throw new InvalidOperationException("APS courier is not connected (needed for id-query).");
+
+        var msgId = RandomNumberGenerator.GetBytes(16);
+        var envelope = new Dictionary<string, object?>
+        {
+            ["cT"] = "application/x-apple-plist",
+            ["U"] = msgId,
+            ["c"] = 96,
+            ["u"] = url,
+            ["h"] = headers.ToDictionary(kv => kv.Key, kv => (object?)kv.Value),
+            ["v"] = 2,
+            ["b"] = gzippedBody,
+        };
+        var payload = AppleBinaryPlist.Write(envelope);
+
+        var tcs = new TaskCompletionSource<byte[]>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_pendingHttp)
+            _pendingHttp[Convert.ToHexString(msgId)] = tcs;
+
+        try
+        {
+            var frame = ApsProtocol.BuildNotification(topic, token, payload);
+            await ssl.WriteAsync(frame, ct).ConfigureAwait(false);
+            await ssl.FlushAsync(ct).ConfigureAwait(false);
+            RaiseLog(
+                $"TX HTTP-over-APNs topic={topic} U={Convert.ToHexString(msgId)[..8]}… "
+                + $"url={url} body={gzippedBody.Length} B");
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(timeout ?? TimeSpan.FromSeconds(30));
+            await using var reg = timeoutCts.Token.Register(
+                () => tcs.TrySetException(new TimeoutException("IDS HTTP-over-APNs timed out.")));
+            return await tcs.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_pendingHttp)
+                _pendingHttp.Remove(Convert.ToHexString(msgId));
+        }
+    }
+
+    private readonly Dictionary<string, TaskCompletionSource<byte[]>> _pendingHttp = new(StringComparer.Ordinal);
+
+    private bool TryCompleteHttpOverApns(byte[]? payload)
+    {
+        if (payload is null || payload.Length < 8)
+            return false;
+        try
+        {
+            if (!AppleBinaryPlist.TryParseDict(payload, out var dict, out _) || dict is null)
+                return false;
+            if (!dict.TryGetValue("U", out var uObj) || uObj is not byte[] u || u.Length == 0)
+                return false;
+            if (!dict.TryGetValue("b", out var bObj) || bObj is not byte[] body || body.Length == 0)
+                return false;
+
+            var key = Convert.ToHexString(u);
+            TaskCompletionSource<byte[]>? tcs;
+            lock (_pendingHttp)
+                _pendingHttp.TryGetValue(key, out tcs);
+            if (tcs is null)
+                return false;
+
+            var unzipped = IdsSigning.TryGunzip(body) ?? body;
+            tcs.TrySetResult(unzipped);
+            RaiseLog($"RX HTTP-over-APNs U={key[..Math.Min(8, key.Length)]}… body={unzipped.Length} B");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void RaiseLog(string message)

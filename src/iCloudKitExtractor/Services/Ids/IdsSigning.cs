@@ -90,7 +90,7 @@ public static class IdsSigning
         headers["x-auth-cert" + postfix] = DearmourPem(authCertPem);
     }
 
-    /// <summary>Firme push + ID cert per <c>id-query</c> (lookup).</summary>
+    /// <summary>IDS ID-certificate signatures for query/send (pypush <c>add_id_signature</c>).</summary>
     public static void AddIdAndPushSignatures(
         IDictionary<string, string> headers,
         byte[] body,
@@ -101,13 +101,23 @@ public static class IdsSigning
         string pushCertPem,
         byte[] pushToken)
     {
-        var pushTokenB64 = Convert.ToBase64String(pushToken);
+        AddIdSignature(headers, body, bagKey, idKeyPem, idCertPem, pushToken);
         var (pushSig, pushNonce) = Sign(pushKeyPem, bagKey, "", pushToken, body);
         headers["x-push-sig"] = pushSig;
         headers["x-push-nonce"] = pushNonce;
         headers["x-push-cert"] = DearmourPem(pushCertPem);
-        headers["x-push-token"] = pushTokenB64;
+    }
 
+    /// <summary>pypush <c>add_id_signature</c> — ID sig only + x-push-token (used by id-query over APNs).</summary>
+    public static void AddIdSignature(
+        IDictionary<string, string> headers,
+        byte[] body,
+        string bagKey,
+        string idKeyPem,
+        string idCertPem,
+        byte[] pushToken)
+    {
+        headers["x-push-token"] = Convert.ToBase64String(pushToken);
         var (idSig, idNonce) = Sign(idKeyPem, bagKey, "", pushToken, body);
         headers["x-id-sig"] = idSig;
         headers["x-id-nonce"] = idNonce;
@@ -184,7 +194,7 @@ public static class IdsSigning
         {
             AsymmetricCipherKeyPair pair => pair.Private,
             AsymmetricKeyParameter key => key,
-            _ => throw new InvalidOperationException($"Chiave PEM non valida: {obj?.GetType().Name}"),
+            _ => throw new InvalidOperationException($"Invalid PEM key: {obj?.GetType().Name}"),
         };
     }
 

@@ -35,7 +35,7 @@ public static class ApsStorage
     public static (string KeyPem, string CertPem) LoadCertificate()
     {
         if (!HasCertificate())
-            throw new InvalidOperationException("Certificato APS assente — esegui attivazione Albert.");
+            throw new InvalidOperationException("APS certificate missing — run Albert activation.");
         return (File.ReadAllText(KeyPemPath), File.ReadAllText(CertPemPath));
     }
 

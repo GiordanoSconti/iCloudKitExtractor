@@ -1,3 +1,5 @@
+using iCloudKitExtractor.Services.Ids;
+
 namespace iCloudKitExtractor.Services.Push;
 
 /// <summary>
@@ -19,7 +21,7 @@ public sealed class ApsSessionService : IAsyncDisposable
     public event EventHandler<string>? Log;
     public event EventHandler<ApsNotificationEventArgs>? NotificationReceived;
 
-    /// <summary>Courier sottostante (IDS transport / send).</summary>
+    /// <summary>Underlying courier (for Madrid send / topic binding).</summary>
     public ApsCourierClient Courier => _courier;
 
     public bool IsConnected => _courier.IsConnected;
@@ -34,17 +36,6 @@ public sealed class ApsSessionService : IAsyncDisposable
         ConnectedUtc = _courier.ConnectedUtc,
     };
 
-    public Task SendNotificationAsync(
-        string topic,
-        byte[] destinationToken,
-        byte[] payload,
-        byte[]? messageId = null,
-        CancellationToken ct = default) =>
-        _courier.SendNotificationAsync(topic, destinationToken, payload, messageId, ct);
-
-    public Task SendRawAsync(byte[] frame, CancellationToken ct = default) =>
-        _courier.SendRawAsync(frame, ct);
-
     /// <summary>Token hex uppercase per GSA cpd <c>ptkn</c> (o null).</summary>
     public static string? TryGetPushTokenHex()
     {
@@ -58,7 +49,7 @@ public sealed class ApsSessionService : IAsyncDisposable
     {
         if (!forceRenew && ApsStorage.HasCertificate())
         {
-            var msg = "Certificato APS già presente in " + ApsStorage.DirectoryPath;
+            var msg = "APS certificate already present in " + ApsStorage.DirectoryPath;
             Log?.Invoke(this, msg);
             return msg;
         }
@@ -90,25 +81,56 @@ public sealed class ApsSessionService : IAsyncDisposable
 
     public async Task ConnectAsync(CancellationToken ct = default)
     {
+        // After Madrid enroll with Frida iPhone push, courier MUST use that identity
+        // or incoming iMessage stays on the phone (different push token).
+        if (IdsStorage.HasMadridRegistration()
+            && MadridPushMaterial.TryResolveIphone(out var phoneTok, out var phoneKey, out var phoneCert, out var detail))
+        {
+            Log?.Invoke(this, "APS Connect: Madrid → " + detail);
+            await ConnectWithMaterialAsync(phoneKey, phoneCert, phoneTok, allowAlbertRenew: false, ct)
+                .ConfigureAwait(false);
+            return;
+        }
+
         if (!ApsStorage.HasCertificate())
             await EnsureActivatedAsync(forceRenew: false, ct).ConfigureAwait(false);
 
-        await ConnectWithLoadedCertAsync(ct).ConfigureAwait(false);
-    }
-
-    private async Task ConnectWithLoadedCertAsync(CancellationToken ct)
-    {
         var (keyPem, certPem) = ApsStorage.LoadCertificate();
         var existing = ApsStorage.TryLoadToken();
+        await ConnectWithMaterialAsync(keyPem, certPem, existing, allowAlbertRenew: true, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Force courier onto Frida iPhone APS identity (after Madrid enroll OK).</summary>
+    public async Task ConnectMadridIphoneAsync(CancellationToken ct = default)
+    {
+        if (!MadridPushMaterial.TryResolveIphone(out var tok, out var key, out var cert, out var detail))
+            throw new InvalidOperationException(
+                "iPhone APS material missing — run fetch_aps_push_identity.py + fetch_ids_validation.py");
+
+        Log?.Invoke(this, "APS Connect (Madrid iPhone): " + detail);
+        await ConnectWithMaterialAsync(key, cert, tok, allowAlbertRenew: false, ct).ConfigureAwait(false);
+    }
+
+    private async Task ConnectWithMaterialAsync(
+        string keyPem,
+        string certPem,
+        byte[]? existingToken,
+        bool allowAlbertRenew,
+        CancellationToken ct)
+    {
         Log?.Invoke(this, "Connessione courier APS…");
         try
         {
-            await _courier.ConnectAsync(keyPem, certPem, existing, ct: ct).ConfigureAwait(false);
+            await _courier.ConnectAsync(keyPem, certPem, existingToken, ct: ct).ConfigureAwait(false);
             _lastError = null;
+            if (_courier.Token is { Length: > 0 } live)
+                ApsStorage.SaveToken(live);
         }
         catch (Exception ex) when (
-            ex.Message.Contains("status non-OK: 02", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("ALPN non negoziato", StringComparison.OrdinalIgnoreCase))
+            allowAlbertRenew
+            && (ex.Message.Contains("status non-OK: 02", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("ALPN non negoziato", StringComparison.OrdinalIgnoreCase)))
         {
             // Cert da Albert vecchio (ALUnbrick / RSA-2048) spesso → 0x02. Rinnova come pypush.
             Log?.Invoke(this,
@@ -120,6 +142,8 @@ public sealed class ApsSessionService : IAsyncDisposable
                 var (k2, c2) = ApsStorage.LoadCertificate();
                 await _courier.ConnectAsync(k2, c2, existingToken: null, ct: ct).ConfigureAwait(false);
                 _lastError = null;
+                if (_courier.Token is { Length: > 0 } live2)
+                    ApsStorage.SaveToken(live2);
             }
             catch (Exception ex2)
             {

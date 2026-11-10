@@ -39,11 +39,11 @@ public sealed class IdsBag
             foreach (var key in new[]
                      {
                          "id-authenticate-ds-id", "id-get-handles", "id-register",
-                         "id-query", "id-query-alias",
+                         "id-query", "id-query-by-service",
                      })
             {
                 if (bag.TryGetValue(key, out var val) && val is string url && !string.IsNullOrWhiteSpace(url))
-                    _urls[key == "id-query-alias" ? "id-query" : key] = url;
+                    _urls[key] = url;
             }
         }
         catch
@@ -57,7 +57,7 @@ public sealed class IdsBag
         await EnsureLoadedAsync(ct).ConfigureAwait(false);
         if (_urls!.TryGetValue(bagKey, out var url) && !string.IsNullOrWhiteSpace(url))
             return url;
-        throw new InvalidOperationException($"Bag IDS senza URL per {bagKey}.");
+        throw new InvalidOperationException($"IDS bag without URL for {bagKey}.");
     }
 
     /// <summary>URL effettivi caricati (diagnostica).</summary>

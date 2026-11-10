@@ -30,10 +30,10 @@ public sealed class IdsDelegateLogin
         if (string.IsNullOrEmpty(pet) && !string.IsNullOrEmpty(session.MobileMeAuthToken))
             pet = DecodePeToken(session.MobileMeAuthToken);
         if (string.IsNullOrEmpty(pet))
-            throw new InvalidOperationException("Serve PET (com.apple.gs.idms.pet) in sessione — rifai login GSA.");
+            throw new InvalidOperationException("PET (com.apple.gs.idms.pet) required in session — sign in to GSA again.");
 
         if (string.IsNullOrWhiteSpace(session.AppleId))
-            throw new InvalidOperationException("Apple ID assente in sessione.");
+            throw new InvalidOperationException("Apple ID missing in session.");
 
         var anisette = await _anisette.FetchAsync(ct).ConfigureAwait(false);
         anisette.TouchClientTimeUtc();
@@ -48,7 +48,7 @@ public sealed class IdsDelegateLogin
         }
         catch (Exception nacEx)
         {
-            log?.Invoke("NAC Nas-Qualify non disponibile: " + nacEx.Message);
+            log?.Invoke("NAC Nas-Qualify unavailable: " + nacEx.Message);
         }
 
         log?.Invoke("IDS delegate: POST signin/v2/login (com.apple.private.ids)…");
@@ -58,7 +58,7 @@ public sealed class IdsDelegateLogin
         }
         catch (Exception ex)
         {
-            log?.Invoke("signin/v2 fallito: " + ex.Message + " — provo loginDelegates…");
+            log?.Invoke("signin/v2 failed: " + ex.Message + " — trying loginDelegates…");
             return await LoginDelegatesAsync(session, pet, anisette, nasQualify, log, ct).ConfigureAwait(false);
         }
     }
@@ -160,7 +160,7 @@ public sealed class IdsDelegateLogin
             var preview = Encoding.UTF8.GetString(plistBytes);
             if (preview.Length > 240)
                 preview = preview[..240] + "…";
-            throw new InvalidOperationException($"{source}: plist non valido ({ex.Message}): {preview}");
+            throw new InvalidOperationException($"{source}: invalid plist ({ex.Message}): {preview}");
         }
 
         var outerStatus = AppleXmlPlist.GetInt(root, "status");
@@ -170,13 +170,13 @@ public sealed class IdsDelegateLogin
         if (!root.TryGetValue("delegates", out var delegatesObj)
             || delegatesObj is not Dictionary<string, object?> delegates)
         {
-            throw new InvalidOperationException($"{source}: manca delegates. Chiavi: {string.Join(", ", root.Keys)}");
+            throw new InvalidOperationException($"{source}: delegates missing. Keys: {string.Join(", ", root.Keys)}");
         }
 
         if (!delegates.TryGetValue(IdsConstants.DelegateService, out var idsObj)
             || idsObj is not Dictionary<string, object?> idsDelegate)
         {
-            throw new InvalidOperationException($"{source}: manca {IdsConstants.DelegateService}");
+            throw new InvalidOperationException($"{source}: missing {IdsConstants.DelegateService}");
         }
 
         var idsStatus = AppleXmlPlist.GetInt(idsDelegate, "status");

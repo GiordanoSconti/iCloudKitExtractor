@@ -12,9 +12,19 @@ public static class GrandSlamCpdBuilder
     public const ulong IosMdRinfo = 17106176UL;
 
     public static Dictionary<string, object?> Build(AnisetteHeaders anisette) =>
-        Build(anisette, AdiDeviceProfile.Windows);
+        Build(anisette, AdiDeviceProfile.Windows, pushTokenHex: null);
 
-    public static Dictionary<string, object?> Build(AnisetteHeaders anisette, AdiDeviceProfile profile)
+    public static Dictionary<string, object?> Build(AnisetteHeaders anisette, AdiDeviceProfile profile) =>
+        Build(anisette, profile, pushTokenHex: null);
+
+    /// <param name="pushTokenHex">
+    /// APS push token (uppercase hex) for GSA <c>ptkn</c>. When null/empty, uses "0"
+    /// (legacy). HSA2 push OTP requires a real connected APS token.
+    /// </param>
+    public static Dictionary<string, object?> Build(
+        AnisetteHeaders anisette,
+        AdiDeviceProfile profile,
+        string? pushTokenHex)
     {
         var deviceStore = new AnisetteDeviceStore(profile);
         var style = profile.IdentityStyle;
@@ -22,9 +32,9 @@ public static class GrandSlamCpdBuilder
         var mdLu = !string.IsNullOrEmpty(anisette.MdLu)
             ? anisette.MdLu
             : deviceStore.GetOrCreateLocalUserUuid();
+        var ptkn = NormalizePushTokenHex(pushTokenHex);
 
-        // cpd minimale "vincente" stile dadoum/Provision (nythepegasus generate_cpd).
-        // IphoneCoherent = stessa struttura ma client-info/provisioning iPhone (no valori Mac).
+        // Minimal "winning" cpd style (dadoum/Provision). IphoneCoherent = same shape, iPhone client-info.
         if (style is AdiIdentityStyle.ProvisionCompat or AdiIdentityStyle.IphoneCoherent)
         {
             return new Dictionary<string, object?>
@@ -45,6 +55,7 @@ public static class GrandSlamCpdBuilder
                 ["icscrec"] = true,
                 ["pbe"] = false,
                 ["prkgen"] = true,
+                ["ptkn"] = ptkn,
                 ["svct"] = "iCloud"
             };
         }
@@ -75,7 +86,7 @@ public static class GrandSlamCpdBuilder
             ["pbe"] = false,
             ["prkgen"] = true,
             ["prtn"] = isIos ? profile.ClientProductType : "PC",
-            ["ptkn"] = "0",
+            ["ptkn"] = ptkn,
             ["svct"] = "iCloud"
         };
 
@@ -84,6 +95,17 @@ public static class GrandSlamCpdBuilder
             : deviceStore.GetOrCreateDeviceUuid();
 
         return cpd;
+    }
+
+    private static string NormalizePushTokenHex(string? pushTokenHex)
+    {
+        if (string.IsNullOrWhiteSpace(pushTokenHex))
+            return "0";
+        var t = pushTokenHex.Trim();
+        if (t.Equals("0", StringComparison.Ordinal))
+            return "0";
+        // GSA expects uppercase hex without spaces.
+        return t.Replace(" ", "", StringComparison.Ordinal).ToUpperInvariant();
     }
 
     public static string FormatMdRinfo(string mdRinfo) =>

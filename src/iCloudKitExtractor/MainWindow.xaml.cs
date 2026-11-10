@@ -23,6 +23,7 @@ using iCloudKitExtractor.Services.FindMy;
 using iCloudKitExtractor.Services.Mail;
 using iCloudKitExtractor.Services.Push;
 using iCloudKitExtractor.Services.Ids;
+using iCloudKitExtractor.Services.IMessage;
 using iCloudKitExtractor.Services.CloudKit;
 using MailKit;
 using Microsoft.Win32;
@@ -50,7 +51,10 @@ public partial class MainWindow : Window
 
     private ApsSessionService? _apsSession;
 
-    /// <summary>Sessione GSA parziale in attesa OTP per registrazione HSA2 (lista 2FA).</summary>
+    /// <summary>Live Madrid / iMessage client bound to APS (Trusted devices tab).</summary>
+    private MadridClient? _madridClient;
+
+    /// <summary>Partial GSA session waiting for HSA2 OTP (2FA list).</summary>
     private ICloudSession? _hsa2PartialSession;
 
     private AnisetteAuthProfile? _authProfile;
@@ -2837,7 +2841,8 @@ public partial class MainWindow : Window
             TrustedDevicesResultTextBox.Text = text;
         if (TrustedDevicesStatusText is not null)
             TrustedDevicesStatusText.Text = "Status updated from current session.";
-        LogAuth("TrustedDevices: refresh stato OK.");
+        RefreshMadridUi();
+        LogAuth("TrustedDevices: refresh status OK.");
     }
 
     private ApsSessionService GetApsSession()
@@ -2866,6 +2871,27 @@ public partial class MainWindow : Window
                 TrustedDevicesStatusText.Text = e.ExtractedOtp is not null
                     ? $"APS: OTP received ({e.ExtractedOtp})"
                     : "APS: notification received";
+
+            // Auto-submit HSA2 OTP when panel is open and trusted-device path is selected.
+            if (e.ExtractedOtp is not null
+                && _hsa2PartialSession is not null
+                && IdmsaOtpPanel?.Visibility == Visibility.Visible
+                && IdmsaOtpDeviceRadio?.IsChecked == true
+                && IdmsaOtpSmsRadio?.IsChecked != true)
+            {
+                _ = SubmitHsa2OtpAsync(e.ExtractedOtp);
+            }
+
+            // Forward madrid / IDS payloads to the live message client when present.
+            try
+            {
+                EnsureMadridClient().HandleApsNotification(e);
+                RefreshMadridUi();
+            }
+            catch (Exception ex)
+            {
+                AppendApsLog("Madrid APS handler: " + ex.Message);
+            }
         });
         return _apsSession;
     }
@@ -2941,6 +2967,8 @@ public partial class MainWindow : Window
             await Task.Run(async () => await aps.ConnectAsync().ConfigureAwait(false))
                 .ConfigureAwait(true);
             RefreshApsTokenLabel();
+            EnsureMadridClient().BindCourier(aps.Courier);
+            RefreshMadridUi();
             var snap = aps.Snapshot();
             AppendApsLog("APS connected. Token=" + (snap.TokenHex.Length > 0 ? snap.TokenHex : "?"));
             if (TrustedDevicesStatusText is not null)
@@ -3118,7 +3146,7 @@ public partial class MainWindow : Window
             if (begin.NeedsOtp && begin.PartialSession is not null)
             {
                 _hsa2PartialSession = begin.PartialSession;
-                ConfigureIdmsaOtpUi(begin.Verification);
+                await ConfigureIdmsaOtpUiAsync(begin.Verification).ConfigureAwait(true);
                 if (IdmsaOtpTitleText is not null)
                     IdmsaOtpTitleText.Text = "HSA2 OTP — code from your trusted Apple device";
                 if (IdmsaOtpPanel is not null)
@@ -3171,7 +3199,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(ApsSessionService.TryGetPushTokenHex()))
         {
             MessageBox.Show(this,
-                "An APS push token is required.\nEnable Albert → Connect APS, then retry Enroll IDS.",
+                "An APS push token is required.\nActivate Albert → Connect APS, then retry Enroll IDS.",
                 "Enroll IDS", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -3227,13 +3255,54 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ConfigureIdmsaOtpUi(PhoneVerificationOptions? options)
+    private async Task ConfigureIdmsaOtpUiAsync(PhoneVerificationOptions? options)
     {
         if (IdmsaOtpPhoneComboBox is null)
             return;
 
-        var phones = options?.TrustedPhoneNumbers ?? _session?.TrustedPhoneNumbers
-                     ?? Array.Empty<TrustedPhoneNumber>();
+        var phones = (options?.TrustedPhoneNumbers
+                      ?? _hsa2PartialSession?.TrustedPhoneNumbers
+                      ?? _session?.TrustedPhoneNumbers
+                      ?? Array.Empty<TrustedPhoneNumber>()).ToList();
+
+        // When GSA challenge has no SMS numbers, try Apple ID security/devices list.
+        if (phones.Count == 0)
+        {
+            var sessionForPhones = _hsa2PartialSession ?? _session;
+            if (sessionForPhones is not null)
+            {
+                try
+                {
+                    var useIphone = _authProfile?.UseFullIphoneAuth ?? true;
+                    var svc = new Hsa2TrustedDeviceService(
+                        Http, AnisetteProviderFactory.CreateAuth(Http), useIphone);
+                    var associated = await Task.Run(async () =>
+                            await svc.FetchAssociatedPhonesAsync(sessionForPhones, m => AppendApsLog("HSA2: " + m))
+                                .ConfigureAwait(false))
+                        .ConfigureAwait(true);
+                    var mapped = associated
+                        .Select((p, i) => new TrustedPhoneNumber
+                        {
+                            Id = i + 1,
+                            ObfuscatedNumber = p.Obfuscated,
+                            NumberWithDialCode = p.RawWithDialCode ?? p.Number,
+                            LastTwoDigits = p.LastTwoDigits,
+                        })
+                        .Where(p => !string.IsNullOrWhiteSpace(p.DisplayLabel))
+                        .ToList();
+                    if (mapped.Count > 0)
+                    {
+                        phones = mapped;
+                        AppendApsLog($"HSA2: phone list from security/devices ({phones.Count}).");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendApsLog("HSA2: associated phones failed: " + ex.Message);
+                }
+            }
+        }
+
         IdmsaOtpPhoneComboBox.ItemsSource = phones;
         if (phones.Count > 0)
             IdmsaOtpPhoneComboBox.SelectedIndex = 0;
@@ -3247,6 +3316,381 @@ public partial class MainWindow : Window
         IdmsaOtpMethodRadio_Changed(this, new RoutedEventArgs());
     }
 
+    private MadridClient EnsureMadridClient()
+    {
+        if (_madridClient is not null)
+            return _madridClient;
+        _madridClient = new MadridClient(Http);
+        _madridClient.Log += (_, msg) => Dispatcher.BeginInvoke(() => AppendApsLog(msg));
+        _madridClient.Changed += (_, _) => Dispatcher.BeginInvoke(RefreshMadridUi);
+        if (_apsSession?.IsConnected == true)
+            _madridClient.BindCourier(_apsSession.Courier);
+        return _madridClient;
+    }
+
+    private void RefreshMadridUi()
+    {
+        var madridOk = IdsStorage.HasMadridRegistration();
+        var meta = IdsStorage.TryLoadMadridMeta();
+        var persona = MadridDevicePersona.TryLoadMeta();
+        if (MadridStatusText is not null)
+        {
+            var personaBit = MadridDevicePersona.HasPersona()
+                ? $"persona={persona?.SerialNumber ?? "?"}"
+                : "persona=missing";
+            var valBit = IdsValidationDataStore.HasBlob() ? "valdata=Frida" : "valdata=missing";
+            var pushBit = IphoneApsPushStore.HasCredentials() ? "pushAPS=iPhone" : "pushAPS=Albert";
+            personaBit = $"{personaBit}; {valBit}; {pushBit}";
+            if (madridOk)
+            {
+                var handles = meta?.Handles is { Count: > 0 }
+                    ? string.Join(", ", meta.Handles)
+                    : "(handles n/a)";
+                MadridStatusText.Text =
+                    $"Madrid: enrolled ({meta?.RegisteredUtc ?? "?"}) — {handles} | {personaBit}";
+            }
+            else
+            {
+                MadridStatusText.Text = IdsStorage.HasRegistration()
+                    ? $"Madrid: not enrolled (Find My IDS present). {personaBit}"
+                    : $"Madrid: not enrolled. {personaBit}";
+            }
+        }
+
+        var client = _madridClient ?? EnsureMadridClient();
+        if (MadridConversationsListBox is not null)
+        {
+            var selected = MadridConversationsListBox.SelectedItem as MadridConversation;
+            MadridConversationsListBox.ItemsSource = client.Store.Conversations.ToList();
+            if (selected is not null)
+            {
+                var match = client.Store.Conversations
+                    .FirstOrDefault(c => string.Equals(
+                        c.PeerHandle, selected.PeerHandle, StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                    MadridConversationsListBox.SelectedItem = match;
+            }
+        }
+
+        RefreshMadridThread();
+    }
+
+    private void RefreshMadridThread()
+    {
+        if (MadridThreadTextBox is null)
+            return;
+        var conv = MadridConversationsListBox?.SelectedItem as MadridConversation;
+        if (conv is null)
+        {
+            MadridThreadTextBox.Text = "Select a conversation or look up a handle, then compose.";
+            return;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var m in conv.Messages)
+        {
+            var dir = m.Outgoing ? "→" : "←";
+            var stamp = DateTime.TryParse(m.Utc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt)
+                ? dt.ToLocalTime().ToString("HH:mm:ss")
+                : m.Utc;
+            sb.AppendLine($"{stamp} {dir} {m.Body}");
+        }
+
+        MadridThreadTextBox.Text = sb.Length > 0 ? sb.ToString() : "(empty thread)";
+    }
+
+    private void MadridLoadPersonaButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Import Mac NAC data.plist",
+            Filter = "Property list (*.plist)|*.plist|All files (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        if (dlg.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            var info = MadridDevicePersona.ImportDataPlist(dlg.FileName, note: "UI import");
+            AppendApsLog("Madrid persona imported: " + MadridDevicePersona.FormatStatusSummary());
+            RefreshMadridUi();
+            MessageBox.Show(this,
+                "Imported Mac persona for NAC / Madrid register.\n\n"
+                + $"Serial: {info.SerialNumber}\n"
+                + $"Hardware: {info.HardwareVersion}\n"
+                + $"Saved: {MadridDevicePersona.DataPlistPath}\n\n"
+                + "Re-run Enroll Madrid. Capture on macOS:\n"
+                + "  python3 scripts/nac-pypush/capture_mac_persona.py -o data.plist\n"
+                + "Full dumps (encrypted IOKit keys) from nacserver extractor work better than partial ioreg.",
+                "Load Mac persona", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Load Mac persona", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void MadridLoadValidationButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Import Frida IDS validation-data",
+            Filter = "Base64 / JSON (*.b64;*.json;*.txt)|*.b64;*.json;*.txt|All files (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        if (dlg.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            var text = File.ReadAllText(dlg.FileName);
+            IdsValidationDataStore.SaveBase64(text, source: dlg.FileName);
+            AppendApsLog(IdsValidationDataStore.FormatStatusSummary());
+            RefreshMadridUi();
+            MessageBox.Show(this,
+                "Saved Frida validation-data.\n\n"
+                + IdsValidationDataStore.FormatStatusSummary() + "\n\n"
+                + "Capture:\n"
+                + "  python scripts/ios_akd_probe/fetch_aps_push_identity.py -H PHONE_IP:27042\n"
+                + "  python scripts/ios_akd_probe/fetch_ids_validation.py -H PHONE_IP:27042\n"
+                + "Toggle iMessage while attached, then Enroll Madrid within 1–2 minutes.\n"
+                + "Without iPhone APS cert/key, Albert x-push-sig → 6009.",
+                "Load validation-data", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Load validation-data", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void MadridEnrollButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session is null)
+        {
+            MessageBox.Show(this, "Sign in to iCloud first (PET required).", "Enroll Madrid",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (!MadridDevicePersona.HasPersona())
+        {
+            var cont = MessageBox.Show(this,
+                "No Mac persona imported.\n\n"
+                + "NAC validation-data needs Mac IOKit (serial/MLB/ROM), not iPhone Frida Anisette.\n"
+                + "On a Mac with working iMessage:\n"
+                + "  python3 scripts/nac-pypush/capture_mac_persona.py -o data.plist\n"
+                + "Then Load Mac persona here.\n\n"
+                + "Continue anyway with bundled spoofed data.plist? (likely 6009)",
+                "Enroll Madrid", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (cont != MessageBoxResult.Yes)
+                return;
+        }
+
+        if (string.IsNullOrWhiteSpace(ApsSessionService.TryGetPushTokenHex()))
+        {
+            MessageBox.Show(this,
+                "An APS push token is required.\nActivate Albert → Connect APS, then retry Enroll Madrid.",
+                "Enroll Madrid", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (MadridEnrollButton is not null)
+            MadridEnrollButton.IsEnabled = false;
+        if (TrustedDevicesStatusText is not null)
+            TrustedDevicesStatusText.Text = "Madrid enroll…";
+
+        try
+        {
+            var anisette = AnisetteProviderFactory.CreateAuth(Http).Ios;
+            var svc = new IdsEnrollmentService(Http, anisette);
+            svc.Progress += (_, msg) => Dispatcher.BeginInvoke(() => AppendApsLog("Madrid: " + msg));
+            var body = await Task.Run(async () =>
+                    await svc.EnrollMadridAsync(_session, CancellationToken.None).ConfigureAwait(false))
+                .ConfigureAwait(true);
+
+            if (TrustedDevicesResultTextBox is not null)
+            {
+                TrustedDevicesResultTextBox.Text =
+                    body + Environment.NewLine + Environment.NewLine
+                    + IdsStorage.FormatStatusSummary() + Environment.NewLine + Environment.NewLine
+                    + TrustedDevicesResultTextBox.Text;
+            }
+
+            EnsureMadridClient();
+            RefreshMadridUi();
+            if (MadridMessagesExpander is not null)
+                MadridMessagesExpander.IsExpanded = true;
+
+            // Live iMessage is delivered to the push token used in id-register.
+            // Reconnect courier on iPhone APS identity (not Albert) so RX works here.
+            try
+            {
+                var aps = GetApsSession();
+                AppendApsLog("Madrid OK — reconnecting APS on iPhone push token for live RX…");
+                await Task.Run(async () =>
+                        await aps.ConnectMadridIphoneAsync().ConfigureAwait(false))
+                    .ConfigureAwait(true);
+                EnsureMadridClient().BindCourier(aps.Courier);
+                RefreshApsTokenLabel();
+                var tok = aps.Snapshot().TokenHex;
+                AppendApsLog(
+                    "APS Madrid/iPhone connected. Token="
+                    + (tok.Length > 0 ? tok : "?")
+                    + " — ask friend to resend (phone may drop APS).");
+                if (TrustedDevicesStatusText is not null)
+                    TrustedDevicesStatusText.Text = "Madrid: enroll OK + APS iPhone";
+            }
+            catch (Exception apsEx)
+            {
+                AppendApsLog("APS iPhone reconnect after Madrid: " + apsEx.Message);
+                if (TrustedDevicesStatusText is not null)
+                    TrustedDevicesStatusText.Text = "Madrid: enroll OK (APS iPhone failed — Connect APS)";
+            }
+
+            LogAuth("Madrid enroll OK.");
+        }
+        catch (Exception ex)
+        {
+            AppendApsLog("Madrid enroll error: " + ex.Message);
+            if (TrustedDevicesResultTextBox is not null)
+            {
+                TrustedDevicesResultTextBox.Text =
+                    ex.Message + Environment.NewLine + Environment.NewLine
+                    + IdsStorage.FormatStatusSummary() + Environment.NewLine + Environment.NewLine
+                    + TrustedDevicesResultTextBox.Text;
+            }
+
+            RefreshMadridUi();
+            if (TrustedDevicesStatusText is not null)
+                TrustedDevicesStatusText.Text = "Madrid: enroll error";
+            MessageBox.Show(this, ex.Message, "Enroll Madrid", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            if (MadridEnrollButton is not null)
+                MadridEnrollButton.IsEnabled = true;
+        }
+    }
+
+    private async void MadridLookupButton_Click(object sender, RoutedEventArgs e)
+    {
+        var handle = MadridLookupHandleTextBox?.Text?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(handle))
+        {
+            MessageBox.Show(this, "Enter a handle (email or phone).", "IDS lookup",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (MadridLookupButton is not null)
+            MadridLookupButton.IsEnabled = false;
+        if (TrustedDevicesStatusText is not null)
+            TrustedDevicesStatusText.Text = "IDS lookup…";
+
+        try
+        {
+            var client = EnsureMadridClient();
+            var result = await Task.Run(async () =>
+                    await client.LookupHandleAsync(handle, m => Dispatcher.BeginInvoke(() => AppendApsLog(m)))
+                        .ConfigureAwait(false))
+                .ConfigureAwait(true);
+
+            AppendApsLog(result.Success
+                ? $"Lookup OK {result.Handle}: {result.Identities.Count} device(s)"
+                : $"Lookup failed {result.Handle}: {result.Error}");
+            foreach (var id in result.Identities)
+            {
+                AppendApsLog(
+                    $"  device={id.DeviceName ?? "?"} push={(id.PushTokenHex is { Length: > 8 } t ? t[..8] + "…" : "?")} session={(id.SessionToken is { Length: > 0 } ? "yes" : "no")}");
+            }
+
+            if (result.Success)
+            {
+                client.Store.GetOrCreate(result.Handle);
+                if (MadridLookupHandleTextBox is not null)
+                    MadridLookupHandleTextBox.Text = result.Handle;
+                RefreshMadridUi();
+                if (MadridConversationsListBox is not null)
+                {
+                    var match = client.Store.Conversations
+                        .FirstOrDefault(c => string.Equals(
+                            c.PeerHandle, result.Handle, StringComparison.OrdinalIgnoreCase));
+                    if (match is not null)
+                        MadridConversationsListBox.SelectedItem = match;
+                }
+
+                if (MadridMessagesExpander is not null)
+                    MadridMessagesExpander.IsExpanded = true;
+            }
+
+            if (TrustedDevicesStatusText is not null)
+                TrustedDevicesStatusText.Text = result.Success
+                    ? $"IDS lookup OK ({result.Identities.Count})"
+                    : "IDS lookup: no identities";
+        }
+        catch (Exception ex)
+        {
+            AppendApsLog("IDS lookup error: " + ex.Message);
+            if (TrustedDevicesStatusText is not null)
+                TrustedDevicesStatusText.Text = "IDS lookup: error";
+            MessageBox.Show(this, ex.Message, "IDS lookup", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            if (MadridLookupButton is not null)
+                MadridLookupButton.IsEnabled = true;
+        }
+    }
+
+    private void MadridConversationsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        RefreshMadridThread();
+
+    private async void MadridSendButton_Click(object sender, RoutedEventArgs e)
+    {
+        var text = MadridComposeTextBox?.Text?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        var peer = (MadridConversationsListBox?.SelectedItem as MadridConversation)?.PeerHandle
+                   ?? MadridLookupHandleTextBox?.Text?.Trim()
+                   ?? "";
+        if (string.IsNullOrWhiteSpace(peer))
+        {
+            MessageBox.Show(this, "Select a conversation or enter a handle first.", "Send",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (MadridSendButton is not null)
+            MadridSendButton.IsEnabled = false;
+        try
+        {
+            var client = EnsureMadridClient();
+            await Task.Run(async () =>
+                    await client.SendTextAsync(peer, text, m => Dispatcher.BeginInvoke(() => AppendApsLog(m)))
+                        .ConfigureAwait(false))
+                .ConfigureAwait(true);
+            if (MadridComposeTextBox is not null)
+                MadridComposeTextBox.Text = "";
+            RefreshMadridUi();
+            if (TrustedDevicesStatusText is not null)
+                TrustedDevicesStatusText.Text = "Madrid: message sent (local + APS attempt)";
+        }
+        catch (Exception ex)
+        {
+            AppendApsLog("Madrid send error: " + ex.Message);
+            if (TrustedDevicesStatusText is not null)
+                TrustedDevicesStatusText.Text = "Madrid send: error";
+            MessageBox.Show(this, ex.Message, "Send", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            if (MadridSendButton is not null)
+                MadridSendButton.IsEnabled = true;
+        }
+    }
+
     private void IdmsaOtpMethodRadio_Changed(object sender, RoutedEventArgs e)
     {
         if (IdmsaOtpSmsPhonePanel is null || IdmsaOtpSmsRadio is null)
@@ -3255,12 +3699,69 @@ public partial class MainWindow : Window
         IdmsaOtpSmsPhonePanel.Visibility = showSms ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void IdmsaOtpRequestSmsButton_Click(object sender, RoutedEventArgs e)
+    private async void IdmsaOtpRequestSmsButton_Click(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show(this,
-            "For the 2FA list use the code on your already-trusted Apple device.\n" +
-            "Start \"Register for 2FA list\", then Submit OTP.",
-            "Lista 2FA", MessageBoxButton.OK, MessageBoxImage.Information);
+        if (_hsa2PartialSession is null)
+        {
+            MessageBox.Show(this,
+                "No HSA2 session waiting for OTP.\nStart \"Register on 2FA list\" first.",
+                "2FA list", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var phone = IdmsaOtpPhoneComboBox?.SelectedItem as TrustedPhoneNumber
+                    ?? _hsa2PartialSession.TrustedPhoneNumbers.FirstOrDefault();
+        if (phone is null || phone.Id <= 0)
+        {
+            MessageBox.Show(this,
+                "No trusted phone number available for SMS.",
+                "2FA list", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (IdmsaOtpRequestSmsButton is not null)
+            IdmsaOtpRequestSmsButton.IsEnabled = false;
+        if (TrustedDevicesStatusText is not null)
+            TrustedDevicesStatusText.Text = $"HSA2: requesting SMS to {phone.DisplayLabel}…";
+
+        var log = new System.Text.StringBuilder();
+        void Log(string m)
+        {
+            lock (log)
+                log.AppendLine(m);
+            Dispatcher.BeginInvoke(() => AppendApsLog("HSA2: " + m));
+        }
+
+        try
+        {
+            var useIphone = _authProfile?.UseFullIphoneAuth ?? true;
+            var svc = new Hsa2TrustedDeviceService(
+                Http, AnisetteProviderFactory.CreateAuth(Http), useIphone);
+            var partial = _hsa2PartialSession;
+            await Task.Run(async () =>
+                    await svc.RequestSmsForPartialAsync(partial, phone.Id, Log)
+                        .ConfigureAwait(false))
+                .ConfigureAwait(true);
+
+            if (IdmsaOtpSmsRadio is not null)
+                IdmsaOtpSmsRadio.IsChecked = true;
+            if (TrustedDevicesStatusText is not null)
+                TrustedDevicesStatusText.Text =
+                    $"HSA2: SMS sent to {phone.DisplayLabel} — enter code, then Submit OTP";
+            LogAuth($"HSA2: SMS requested for {phone.DisplayLabel}");
+        }
+        catch (Exception ex)
+        {
+            AppendApsLog("HSA2 SMS error: " + ex.Message);
+            if (TrustedDevicesStatusText is not null)
+                TrustedDevicesStatusText.Text = "HSA2 SMS: error";
+            MessageBox.Show(this, ex.Message, "2FA SMS", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            if (IdmsaOtpRequestSmsButton is not null)
+                IdmsaOtpRequestSmsButton.IsEnabled = true;
+        }
     }
 
     private async Task SubmitHsa2OtpAsync(string code)
@@ -3275,14 +3776,28 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(this,
                 "Apple ID missing in the HSA2 fields on this tab.",
-                "Lista 2FA", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "2FA list", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var useSms = IdmsaOtpSmsRadio?.IsChecked == true
+                     || _hsa2PartialSession.TwoFactorMethod == TwoFactorMethod.Sms
+                     || _hsa2PartialSession.SmsCodeRequested;
+        var password = Hsa2PasswordBox?.Password?.Trim() ?? "";
+        if (useSms && string.IsNullOrWhiteSpace(password))
+        {
+            MessageBox.Show(this,
+                "Password required in the HSA2 fields to complete SMS 2FA.",
+                "2FA list", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         if (IdmsaOtpSubmitButton is not null)
             IdmsaOtpSubmitButton.IsEnabled = false;
         if (TrustedDevicesStatusText is not null)
-            TrustedDevicesStatusText.Text = "HSA2: verifying GSA OTP…";
+            TrustedDevicesStatusText.Text = useSms
+                ? "HSA2: verifying SMS OTP…"
+                : "HSA2: verifying GSA OTP…";
 
         var log = new System.Text.StringBuilder();
         void Log(string m)
@@ -3299,10 +3814,21 @@ public partial class MainWindow : Window
                 Http, AnisetteProviderFactory.CreateAuth(Http), useIphone);
             var partial = _hsa2PartialSession;
 
-            var done = await Task.Run(async () =>
-                    await svc.CompleteWithOtpAsync(appleId, code, partial, Log)
-                        .ConfigureAwait(false))
-                .ConfigureAwait(true);
+            Hsa2CompleteResult done;
+            if (useSms)
+            {
+                done = await Task.Run(async () =>
+                        await svc.CompleteWithSmsAsync(appleId, password, code, partial, Log)
+                            .ConfigureAwait(false))
+                    .ConfigureAwait(true);
+            }
+            else
+            {
+                done = await Task.Run(async () =>
+                        await svc.CompleteWithOtpAsync(appleId, code, partial, Log)
+                            .ConfigureAwait(false))
+                    .ConfigureAwait(true);
+            }
 
             _session = done.Session;
             _hsa2PartialSession = null;
@@ -3323,7 +3849,7 @@ public partial class MainWindow : Window
             }
 
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "HSA2: OTP OK — controlla conteggio device sopra";
+                TrustedDevicesStatusText.Text = "HSA2: OTP OK — check device count above";
             LogAuth("HSA2: 2FA list registration completed.");
         }
         catch (Exception ex)

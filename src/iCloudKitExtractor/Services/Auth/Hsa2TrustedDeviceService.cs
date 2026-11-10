@@ -192,6 +192,53 @@ public sealed class Hsa2TrustedDeviceService
         };
     }
 
+    /// <summary>Complete HSA2 after SMS OTP (requires prior <see cref="GsaGrandSlamAuthService.RequestSmsCodeAsync"/>).</summary>
+    public async Task<Hsa2CompleteResult> CompleteWithSmsAsync(
+        string appleId,
+        string password,
+        string code,
+        ICloudSession partialSession,
+        Action<string>? log = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(password))
+            throw new InvalidOperationException("Password required to complete SMS 2FA.");
+        if (string.IsNullOrWhiteSpace(code) || code.Trim().Length < 4)
+            throw new InvalidOperationException("Invalid SMS OTP code.");
+
+        var gsa = new GsaGrandSlamAuthService(_http, _anisette, _useIphone);
+        gsa.Progress += p => log?.Invoke($"[{p.Step}] {p.Message}");
+
+        log?.Invoke("GSA: submit SMS OTP + validate + authenticate…");
+        var result = await gsa
+            .SubmitSmsCodeAsync(appleId, password, code.Trim(), partialSession, ct)
+            .ConfigureAwait(false);
+
+        if (!result.Success || result.Session is null)
+            throw new InvalidOperationException(result.Error ?? "GSA rejected SMS OTP.");
+
+        log?.Invoke("GSA post-SMS login OK — reading security/devices…");
+        var summary = await TryListDevicesAsync(result.Session, log, ct).ConfigureAwait(false);
+        return new Hsa2CompleteResult
+        {
+            Session = result.Session,
+            DeviceSummary = summary,
+        };
+    }
+
+    public async Task RequestSmsForPartialAsync(
+        ICloudSession partialSession,
+        int phoneId,
+        Action<string>? log = null,
+        CancellationToken ct = default)
+    {
+        var gsa = new GsaGrandSlamAuthService(_http, _anisette, _useIphone);
+        gsa.Progress += p => log?.Invoke($"[{p.Step}] {p.Message}");
+        log?.Invoke($"GSA: request SMS for phone id={phoneId}…");
+        await gsa.RequestSmsCodeAsync(partialSession, phoneId, ct).ConfigureAwait(false);
+        log?.Invoke("GSA: SMS requested — enter the code, then Submit OTP.");
+    }
+
     public async Task<string> TryListDevicesAsync(
         ICloudSession session,
         Action<string>? log = null,
