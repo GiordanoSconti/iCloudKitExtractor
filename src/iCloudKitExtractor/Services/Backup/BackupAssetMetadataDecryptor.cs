@@ -44,7 +44,7 @@ public static class BackupAssetMetadataDecryptor
                 asset.RelativePath,
                 asset.ProtectionClass,
                 asset.EncryptionKey,
-                "metadata già presente");
+                "metadata already present");
         }
 
         var payload = recordPayload is { Length: > 32 }
@@ -55,8 +55,8 @@ public static class BackupAssetMetadataDecryptor
         {
             var stub = asset.RecordName.StartsWith("MMCS:", StringComparison.Ordinal);
             return Pending(stub
-                ? "metadata pending — asset PreAuth (MMCS:) senza record BackupAsset CloudKit"
-                : "metadata decrypt pending — manca payload BackupAsset per isolare encryptedAttributes");
+                ? "metadata pending — PreAuth asset (MMCS:) without CloudKit BackupAsset record"
+                : "metadata decrypt pending — missing BackupAsset payload to isolate encryptedAttributes");
         }
 
         // protectionClass è in chiaro sul record (signed) quando presente (classico).
@@ -87,14 +87,14 @@ public static class BackupAssetMetadataDecryptor
             // moderno: BackupAsset = extension + contents (+ version); path da flist (EN:).
             var hasContents = latin.Contains("contents", StringComparison.Ordinal);
             return Pending(hasContents
-                ? "metadata pending — BackupAsset moderno senza encryptedAttributes " +
+                ? "metadata pending — modern BackupAsset without encryptedAttributes " +
                   "(path/EncryptionKey da flist EN:, non dal record)"
-                : "metadata decrypt pending — campo encryptedAttributes assente nel payload");
+                : "metadata decrypt pending — encryptedAttributes field missing in payload");
         }
 
         if (!PcsSessionSeedKeys.HasAny(session))
         {
-            return Pending("metadata decrypt pending — PCS KeySet assente");
+            return Pending("metadata decrypt pending — PCS KeySet missing");
         }
 
         var manateeFast = PcsSessionSeedKeys.IsManateePrimary(session);
@@ -106,7 +106,7 @@ public static class BackupAssetMetadataDecryptor
                 session,
                 narrowToPreferred: manateeFast && session.PcsPreferredKeyIds is { Count: > 0 });
         if (seedKeys.Count == 0)
-            return Pending("metadata decrypt pending — KeySet senza chiavi private");
+            return Pending("metadata decrypt pending — KeySet without private keys");
 
         var ct = BackupKeybagPcsUnlock.ExtractEncryptedBytesValue(rawCt);
         // Mai light: per-asset × Escrow seed su ciphertext = ECDH inutili in serie.
@@ -135,7 +135,7 @@ public static class BackupAssetMetadataDecryptor
         }
 
         if (plain is not { Length: > 0 })
-            return Pending("metadata decrypt fallito — PCS GCM encryptedAttributes");
+            return Pending("metadata decrypt failed — PCS GCM encryptedAttributes");
 
         if (!AssetEncryptedAttributesParser.TryParse(plain, out var attrs, out var parseErr)
             || attrs is null)
@@ -149,7 +149,7 @@ public static class BackupAssetMetadataDecryptor
             domain = asset.Domain;
 
         if (string.IsNullOrWhiteSpace(relativePath))
-            return Pending("metadata ok PCS ma relativePath assente");
+            return Pending("metadata OK PCS but relativePath missing");
 
         if (string.IsNullOrWhiteSpace(domain))
             domain = "UnknownDomain";

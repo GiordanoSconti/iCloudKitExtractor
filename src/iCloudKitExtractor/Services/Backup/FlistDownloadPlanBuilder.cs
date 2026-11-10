@@ -64,7 +64,7 @@ public static class FlistDownloadPlanBuilder
         var domain = ResolveDomain(key, domainBySig, flToObj, dbPath);
         if (string.IsNullOrWhiteSpace(domain))
         {
-            log?.Report($"  piano skip {Path.GetFileName(dbPath)}: domain assente");
+            log?.Report($"  plan skip {Path.GetFileName(dbPath)}: domain missing");
             return [];
         }
 
@@ -75,7 +75,7 @@ public static class FlistDownloadPlanBuilder
         if (batch.Count > 0 || stats.MetaRows > 0)
         {
             log?.Report(
-                $"  piano {domain}: {batch.Count} file da scaricare " +
+                $"  plan {domain}: {batch.Count} files to download " +
                 $"(FileMetadata={stats.MetaRows} incl. dir/link={stats.SkipDir}, " +
                 $"Assets={stats.AssetRows}, empty={stats.SkipEmpty}, noSig={stats.SkipNoSig}, " +
                 $"size0={stats.SkipZero}, dup={stats.SkipDup})");
@@ -143,12 +143,12 @@ public static class FlistDownloadPlanBuilder
               + (batches.Count > 12 ? ",…" : "");
 
         log?.Report(
-            $"Piano file da flist (GatherFiles): db={dbFiles.Count}, " +
+            $"File plan from flist (GatherFiles): db={dbFiles.Count}, " +
             $"batches={batches.Count} (size/fileList=[{batchSizes}]), " +
             $"ck=A:pref4:rid, authGet.f1=assetSignature, " +
-            $"conSuffix={withSuffix}, nomiOK={resolved}, unresolved={unresolved}, " +
+            $"withSuffix={withSuffix}, namesOK={resolved}, unresolved={unresolved}, " +
             $"emptyFile={skipEmpty}, noSig={skipNoSig}, dir/link={skipDir}, " +
-            $"size0={skipZero}, skipDomain={skipDomain}, assetUnici={list.Count}");
+            $"size0={skipZero}, skipDomain={skipDomain}, uniqueAssets={list.Count}");
 
         return new Plan(
             list, batches, dbFiles.Count, withSuffix, resolved, unresolved,

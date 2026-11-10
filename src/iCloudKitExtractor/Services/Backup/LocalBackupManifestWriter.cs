@@ -41,7 +41,7 @@ public static class LocalBackupManifestWriter
             filesPerManifest = catalog.FilesPerManifest,
             recordCount = assets.Count,
             totalDeclaredBytes = assets.Sum(a => a.sizeBytes ?? 0),
-            note = "Catalogo CloudKit (work). Snapshot iTunes pulito in sottocartella Backup/.",
+            note = "CloudKit catalog (work). Clean iTunes snapshot in Backup/ subfolder.",
             assets
         }, new JsonSerializerOptions { WriteIndented = true });
 
@@ -59,7 +59,7 @@ public static class LocalBackupManifestWriter
             encrypted = false,
             builtLocally = true,
             backupLayout = true,
-            note = "Manifest.db + xx/fileID nella cartella Backup/; " +
+            note = "Manifest.db + xx/fileID in Backup/ folder; " +
                    "flist/AUTH/keybag/mmcs_cache/.chunks restano in tmp/ (rimossa a fine snapshot).",
             catalogFileCount = assets.Count,
             catalogSource = catalog.Source,

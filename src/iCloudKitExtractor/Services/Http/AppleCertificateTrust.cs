@@ -66,10 +66,10 @@ internal static class AppleCertificateTrust
         var assembly = Assembly.GetExecutingAssembly();
         var fullName = assembly.GetManifestResourceNames()
             .FirstOrDefault(n => n.EndsWith(resourceName, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException($"Certificato incorporato non trovato: {resourceName}");
+            ?? throw new InvalidOperationException($"Embedded certificate not found: {resourceName}");
 
         using var stream = assembly.GetManifestResourceStream(fullName)
-            ?? throw new InvalidOperationException($"Stream certificato non trovato: {resourceName}");
+            ?? throw new InvalidOperationException($"Certificate stream not found: {resourceName}");
 
         var bytes = new byte[stream.Length];
         _ = stream.Read(bytes, 0, bytes.Length);

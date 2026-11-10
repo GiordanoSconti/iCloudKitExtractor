@@ -77,12 +77,12 @@ public sealed class IdmsaMfaService
         using var initDoc = JsonDocument.Parse(initBody);
         var initRoot = initDoc.RootElement;
         var protocol = initRoot.GetProperty("protocol").GetString()
-                       ?? throw new InvalidOperationException("idmsa signin/init: protocol mancante.");
+                       ?? throw new InvalidOperationException("idmsa signin/init: protocol missing.");
         var salt = Convert.FromBase64String(initRoot.GetProperty("salt").GetString()!);
         var serverB = Convert.FromBase64String(initRoot.GetProperty("b").GetString()!);
         var iterations = initRoot.GetProperty("iteration").GetInt32();
         var challenge = initRoot.GetProperty("c").GetString()
-                        ?? throw new InvalidOperationException("idmsa signin/init: challenge c mancante.");
+                        ?? throw new InvalidOperationException("idmsa signin/init: challenge c missing.");
 
         var derived = srp.DerivePassword(protocol, passwordOrPet, salt, iterations);
         srp.Generate(derived, salt, serverB);
@@ -304,9 +304,9 @@ public sealed class IdmsaMfaService
             return;
 
         throw new InvalidOperationException(
-            "idmsa 2sv/trust HTTP OK ma TrustToken assente " +
-            "(né X-Apple-TwoSV-Trust-Token né cookie DES/HSA). " +
-            $"SessionToken={(string.IsNullOrWhiteSpace(state.SessionToken) ? "no" : "sì")}; " +
+            "idmsa 2sv/trust HTTP OK but TrustToken missing " +
+            "(neither X-Apple-TwoSV-Trust-Token nor DES/HSA cookie). " +
+            $"SessionToken={(string.IsNullOrWhiteSpace(state.SessionToken) ? "no" : "yes")}; " +
             $"cookies=[{string.Join(", ", state.Cookies.Keys)}]; " +
             $"jarShared={DescribeSharedJar()}");
     }
@@ -399,7 +399,7 @@ public sealed class IdmsaMfaService
                 .Select(c => c.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-            return names.Length == 0 ? "vuoto" : string.Join(",", names);
+            return names.Length == 0 ? "empty" : string.Join(",", names);
         }
         catch
         {

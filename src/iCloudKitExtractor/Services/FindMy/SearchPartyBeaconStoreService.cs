@@ -61,14 +61,14 @@ public sealed class SearchPartyBeaconStoreService
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Sessione senza DSID — effettua il login.");
+            throw new InvalidOperationException("Session has no DSID — sign in first.");
 
         var hasEscrow = session.PcsEscrowedKeySet is { Length: > 32 };
         var hasManatee = session.PcsManateeCompactKeys is { Count: > 0 };
         if (!hasEscrow && !hasManatee)
         {
             throw new InvalidOperationException(
-                "Manca PCS KeySet in sessione. Unlock EscrowedKeys e/o CKKS OpenVault (LimitedPeersAllowed), poi riprova.");
+                "Missing PCS KeySet in session. Unlock EscrowedKeys and/or CKKS OpenVault (LimitedPeersAllowed), then retry.");
         }
 
         var log = new StringBuilder();
@@ -108,9 +108,9 @@ public sealed class SearchPartyBeaconStoreService
             await _orchestrator.CkAppInitAsync(session, binding.ContainerId, null, ct)
                 .ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(session.CloudKitUserId))
-                throw new InvalidOperationException("ckAppInit searchparty senza cloudKitUserId.");
+                throw new InvalidOperationException("ckAppInit searchparty missing cloudKitUserId.");
             if (string.IsNullOrWhiteSpace(session.CloudKitAuthToken))
-                throw new InvalidOperationException("ckAppInit searchparty senza cloudKitToken.");
+                throw new InvalidOperationException("ckAppInit searchparty missing cloudKitToken.");
             L($"  ckUserId={session.CloudKitUserId} tokenLen={session.CloudKitAuthToken.Length}");
             L();
 
@@ -216,7 +216,7 @@ public sealed class SearchPartyBeaconStoreService
             if (Directory.Exists(cryptoRoot))
                 Directory.Delete(cryptoRoot, recursive: true);
 
-            L("PCS decrypt completo (KeySet Escrow → campi type=20 di questa sync)…");
+            L("PCS decrypt complete (Escrow KeySet → type=20 fields in this sync)…");
             var pcsProgress = new Progress<string>(m => L(m));
             var cryptoSummary = await Task.Run(
                     () => SyncDataPcsDecryptor.DecryptContainerDirectory(
@@ -229,14 +229,14 @@ public sealed class SearchPartyBeaconStoreService
             {
                 L();
                 L("DIAGNOSI: zoneKeys=0 — ProtectionInfo BeaconStore non unwrapato.");
-                L("Serve identità Manatee: Unlock Octagon → OTBottle/Peer → CKKS OpenVault");
+                L("Manatee identity required: Unlock Octagon → OTBottle/Peer → CKKS OpenVault");
                 L("(LimitedPeersAllowed), poi rilancia Find My Items.");
             }
 
             L();
 
             var deviceTable = BeaconDeviceInventory.BuildFromRunDirectory(outDir);
-            L("=== Dispositivi (1 riga = 1 MasterBeacon decifrato) ===");
+            L("=== Devices (1 row = 1 decrypted MasterBeacon) ===");
             L(deviceTable.Message);
             foreach (var line in BeaconDeviceInventory.FormatLogLines(deviceTable.Devices))
                 L(line);
@@ -246,11 +246,11 @@ public sealed class SearchPartyBeaconStoreService
             L("=== Inventario campi (plaintext grezzo) ===");
             if (inventory.Count == 0)
             {
-                L("(nessun testo utile — vedi crypto/*/plaintext/ e decrypt_index.tsv)");
+                L("(no useful text — see crypto/*/plaintext/ and decrypt_index.tsv)");
                 var wireHints = SummarizeFromSyncStrings(outDir);
                 if (wireHints.Count > 0)
                 {
-                    L("--- tipi/nomi già in chiaro nella sync (non da decrypt) ---");
+                    L("--- types/names already plaintext in sync (not from decrypt) ---");
                     foreach (var line in wireHints.Take(20))
                         L("  · " + line);
                 }
@@ -272,11 +272,11 @@ public sealed class SearchPartyBeaconStoreService
             }
             else
             {
-                L("Skip acsnservice — token assente (get_account_settings Find My non l’ha restituito).");
+                L("Skip acsnservice — token missing (get_account_settings Find My did not return it).");
             }
 
             L();
-            L("Sola lettura: nessun wipe/lost/erase.");
+            L("Read-only: no wipe/lost/erase.");
             string logText;
             lock (logGate)
                 logText = log.ToString();
@@ -301,7 +301,7 @@ public sealed class SearchPartyBeaconStoreService
         var secret = ResolveSetupSecret(session);
         if (string.IsNullOrWhiteSpace(secret))
         {
-            log("get_account_settings Find My: skip — manca PET/mmeAuthToken.");
+            log("get_account_settings Find My: skip — missing PET/mmeAuthToken.");
             return;
         }
 
@@ -387,7 +387,7 @@ public sealed class SearchPartyBeaconStoreService
             }
         }
 
-        log($"  SearchParty dataclass: {(hasSearchParty ? "sì" : "no")}");
+        log($"  SearchParty dataclass: {(hasSearchParty ? "yes" : "no")}");
         log($"  searchPartyToken: {(string.IsNullOrWhiteSpace(session.SearchPartyToken) ? "NO" : "OK")}");
     }
 
@@ -472,7 +472,7 @@ public sealed class SearchPartyBeaconStoreService
         }
 
         return $"acsnservice/fetch (ids=[]) → HTTP {(int)response.StatusCode} " +
-               $"results={resultsN} — atteso vuoto senza beacon ids; " +
+               $"results={resultsN} — expected empty without beacon ids; " +
                $"body={Trim(preview, 120)}";
     }
 

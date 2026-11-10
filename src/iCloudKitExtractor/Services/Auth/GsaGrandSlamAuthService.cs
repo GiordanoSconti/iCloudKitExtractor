@@ -46,7 +46,7 @@ public sealed class GsaGrandSlamAuthService
 
             var session = new ICloudSession { AppleId = appleId };
             Report(AuthStep.Lookup,
-                $"Identità CPD: {AdiDeviceProfile.ResolveIdentityMode()} ({SrpProfile.Name})");
+                $"CPD identity: {AdiDeviceProfile.ResolveIdentityMode()} ({SrpProfile.Name})");
 
             Report(AuthStep.Lookup, "Lookup GrandSlam…");
             await SendSetupAsync(HttpMethod.Get, "https://gsa.apple.com/grandslam/GsService2/lookup", ct);
@@ -86,7 +86,7 @@ public sealed class GsaGrandSlamAuthService
             var salt = AppleXmlPlist.GetData(initResponse, "s")
                        ?? throw new InvalidOperationException(DescribeSrpFailure(initResponse, "Salt SRP"));
             var serverB = AppleXmlPlist.GetData(initResponse, "B")
-                          ?? throw new InvalidOperationException(DescribeSrpFailure(initResponse, "Chiave B"));
+                          ?? throw new InvalidOperationException(DescribeSrpFailure(initResponse, "Key B"));
             var protocol = AppleXmlPlist.GetString(initResponse, "sp") ?? "s2k";
             var challenge = AppleXmlPlist.GetString(initResponse, "c")
                             ?? throw new InvalidOperationException(DescribeSrpFailure(initResponse, "Challenge c"));
@@ -104,7 +104,7 @@ public sealed class GsaGrandSlamAuthService
             // (cache Frida TouchClientTime / ADI) → stesso MD con clock avanzato → ec=-22410.
             var completeCpd = initCpd;
             Report(AuthStep.SrpExchange,
-                "cpd[complete] riusa snapshot init (stesso MD + Client-Time)");
+                "cpd[complete] reuses init snapshot (same MD + Client-Time)");
 
             session.Anisette = anisette;
 
@@ -127,16 +127,16 @@ public sealed class GsaGrandSlamAuthService
 
             var serverM2 = AppleXmlPlist.GetData(completeResponse, "M2");
             if (serverM2 is not null && !_srp.VerifyServerM2(serverM2))
-                throw new InvalidOperationException("Verifica M2 server fallita.");
+                throw new InvalidOperationException("Server M2 verification failed.");
 
             ApplySpdCredentials(session, completeResponse);
 
             if (authType == "trustedDeviceSecondaryAuth" || string.IsNullOrEmpty(session.PeToken))
             {
                 if (string.IsNullOrEmpty(session.IdentityToken))
-                    throw new InvalidOperationException("Manca identity token dopo GsService2 complete (spd).");
+                    throw new InvalidOperationException("Missing identity token after GsService2 complete (spd).");
 
-                Report(AuthStep.TrustedDevicePrompt, "Recupero opzioni 2FA (dispositivi / SMS)…");
+                Report(AuthStep.TrustedDevicePrompt, "Fetching 2FA options (devices / SMS)…");
                 // Riusa anisette di init/complete (stessa sessione MD).
                 anisette = await FetchSrpAnisetteAsync(appleId, ct, reuseIfPresent: anisette);
                 session.Anisette = anisette;
@@ -152,10 +152,10 @@ public sealed class GsaGrandSlamAuthService
                     Session = session,
                     VerificationOptions = verification,
                     Error = smsOnly
-                        ? "Account senza dispositivo attendibile — richiedi SMS e inserisci il codice a 6 cifre."
+                        ? "Account has no trusted device — request SMS and enter the 6-digit code."
                         : verification.TrustedPhoneNumbers.Count > 0
-                            ? "Inserisci il codice dal dispositivo attendibile oppure richiedi SMS."
-                            : "Inserisci il codice a 6 cifre del dispositivo attendibile."
+                            ? "Enter the code from your trusted device or request SMS."
+                            : "Enter the 6-digit code from your trusted device."
                 };
             }
 
@@ -164,10 +164,10 @@ public sealed class GsaGrandSlamAuthService
             session.Anisette = await FetchSrpAnisetteAsync(
                 appleId, ct, reuseIfPresent: session.Anisette ?? anisette);
             Report(AuthStep.Authenticate, _useFullIphoneAuth
-                ? "Autenticazione setup.icloud.com (AuthKit iPhone)…"
-                : "Autenticazione setup.icloud.com (AuthKitWin, stessa sessione validate)…");
+                ? "setup.icloud.com authenticate (AuthKit iPhone)…"
+                : "setup.icloud.com authenticate (AuthKitWin, same validate session)…");
             var authenticated = await AuthenticateSetupAsync(appleId, session, ct);
-            Report(AuthStep.Complete, "Login completato.");
+            Report(AuthStep.Complete, "Login complete.");
             return new AuthResult { Success = true, Session = authenticated };
         }
         catch (Exception ex)
@@ -187,19 +187,19 @@ public sealed class GsaGrandSlamAuthService
         try
         {
             if (string.IsNullOrWhiteSpace(password))
-                return new AuthResult { Success = false, Error = "Password richiesta per completare il login post-SMS." };
+                return new AuthResult { Success = false, Error = "Password required to complete post-SMS login." };
 
             partialSession.TwoFactorMethod = TwoFactorMethod.Sms;
             var identity = ResolveIdentityToken(partialSession);
             if (string.IsNullOrEmpty(identity))
-                return new AuthResult { Success = false, Error = "Manca identity token dalla fase SRP (spd)." };
+                return new AuthResult { Success = false, Error = "Missing identity token from SRP phase (spd)." };
 
             if (!partialSession.SmsCodeRequested)
             {
                 return new AuthResult
                 {
                     Success = false,
-                    Error = "Prima clicca «Invia SMS», poi inserisci il codice ricevuto."
+                    Error = "First click Send SMS, then enter the code you receive."
                 };
             }
 
@@ -215,7 +215,7 @@ public sealed class GsaGrandSlamAuthService
                 return new AuthResult
                 {
                     Success = false,
-                    Error = "Anisette assente dopo Invia SMS — richiedi di nuovo l'SMS."
+                    Error = "Anisette missing after Send SMS — request SMS again."
                 };
             }
 
@@ -229,7 +229,7 @@ public sealed class GsaGrandSlamAuthService
                 return new AuthResult
                 {
                     Success = false,
-                    Error = "securitycode senza X-Apple-DSID — codice errato, scaduto o già usato."
+                    Error = "securitycode without X-Apple-DSID — wrong code, expired, or already used."
                 };
             }
 
@@ -237,12 +237,12 @@ public sealed class GsaGrandSlamAuthService
                 || !string.IsNullOrEmpty(partialSession.GsICloudAuthToken))
             {
                 Report(AuthStep.ValidateCode,
-                    "2FA SMS accettata — setup/authenticate con token da securitycode…");
+                    "2FA SMS accepted — setup/authenticate with securitycode token…");
                 return await CompleteTwoFactorAuthenticateAsync(appleId, partialSession, ct);
             }
 
             Report(AuthStep.ValidateCode,
-                "2FA SMS accettata (solo DSID) — nuovo GrandSlam SRP…");
+                "2FA SMS accepted (DSID only) — new GrandSlam SRP…");
             return await SignInAsync(appleId, password, ct);
         }
         catch (Exception ex)
@@ -265,17 +265,17 @@ public sealed class GsaGrandSlamAuthService
 
         var identity = ResolveIdentityToken(partialSession);
         if (string.IsNullOrEmpty(identity))
-            throw new InvalidOperationException("Manca identity token GSA dalla fase SRP (spd).");
+            throw new InvalidOperationException("Missing GSA identity token from SRP phase (spd).");
 
         if (partialSession.SmsCodeRequested)
         {
             Report(AuthStep.SmsCodeRequest,
-                "Nuova richiesta SMS: il codice precedente non è più valido — usa solo l'ultimo.");
+                "New SMS request: previous code is no longer valid — use only the latest one.");
         }
 
         // Mint fresco qui (non riusare login): OTP MD deve essere recente per SMS + securitycode.
         // Il submit riusa questa stessa anisette — non rimintare tra Invia SMS e codice.
-        Report(AuthStep.SmsCodeRequest, "Anisette fresca per richiesta SMS…");
+        Report(AuthStep.SmsCodeRequest, "Fresh Anisette for SMS request…");
         partialSession.Anisette = await FetchSrpAnisetteAsync(
             partialSession.AppleId, ct, reuseIfPresent: null, forceFresh: true);
 
@@ -302,7 +302,7 @@ public sealed class GsaGrandSlamAuthService
 
         partialSession.SmsSendChannel = SmsSendChannel.IdmsaPut; // canale GSA piggybacking (stesso payload)
         partialSession.SmsCodeRequested = true;
-        Report(AuthStep.SmsCodeRequest, "SMS richiesto — usa solo questo codice (non quelli precedenti).");
+        Report(AuthStep.SmsCodeRequest, "SMS requested — use only this code (not previous ones).");
     }
 
     public async Task<AuthResult> SubmitTrustedDeviceCodeAsync(
@@ -315,7 +315,7 @@ public sealed class GsaGrandSlamAuthService
         {
             var identity = ResolveIdentityToken(partialSession);
             if (string.IsNullOrEmpty(identity))
-                return new AuthResult { Success = false, Error = "Manca identity token dalla fase SRP (spd)." };
+                return new AuthResult { Success = false, Error = "Missing identity token from SRP phase (spd)." };
 
             partialSession.TwoFactorMethod = TwoFactorMethod.TrustedDevice;
             var validateAnisette = await FetchSrpAnisetteAsync(
@@ -324,7 +324,7 @@ public sealed class GsaGrandSlamAuthService
             // validate + authenticate stesso profilo AuthKit; in hybrid entrambi AuthKitWin (PE legato alla sessione GSA).
             partialSession.Anisette = validateAnisette;
 
-            Report(AuthStep.ValidateCode, "Validazione codice 2FA…");
+            Report(AuthStep.ValidateCode, "Validating 2FA code…");
             return await CompleteTwoFactorValidateAsync(appleId, partialSession, validateAnisette, code.Trim(), ct);
         }
         catch (Exception ex)
@@ -343,7 +343,7 @@ public sealed class GsaGrandSlamAuthService
     {
         var identity = ResolveIdentityToken(partialSession);
         if (string.IsNullOrEmpty(identity))
-            return new AuthResult { Success = false, Error = "Manca identity token dalla fase SRP (spd)." };
+            return new AuthResult { Success = false, Error = "Missing identity token from SRP phase (spd)." };
 
         using var validate = new HttpRequestMessage(HttpMethod.Get,
             "https://gsa.apple.com/grandslam/GsService2/validate");
@@ -366,7 +366,7 @@ public sealed class GsaGrandSlamAuthService
             : 0;
         Report(AuthStep.ValidateCode, gsCount > 0
             ? $"validate OK (ec=0) — {gsCount} X-Apple-GS-Token + PE."
-            : "validate OK (ec=0) — X-Apple-PE-Token ricevuto.");
+            : "validate OK (ec=0) — X-Apple-PE-Token received.");
 
         return await CompleteTwoFactorAuthenticateAsync(appleId, partialSession, ct);
     }
@@ -386,10 +386,10 @@ public sealed class GsaGrandSlamAuthService
             appleId, ct, reuseIfPresent: partialSession.Anisette);
 
         Report(AuthStep.Authenticate, _useFullIphoneAuth
-            ? "Autenticazione setup.icloud.com (AuthKit iPhone)…"
-            : "Autenticazione setup.icloud.com (AuthKitWin)…");
+            ? "setup.icloud.com authenticate (AuthKit iPhone)…"
+            : "setup.icloud.com authenticate (AuthKitWin)…");
         var session = await AuthenticateSetupAsync(appleId, partialSession, ct);
-        Report(AuthStep.Complete, "Login completato.");
+        Report(AuthStep.Complete, "Login complete.");
         return new AuthResult { Success = true, Session = session };
     }
 
@@ -434,7 +434,7 @@ public sealed class GsaGrandSlamAuthService
     {
         var identity = ResolveIdentityToken(session);
         if (string.IsNullOrEmpty(identity))
-            throw new InvalidOperationException("Manca identity token per verify/trusteddevice.");
+            throw new InvalidOperationException("Missing identity token for verify/trusteddevice.");
 
         using var request = new HttpRequestMessage(HttpMethod.Get,
             "https://gsa.apple.com/auth/verify/trusteddevice");
@@ -468,13 +468,13 @@ public sealed class GsaGrandSlamAuthService
         if (options.TrustedPhoneNumbers.Count > 0)
         {
             Report(AuthStep.TrustedDevicePrompt,
-                $"Dispositivi attendibili: {options.TrustedDeviceCount}; " +
+                $"Trusted devices: {options.TrustedDeviceCount}; " +
                 $"SMS: {string.Join(", ", options.TrustedPhoneNumbers.Select(p => p.DisplayLabel))}");
         }
         else
         {
             Report(AuthStep.TrustedDevicePrompt,
-                $"Prompt dispositivo attendibile inviato ({options.TrustedDeviceCount} device).");
+                $"Trusted device prompt sent ({options.TrustedDeviceCount} device).");
         }
 
         return options;
@@ -570,7 +570,7 @@ public sealed class GsaGrandSlamAuthService
         {
             var serviceError = TryExtractGsaServiceError(body);
             var hint = (serviceError ?? body).Contains("-21669", StringComparison.Ordinal)
-                ? " — codice errato/scaduto, oppure anisette diversa da Invia SMS: richiedi un nuovo SMS e riprova subito."
+                ? " — wrong/expired code, or Anisette differs from Send SMS: request a new SMS and retry immediately."
                 : "";
             throw new InvalidOperationException(
                 string.IsNullOrWhiteSpace(serviceError)
@@ -642,8 +642,8 @@ public sealed class GsaGrandSlamAuthService
             return;
 
         throw new InvalidOperationException(
-            "GsService2/validate senza X-Apple-PE-Token. " +
-            "La sessione validate deve usare lo stesso profilo AuthKit del SRP init.");
+            "GsService2/validate missing X-Apple-PE-Token. " +
+            "The validate session must use the same AuthKit profile as SRP init.");
     }
 
     private static void EnsureAuthenticateTokens(ICloudSession session)
@@ -656,8 +656,8 @@ public sealed class GsaGrandSlamAuthService
         }
 
         throw new InvalidOperationException(
-            "2FA completata ma mancano token GS/PE per setup/authenticate " +
-            "(attesi da validate o da POST verify/phone/securitycode).");
+            "2FA complete but missing GS/PE tokens for setup/authenticate " +
+            "(expected from validate or POST verify/phone/securitycode).");
     }
 
     private async Task EnsureGenuineIosAnisetteAsync(string appleId, CancellationToken ct)
@@ -723,7 +723,7 @@ public sealed class GsaGrandSlamAuthService
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"GsService2 validate fallito (HTTP {(int)response.StatusCode}): {body}");
+                $"GsService2 validate failed (HTTP {(int)response.StatusCode}): {body}");
         }
 
         if (!body.Contains("\"ec\"", StringComparison.Ordinal))
@@ -737,8 +737,8 @@ public sealed class GsaGrandSlamAuthService
 
             var em = doc.RootElement.TryGetProperty("em", out var emEl) ? emEl.GetString() : null;
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(em)
-                ? $"GsService2 validate fallito (ec={ec})."
-                : $"GsService2 validate fallito (ec={ec}): {em}");
+                ? $"GsService2 validate failed (ec={ec})."
+                : $"GsService2 validate failed (ec={ec}): {em}");
         }
         catch (JsonException)
         {
@@ -774,7 +774,7 @@ public sealed class GsaGrandSlamAuthService
     {
         var authPassword = ResolveAuthenticatePassword(session);
         if (string.IsNullOrEmpty(authPassword))
-            throw new InvalidOperationException("Manca PE token da GsService2/validate per setup/authenticate.");
+            throw new InvalidOperationException("Missing PE token from GsService2/validate for setup/authenticate.");
 
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://setup.icloud.com/setup/authenticate/{Uri.EscapeDataString(appleId)}");
@@ -791,7 +791,7 @@ public sealed class GsaGrandSlamAuthService
         {
             var errorBody = await response.Content.ReadAsStringAsync(ct);
             var hint = !_useFullIphoneAuth && response.StatusCode == System.Net.HttpStatusCode.Unauthorized
-                ? " Il PE token da validate AuthKitWin richiede authenticate AuthKitWin (non iPhone)."
+                ? " PE token from validate AuthKitWin requires AuthKitWin authenticate (not iPhone)."
                 : string.Empty;
             throw new InvalidOperationException(
                 $"setup/authenticate HTTP {(int)response.StatusCode}:{hint}{(string.IsNullOrWhiteSpace(errorBody) ? "" : $" {errorBody}")}");
@@ -1007,8 +1007,8 @@ public sealed class GsaGrandSlamAuthService
         {
             var em = AppleXmlPlist.GetString(status!, "em");
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(em)
-                ? $"{step} fallito (ec={ec})."
-                : $"{step} fallito (ec={ec}): {em}");
+                ? $"{step} failed (ec={ec})."
+                : $"{step} failed (ec={ec}): {em}");
         }
     }
 
@@ -1019,10 +1019,10 @@ public sealed class GsaGrandSlamAuthService
         var em = status is null ? null : AppleXmlPlist.GetString(status, "em");
         var keys = string.Join(", ", response.Keys);
         if (ec is not null and not 0 && !string.IsNullOrWhiteSpace(em))
-            return $"{field} mancante (ec={ec}): {em}";
+            return $"{field} missing (ec={ec}): {em}";
         return ec is null
-            ? $"{field} mancante nella risposta GsService2 init (chiavi: {keys})."
-            : $"{field} mancante (ec={ec}, chiavi: {keys}).";
+            ? $"{field} missing in GsService2 init response (keys: {keys})."
+            : $"{field} missing (ec={ec}, keys: {keys}).";
     }
 
     private void ApplySpdCredentials(ICloudSession session, Dictionary<string, object?> completeResponse)
@@ -1036,7 +1036,7 @@ public sealed class GsaGrandSlamAuthService
             var decrypted = _srp.DecryptSpd(spd);
             var credentials = GsaSpdDecoder.TryParseCredentials(decrypted);
             if (credentials is null)
-                throw new InvalidOperationException("spd decifrato ma senza adsid/GsIdmsToken.");
+                throw new InvalidOperationException("spd decrypted but missing adsid/GsIdmsToken.");
 
             session.Adsid = credentials.Value.Adsid;
             session.GsIdmsToken = credentials.Value.GsIdmsToken;
@@ -1068,7 +1068,7 @@ public sealed class GsaGrandSlamAuthService
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException($"Impossibile decifrare spd da GsService2 complete: {ex.Message}", ex);
+            throw new InvalidOperationException($"Cannot decrypt spd from GsService2 complete: {ex.Message}", ex);
         }
     }
 

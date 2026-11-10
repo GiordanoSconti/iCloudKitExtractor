@@ -20,7 +20,7 @@ public sealed class WindowsAosKitAnisetteProvider : IAnisetteProvider
 
         var bridgePath = ResolveBridgeExecutable()
             ?? throw new InvalidOperationException(
-                "CoreAdiBridge.exe non trovato. Esegui scripts/build-coreadi-bridge.ps1.");
+                "CoreAdiBridge.exe not found. Run scripts/build-coreadi-bridge.ps1.");
 
         var psi = new ProcessStartInfo
         {
@@ -36,7 +36,7 @@ public sealed class WindowsAosKitAnisetteProvider : IAnisetteProvider
         psi.ArgumentList.Add(supportDir);
 
         using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Impossibile avviare CoreAdiBridge.exe.");
+            ?? throw new InvalidOperationException("Cannot start CoreAdiBridge.exe.");
 
         var stdout = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
         var stderr = await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
@@ -45,7 +45,7 @@ public sealed class WindowsAosKitAnisetteProvider : IAnisetteProvider
         if (process.ExitCode != 0)
         {
             var detail = string.IsNullOrWhiteSpace(stderr) ? $"exit code {process.ExitCode}" : stderr.Trim();
-            throw new InvalidOperationException($"AOSKit non disponibile ({detail}).");
+            throw new InvalidOperationException($"AOSKit unavailable ({detail}).");
         }
 
         using var json = JsonDocument.Parse(stdout);
@@ -62,10 +62,10 @@ public sealed class WindowsAosKitAnisetteProvider : IAnisetteProvider
         var clientTime = GetString(root, "X-Apple-I-ClientTime");
 
         if (string.IsNullOrEmpty(md) || string.IsNullOrEmpty(mdM))
-            throw new InvalidOperationException("AOSKit non ha restituito X-Apple-I-MD / X-Apple-I-MD-M.");
+            throw new InvalidOperationException("AOSKit did not return X-Apple-I-MD / X-Apple-I-MD-M.");
 
         if (string.IsNullOrEmpty(mdRinfo))
-            throw new InvalidOperationException("X-Apple-I-MD-RINFO mancante da AOSKit.");
+            throw new InvalidOperationException("X-Apple-I-MD-RINFO missing from AOSKit.");
 
         var culture = CultureInfo.CurrentUICulture;
         RegionInfo region;

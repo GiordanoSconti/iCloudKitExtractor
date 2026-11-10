@@ -157,11 +157,6 @@ public sealed class BackupDownloadService
     private IProgress<string>? _downloadLog;
 
     /// <summary>
-    /// Asset saltati (auth gap / no shard) candidati al pass finale MissingFiles.
-    /// </summary>
-    private readonly ConcurrentBag<BackupAsset> _missingRetryBag = [];
-
-    /// <summary>
     /// Ford host bodies scaricati da fresh authorizeGet (anche se IKM iniziale non apre).
     /// Sopravvive al purge MMCS store — riusati se lo stesso wrap ricompare in payload.
     /// Key = assetSignature hex (o path).
@@ -303,7 +298,6 @@ public sealed class BackupDownloadService
         _cachedShareBootstrapZones = null;
         _mmcsKekOkLog = 0;
         _mmcsKekFailLog = 0;
-        _missingRetryBag.Clear();
         _pendingDecryptTasks.Clear();
         _uiFilesDownloaded = 0;
         _uiFilesDecrypted = 0;
@@ -380,11 +374,11 @@ public sealed class BackupDownloadService
         log?.Report(
             PcsSessionSeedKeys.HasAny(session)
                 ? $"PCS seed: escrow={session.PcsEscrowedKeySet?.Length ?? 0} B, " +
-                  $"manatee={session.PcsManateeCompactKeys?.Count ?? 0} — prima del restore CloudKit"
-                : "PCS seed: assente — zone masters / keybag / MMCS KEK limitati");
+                  $"manatee={session.PcsManateeCompactKeys?.Count ?? 0} — before CloudKit restore"
+                : "PCS seed: missing — zone masters / keybag / MMCS KEK limitati");
 
         // Wire: zones → D:/S: → K: unlock → Lock → N: (niente authorizeGet anticipato).
-        progress?.Report(new DownloadProgressReport { Status = "Preparazione restore…" });
+        progress?.Report(new DownloadProgressReport { Status = "Preparing restore…" });
         await _assets.PrepareDownloadAsync(
             session,
             job.Device,
@@ -417,8 +411,8 @@ public sealed class BackupDownloadService
             $"Keybags salvati → {Path.Combine(workDir, "keybags.json")}");
 
         // Catalogo deterministico: moderno S:→:CN: oppure classico S:→M:→files.
-        progress?.Report(new DownloadProgressReport { Status = "Catalogo S:→:CN:/M:…" });
-        log?.Report("Catalogo deterministico: S: → :CN: (moderno) oppure M:→files (classico)…");
+        progress?.Report(new DownloadProgressReport { Status = "Catalog S:→:CN:/M:…" });
+        log?.Report("Deterministic catalog: S: → :CN: (modern) or M:→files (classic)…");
         var catalogService = new BackupDeterministicCatalogService(_http);
         var catalog = await catalogService.ResolveAsync(
             session,
@@ -431,13 +425,13 @@ public sealed class BackupDownloadService
         await LocalBackupManifestWriter.WriteAsync(
             workDir, job.Device, job.Snapshot, catalog, ct);
         log?.Report(
-            $"Catalogo {catalog.FileRecordNames.Count:N0} " +
+            $"Catalog {catalog.FileRecordNames.Count:N0} " +
             $"(source={catalog.Source}, M:={catalog.ManifestIds.Count}, :CN:={catalog.CnEntryCount}) " +
             $"→ tmp={workDir}; skeleton Manifest.db → Backup/");
 
         EnFetchResult? enFetch = _assets.LastEnFetch;
         if (enFetch is null
-            && IsModernOrDualCatalog(catalog.Source)
+            && catalog.Source.StartsWith("modern", StringComparison.OrdinalIgnoreCase)
             && catalog.CnEntryCount > 0)
         {
             progress?.Report(new DownloadProgressReport { Status = "EN: file list post-Lock…" });
@@ -492,7 +486,7 @@ public sealed class BackupDownloadService
                 .ConfigureAwait(false);
             progress?.Report(new DownloadProgressReport
             {
-                Status = $"Catalogo Manifest OK ({catalog.FileRecordNames.Count:N0} file, {catalog.Source}" +
+                Status = $"Catalog Manifest OK ({catalog.FileRecordNames.Count:N0} file, {catalog.Source}" +
                          (enFetch is null ? "" : $", EN auth={enFetch.MmcsAuthHeaders.Count}") + ")",
                 AssetsCompleted = 1,
                 AssetsTotal = 1
@@ -502,11 +496,12 @@ public sealed class BackupDownloadService
 
         // Auth MMCS: preferisci EN: (flusso post-Lock); fallback PreAuth/query KA:MA.
         //  niente PrivilegedBatch di massa prima del download — FL poi KA/LA/MA interleaved.
-        progress?.Report(new DownloadProgressReport { Status = "Risoluzione auth MMCS…" });
+        progress?.Report(new DownloadProgressReport { Status = "Resolving MMCS auth…" });
         var assets = await ResolveAssetsForCatalogAsync(
             session, job, catalog, log, ct, enFetch);
 
-        var isModernCn = IsModernOrDualCatalog(catalog.Source);
+        var isModernCn = string.Equals(
+            catalog.Source, "modern-CN", StringComparison.OrdinalIgnoreCase);
         var kalamaSeeds = enFetch is not null
             ? CollectKaLaMaSeeds(enFetch, job.Device)
             : [];
@@ -514,8 +509,8 @@ public sealed class BackupDownloadService
         if (assets.Count == 0 && kalamaSeeds.Count == 0)
         {
             throw new InvalidOperationException(
-                $"Catalogo OK ({catalog.FileRecordNames.Count:N0} file, {catalog.Source}), " +
-                "ma nessun MMCS auth risolto (PreAuth / query KA:MA / fetch contents).");
+                $"Catalog OK ({catalog.FileRecordNames.Count:N0} file, {catalog.Source}), " +
+                "but no MMCS auth resolved (PreAuth / query KA:MA / fetch contents).");
         }
 
         await WriteManifestAsync(job, assets, ct);
@@ -540,9 +535,9 @@ public sealed class BackupDownloadService
         log?.Report(
             isModernCn
                 ? $"Download: FL={flAssets.Count}, EN-auth={readyAssets.Count}, " +
-                  $"KA/LA/MA seed={kalamaSeeds.Count} (catalogo {catalog.Source}; " +
+                  $"KA/LA/MA seed={kalamaSeeds.Count} (catalog {catalog.Source}; " +
                   "download solo asset in fileList)"
-                : $"Download: {assets.Count} asset con auth (catalogo {catalog.Source})");
+                : $"Download: {assets.Count} assets with auth (catalog {catalog.Source})");
 
         var cleanDir = IkeBackupOutputPaths.ResolveCleanBackupDirectory(snapshotRoot);
         Directory.CreateDirectory(cleanDir);
@@ -785,12 +780,12 @@ public sealed class BackupDownloadService
             else
                 progress?.Report(new DownloadProgressReport
                 {
-                    Status = FormatSnapshotStatus($" preparazione fileList 0/{flTotal}…"),
+                    Status = FormatSnapshotStatus($" preparing fileList 0/{flTotal}…"),
                     SnapshotLabel = _uiSnapshotLabel,
                     AppendToLog = false,
                 });
             if (_uiBytesTotal > 0)
-                log?.Report($"  stima dimensione snapshot: {_uiBytesTotal:N0} B (ETA su byte)");
+                log?.Report($"  snapshot size estimate: {_uiBytesTotal:N0} B (ETA on bytes)");
 
             var flIndex = 0;
             var domainTasks = new List<Task>(flTotal);
@@ -1341,7 +1336,7 @@ public sealed class BackupDownloadService
                     ct.ThrowIfCancellationRequested();
                     if (Volatile.Read(ref filesDone) >= maxFiles)
                     {
-                        log?.Report($"  cap MaxAssets={maxFiles} raggiunto — stop fileList rimanenti");
+                        log?.Report($"  cap MaxAssets={maxFiles} reached — stop remaining fileList");
                         return;
                     }
 
@@ -1397,7 +1392,7 @@ public sealed class BackupDownloadService
                     var dbPath = ResolveFlistDbPath(workDir, flAsset);
                     if (!File.Exists(dbPath))
                     {
-                        log?.Report($"  {flAsset.RecordName}: flist DB assente dopo download — skip Asset");
+                        log?.Report($"  {flAsset.RecordName}: flist DB missing after download — skip Asset");
                         // #region agent log
                         domainExitReason = "flist_db_missing";
                         try
@@ -1538,7 +1533,7 @@ public sealed class BackupDownloadService
 
                     log?.Report(
                         $"  → {slice.Count} file Backup/ da fileList {flIndex}/{flTotal} " +
-                        $"({slice[0].Domain ?? "?"}; totale Backup/={estimatedTotal:N0}, " +
+                        $"({slice[0].Domain ?? "?"}; total Backup/={estimatedTotal:N0}, " +
                         $"pianificati={backupBoundPlanned:N0})");
                     AgentCountAlways("backup_total_grow", new
                     {
@@ -1648,7 +1643,7 @@ public sealed class BackupDownloadService
                     if (priorHits > 0 || cloneBatch.Count > 0)
                     {
                         log?.Report(
-                            $"  CopySnapshot: {cloneBatch.Count} file da snapshot/cache " +
+                            $"  CopySnapshot: {cloneBatch.Count} files from snapshot/cache " +
                             $"(priorBind={priorHits}, no PB/MMCS; download={needDownload.Count})");
                         // #region agent log
                         AgentCountAlways("copy_snapshot_prior_hits", new
@@ -1706,8 +1701,8 @@ public sealed class BackupDownloadService
                     if (needDownload.Count == 0 && cloneBatch.Count > 0)
                     {
                         log?.Report(
-                            $"  WARN FL{flIndex}: {cloneBatch.Count} cloni senza originale " +
-                            "nel FL → demote download");
+                            $"  WARN FL{flIndex}: {cloneBatch.Count} clones without original " +
+                            "in FL → demote download");
                         // #region agent log
                         domainExitReason = "clones_only_demoted";
                         try
@@ -1895,20 +1890,9 @@ public sealed class BackupDownloadService
                         if (anisetteBlocked)
                         {
                             log?.Report(
-                                $"  ERROR MmcsAuth: PrivilegedBatch incompleto (Anisette) per " +
-                                $"{skipAuthPaths.Count} file — non marcati Falliti; " +
-                                "ripari Anisette e riprendi lo snapshot.");
-                            // Ripresa successiva: tieni i gap in coda MissingFiles.
-                            foreach (var skipped in skipAuthAssets)
-                            {
-                                DecryptFailureJournal.Record(
-                                    workDir,
-                                    skipped,
-                                    "mmcs_auth_skip",
-                                    "PrivilegedBatch incompleto (Anisette) — authorizeGet non tentato");
-                                AppendAuthGapSnapshotLog(workDir, skipped, anisetteBlocked: true);
-                                _missingRetryBag.Add(skipped);
-                            }
+                                $"  ERROR MmcsAuth: PrivilegedBatch incomplete (Anisette) for " +
+                                $"{skipAuthPaths.Count} file — not marked Failed; " +
+                                "repair Anisette and resume the snapshot.");
                         }
                         else
                         {
@@ -1921,13 +1905,6 @@ public sealed class BackupDownloadService
                                     skipped.RelativePath ?? skipped.RecordName,
                                     emitUiError: true,
                                     detail: "MmcsAuth/authorizeGet skip");
-                                DecryptFailureJournal.Record(
-                                    workDir,
-                                    skipped,
-                                    "mmcs_auth_skip",
-                                    "MmcsAuth assente dopo PrivilegedBatch — authorizeGet non tentato");
-                                AppendAuthGapSnapshotLog(workDir, skipped, anisetteBlocked: false);
-                                _missingRetryBag.Add(skipped);
                             }
 
                             ReportMmcsAuthSkipSummary(skipAuthPaths, readyBatch.Count, log);
@@ -1953,8 +1930,8 @@ public sealed class BackupDownloadService
                             && anisetteBlocked)
                         {
                             throw new InvalidOperationException(
-                                $"MmcsAuth assente per {skipAuthPaths.Count} file: Anisette non disponibile " +
-                                "dopo 401 (GET http://127.0.0.1:6971/). Avvia/ripara AnisetteServer e riprendi — " +
+                                $"MmcsAuth missing for {skipAuthPaths.Count} file: Anisette unavailable " +
+                                "after 401 (GET http://127.0.0.1:6971/). Start/repair AnisetteServer and resume — " +
                                 "niente mass-skip silenzioso.");
                         }
                     }
@@ -1974,7 +1951,7 @@ public sealed class BackupDownloadService
                         var mode = flMmcsSession.Store.PersistToDisk ? "disk+ram" : "ram";
                         log?.Report(
                             $"  mmcs_cache FL{flIndex}: {mode} dir={flCacheSafe} " +
-                            $"(IKE_MMCS_CACHE_DISK=1 per spill disco)");
+                            $"(IKE_MMCS_CACHE_DISK=1 for disk spill)");
                         flMmcsSession.Store.AgentRamCachePerfLog("session_start_fl");
                         // #region agent log
                         try
@@ -2059,7 +2036,7 @@ public sealed class BackupDownloadService
                                 || batchEx is AggregateException;
                             log?.Report(
                                 $"  ERROR batch AG ({agChunk.Count} file): {batchEx.Message}" +
-                                (isEdge ? " — continuo lo snapshot" : ""));
+                                (isEdge ? " — continuing lo snapshot" : ""));
                             // #region agent log
                             try
                             {
@@ -2345,8 +2322,8 @@ public sealed class BackupDownloadService
                         if (stillMissing.Count > 0)
                         {
                             log?.Report(
-                                $"  WARN FL{flIndex}: {stillMissing.Count} cloni senza " +
-                                "originale nello stesso FL → coda demote download");
+                                $"  WARN FL{flIndex}: {stillMissing.Count} clones missing " +
+                                "original in same FL → demote download queue");
                             foreach (var a in stillMissing)
                                 a.ContentFromExistingSignature = false;
                             // Post-domains: CopyClone (fallisce) → demote→AG (vedi sotto).
@@ -2631,7 +2608,7 @@ public sealed class BackupDownloadService
                 {
                     log?.Report(
                         $"  clone demote→download: {cloneResult.Missing.Count} path " +
-                        "(sorgente assente dopo drain)");
+                        "(source missing after drain)");
                     // #region agent log
                     AgentDebugLog(
                         "H-DUP",
@@ -2682,7 +2659,7 @@ public sealed class BackupDownloadService
                         catch (Exception demoteEx)
                         {
                             log?.Report(
-                                $"  ERROR demote AG ({demoteChunk.Count} file): {demoteEx.Message} — continuo");
+                                $"  ERROR demote AG ({demoteChunk.Count} file): {demoteEx.Message} — continuing");
                             foreach (var planned in demoteChunk)
                             {
                                 fileIndex++;
@@ -2915,24 +2892,6 @@ public sealed class BackupDownloadService
             await _decryptQueue.DisposeAsync().ConfigureAwait(false);
         _decryptQueue = null;
 
-        var missingRecovered = await RetryMissingPayloadPassAsync(
-            session,
-            contentHost,
-            job,
-            workDir,
-            cleanDir,
-            fsWriter,
-            fileKeyCtx,
-            enFetch,
-            progress,
-            log,
-            ct).ConfigureAwait(false);
-        if (missingRecovered > 0)
-        {
-            writtenSharded += missingRecovered;
-            log?.Report($"MissingFiles retry: recuperati {missingRecovered:N0} payload");
-        }
-
         await WriteItunesSidecarsAtEndOfSnapshotAsync(
             session, job, log, ct).ConfigureAwait(false);
 
@@ -3052,9 +3011,9 @@ public sealed class BackupDownloadService
             // #endregion
 
             log?.Report(
-                $"  gap check: UI {uiDecrypted:N0}/{doneTotal:N0} decifrati; " +
+                $"  gap check: UI {uiDecrypted:N0}/{doneTotal:N0} decrypted; " +
                 $"Manifest rows={manifestFiles + manifestDirs:N0} (file={manifestFiles:N0}, dir={manifestDirs:N0}); " +
-                $"payload su disco={diskPayload:N0}, ghost Manifest senza file={ghostFiles:N0}");
+                $"payload su disco={diskPayload:N0}, ghost Manifest without files={ghostFiles:N0}");
             // #region agent log
             try
             {
@@ -3095,20 +3054,10 @@ public sealed class BackupDownloadService
             ReportSequence = Interlocked.Increment(ref _progressReportSeq),
             AppendToLog = true,
             Status =
-                $"Completato: {uiDecrypted:N0}/{doneTotal:N0} file scaricati e decifrati " +
-                $"(falliti={uiFailed:N0}, cifrati={uiCipher:N0}, staged={stagedChunks}, " +
+                $"Complete: {uiDecrypted:N0}/{doneTotal:N0} files downloaded and decrypted " +
+                $"(failed={uiFailed:N0}, ciphertext={uiCipher:N0}, staged={stagedChunks}, " +
                 $"MMCS={mmcsOk}, AES={fileDecryptOk}) → Backup/"
         });
-        // Chiudi Manifest.db (WAL checkpoint) prima delle firme SHA-256.
-        try
-        {
-            await fsWriter.CloseForHashingAsync(ct).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            log?.Report($"  Manifest.db close pre-HASH: {ex.Message}");
-        }
-
         await WriteOutputHashManifestAsync(snapshotRoot, progress, log, ct)
             .ConfigureAwait(false);
         }
@@ -3121,7 +3070,7 @@ public sealed class BackupDownloadService
             try
             {
                 log?.Report(
-                    $"  Traffico HTTP (rete): {IkeHttpTrafficMeter.TotalBytes:N0} B " +
+                    $"  HTTP traffic (network): {IkeHttpTrafficMeter.TotalBytes:N0} B " +
                     $"(req={IkeHttpTrafficMeter.RequestBytes:N0}, " +
                     $"resp={IkeHttpTrafficMeter.ResponseBytes:N0}; " +
                     $"nReq={IkeHttpTrafficMeter.RequestCount:N0}, " +
@@ -3290,11 +3239,6 @@ public sealed class BackupDownloadService
     /// <summary>
     /// Conta come «Cifrati» solo se scritto in Backup/ e MMCS/Ford non ha prodotto plaintext.
     /// </summary>
-    private static bool IsModernOrDualCatalog(string? source) =>
-        !string.IsNullOrWhiteSpace(source)
-        && (source.StartsWith("modern", StringComparison.OrdinalIgnoreCase)
-            || source.StartsWith("dual", StringComparison.OrdinalIgnoreCase));
-
     private static bool CountsAsCiphertextOnDisk(in AssetDownloadOutcome one) =>
         one.WrittenSharded && !one.MmcsDecrypted;
 
@@ -3419,8 +3363,8 @@ public sealed class BackupDownloadService
         var reason = string.IsNullOrWhiteSpace(where) ? "decrypt" : where;
         var label = string.IsNullOrWhiteSpace(path) ? "?" : path;
         var msg = string.IsNullOrWhiteSpace(detail)
-            ? $"  ERROR decrypt fallito ({reason}): {label}"
-            : $"  ERROR decrypt fallito ({reason}): {label} — {detail}";
+            ? $"  ERROR decrypt failed ({reason}): {label}"
+            : $"  ERROR decrypt failed ({reason}): {label} — {detail}";
         _downloadLog?.Report(msg);
     }
 
@@ -3833,7 +3777,7 @@ public sealed class BackupDownloadService
         progress.Report(new DownloadProgressReport
         {
             // Numeratore stato = solo successi decrypt (= Decifrati). Denominatore = pianificati live.
-            Status = FormatSnapshotStatus($"Decifrati: {decrypted:N0}/{total:N0}"),
+            Status = FormatSnapshotStatus($"Decrypting fields: {decrypted:N0}/{total:N0}"),
             SnapshotLabel = _uiSnapshotLabel,
             AssetsCompleted = decrypted,
             AssetsTotal = total,
@@ -3859,7 +3803,7 @@ public sealed class BackupDownloadService
         return string.IsNullOrWhiteSpace(label) ? body : $"[{label}] {body}";
     }
 
-    /// <summary>Un solo messaggio ERROR: MmcsAuth assente = fail terminale (niente decrypt dopo).</summary>
+    /// <summary>Un solo messaggio ERROR: MmcsAuth missing = fail terminale (niente decrypt dopo).</summary>
     private static void ReportMmcsAuthSkipSummary(
         IReadOnlyList<string> paths,
         int readyCount,
@@ -3872,13 +3816,13 @@ public sealed class BackupDownloadService
             foreach (var p in paths)
             {
                 log.Report(
-                    $"  ERROR MmcsAuth assente — decrypt impossibile (nessun retry): {p}");
+                    $"  ERROR MmcsAuth missing — decrypt impossible (no retry): {p}");
             }
         }
         else
         {
             log.Report(
-                $"  ERROR MmcsAuth assente per {paths.Count} file — decrypt impossibile " +
+                $"  ERROR MmcsAuth missing for {paths.Count} file — decrypt impossible " +
                 $"(ready={readyCount}; es. {paths[0]}, {paths[1]}, …)");
         }
 
@@ -3940,7 +3884,7 @@ public sealed class BackupDownloadService
             .ToList();
         if (top.Count == 0)
         {
-            log?.Report("  nessun candidato MA: con MmcsAuth per Manifest.db");
+            log?.Report("  no MA: candidate with MmcsAuth for Manifest.db");
             return false;
         }
 
@@ -4008,14 +3952,14 @@ public sealed class BackupDownloadService
                 if (len < MinManifestBytes)
                 {
                     log?.Report(
-                        $"  scarto stub {Path.GetFileName(outputFile)} ({len:N0} B < {MinManifestBytes:N0})");
+                        $"  discarded stub {Path.GetFileName(outputFile)} ({len:N0} B < {MinManifestBytes:N0})");
                     continue;
                 }
 
                 maDownloaded.Add((asset, outputFile, len, result.MmcsDecrypted));
                 log?.Report(
                     $"  Manifest object {Path.GetFileName(outputFile)} ← {len:N0} byte " +
-                    $"(authSum={declared:N0}, +{result.DownloadedBytes:N0} scaricati, {result.AssemblyMode}" +
+                    $"(authSum={declared:N0}, +{result.DownloadedBytes:N0} downloaded, {result.AssemblyMode}" +
                     (result.MmcsDecrypted ? ", mmcsDecrypted" : "") + ")");
             }
             catch (Exception ex)
@@ -4026,7 +3970,7 @@ public sealed class BackupDownloadService
 
         if (maDownloaded.Count == 0)
         {
-            log?.Report($"FAIL: nessun oggetto Manifest ≥ {MinManifestBytes:N0} B scaricato");
+            log?.Report($"FAIL: no Manifest object ≥ {MinManifestBytes:N0} B downloaded");
             return false;
         }
 
@@ -4039,187 +3983,10 @@ public sealed class BackupDownloadService
             log?.Report($"OK Manifest.db.encrypted → {enc} ({new FileInfo(enc).Length:N0} byte)");
         else
             log?.Report(
-                $"FAIL: Manifest.db.encrypted assente o stub (< {MinManifestBytes:N0} B)");
+                $"FAIL: Manifest.db.encrypted missing or stub (< {MinManifestBytes:N0} B)");
         return ok;
     }
 
-    /// <summary>
-    /// Pass finale: auth-gap / MissingFiles senza shard → PB monofile + download monofile.
-    /// Prima dei sidecar iTunes così Completeness vede i payload recuperati.
-    /// </summary>
-    private async Task<int> RetryMissingPayloadPassAsync(
-        ICloudSession session,
-        string contentHost,
-        DownloadJob job,
-        string workDir,
-        string cleanDir,
-        BackupFilesystemWriter fsWriter,
-        BackupFileKeyContext fileKeyCtx,
-        EnFetchResult? enFetch,
-        IProgress<DownloadProgressReport>? progress,
-        IProgress<string>? log,
-        CancellationToken ct)
-    {
-        var pref4 = _activeDevicePrefix4;
-        if (string.IsNullOrWhiteSpace(pref4)
-            && !string.IsNullOrWhiteSpace(job.Device.DeviceUuid))
-            pref4 = CloudKitRecordNames.DevicePrefix4(job.Device.DeviceUuid);
-        if (string.IsNullOrWhiteSpace(pref4))
-            return 0;
-
-        var byFileId = new Dictionary<string, BackupAsset>(StringComparer.OrdinalIgnoreCase);
-        foreach (var a in _missingRetryBag)
-        {
-            var fid = a.EnsureFileId();
-            if (string.IsNullOrWhiteSpace(fid) || fid.Length < 2)
-                continue;
-            byFileId.TryAdd(fid, a);
-        }
-
-        var completeness = BackupCompleteness.Evaluate(cleanDir);
-        var toRetry = new List<BackupAsset>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (fileId, _, _) in completeness.Missing)
-        {
-            if (!byFileId.TryGetValue(fileId, out var asset))
-                continue;
-            if (!seen.Add(fileId))
-                continue;
-            toRetry.Add(asset);
-        }
-
-        foreach (var (fileId, asset) in byFileId)
-        {
-            if (!seen.Add(fileId))
-                continue;
-            var shard = IkeBackupOutputPaths.ToShardedFilePath(cleanDir, fileId);
-            if (File.Exists(shard))
-                continue;
-            toRetry.Add(asset);
-        }
-
-        var sigCache = Path.Combine(workDir, IkeBackupOutputPaths.DeviceSigCacheFolderName);
-        foreach (var asset in _missingRetryBag)
-        {
-            if (asset.AssetSignature is not { Length: 21 } sig)
-                continue;
-            var hex = Convert.ToHexString(sig).ToLowerInvariant();
-            var fid = asset.EnsureFileId();
-            if (!string.IsNullOrWhiteSpace(fid) && !seen.Add(fid!))
-                continue;
-            if (File.Exists(Path.Combine(sigCache, hex)))
-                continue;
-            if (!string.IsNullOrWhiteSpace(fid))
-            {
-                var shard = IkeBackupOutputPaths.ToShardedFilePath(cleanDir, fid);
-                if (File.Exists(shard))
-                    continue;
-            }
-
-            toRetry.Add(asset);
-        }
-
-        if (toRetry.Count == 0)
-            return 0;
-
-        var unique = new List<BackupAsset>(toRetry.Count);
-        var seenSig = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var a in toRetry)
-        {
-            if (a.AssetSignature is { Length: 21 } sig)
-            {
-                var hex = Convert.ToHexString(sig).ToLowerInvariant();
-                if (!seenSig.Add(hex))
-                    continue;
-            }
-
-            unique.Add(a);
-        }
-
-        const int retryCap = 64;
-        if (unique.Count > retryCap)
-            unique = unique.Take(retryCap).ToList();
-
-        log?.Report(
-            $"MissingFiles retry pass ×{unique.Count}" +
-            (completeness.MissingOnDisk > 0
-                ? $" (Manifest missing={completeness.MissingOnDisk:N0})"
-                : "") +
-            "…");
-
-        foreach (var a in unique)
-            a.MmcsAuth = null;
-
-        await ResolveFlistBatchAuthAsync(
-            session, unique, pref4, workDir, enFetch, log, ct).ConfigureAwait(false);
-
-        var recovered = 0;
-        var idx = 0;
-        foreach (var asset in unique)
-        {
-            ct.ThrowIfCancellationRequested();
-            idx++;
-            if (asset.AssetSignature is not { Length: 21 }
-                || MmcsAuthBuilder.TryBuildFlistAuthorizeEntry(
-                    asset.AssetSignature, asset.MmcsAuth) is null)
-            {
-                DecryptFailureJournal.Record(
-                    workDir,
-                    asset,
-                    "mmcs_auth_skip",
-                    "MissingFiles retry: MmcsAuth ancora assente");
-                AppendAuthGapSnapshotLog(workDir, asset, anisetteBlocked: false);
-                continue;
-            }
-
-            var label = asset.RelativePath ?? asset.RecordName;
-            log?.Report($"  MissingFiles retry {idx}/{unique.Count}: {label}");
-            try
-            {
-                var one = await DownloadAndDecryptAssetAsync(
-                    session,
-                    contentHost,
-                    asset,
-                    workDir,
-                    workDir,
-                    fsWriter,
-                    fileKeyCtx,
-                    idx,
-                    unique.Count,
-                    progress,
-                    log,
-                    ct).ConfigureAwait(false);
-
-                if (one.WrittenSharded)
-                {
-                    recovered++;
-                    NoteFileDecrypted("missing_retry_ok", label);
-                    if (CountsAsCiphertextOnDisk(one))
-                        NoteCiphertextSaved("missing_retry_cipher", label);
-                }
-                else if (!one.Ok && !one.QueuedDecrypt)
-                {
-                    DecryptFailureJournal.Record(
-                        workDir,
-                        asset,
-                        "missing_retry_fail",
-                        "MissingFiles retry: download/decrypt non materializzato");
-                }
-            }
-            catch (Exception ex)
-            {
-                log?.Report($"  MissingFiles retry fail {label}: {ex.Message}");
-                DecryptFailureJournal.Record(
-                    workDir,
-                    asset,
-                    "missing_retry_fail",
-                    ex.Message);
-            }
-        }
-
-        return recovered;
-    }
     private static async Task WriteItunesSidecarsAtEndOfSnapshotAsync(
         ICloudSession session,
         DownloadJob job,
@@ -4302,7 +4069,7 @@ public sealed class BackupDownloadService
                     || meta.Message.Contains("OK", StringComparison.Ordinal))
                     log?.Report($"  {meta.Message}");
                 else if (assetIndex == 6)
-                    log?.Report("  … metadata pending (log ridotto)");
+                    log?.Report("  … metadata pending (reduced log)");
             }
         }, ct).ConfigureAwait(false);
 
@@ -4323,8 +4090,8 @@ public sealed class BackupDownloadService
                 .ConfigureAwait(false))
         {
             log?.Report(
-                $"  ERROR {asset.RecordName}: authorizeGet senza x-apple-mmcs-auth " +
-                "(PrivilegedBatch/PreAuth non hanno restituito auth)");
+                $"  ERROR {asset.RecordName}: authorizeGet without x-apple-mmcs-auth " +
+                "(PrivilegedBatch/PreAuth returned no auth)");
             return AssetDownloadOutcome.Failed;
         }
 
@@ -4369,7 +4136,7 @@ public sealed class BackupDownloadService
             : UbChunkBuilder.ParseAuthorizeGetResponse(authResponseBody);
         if (chunks.Count == 0)
         {
-            log?.Report($"  ERROR {asset.RecordName}: authorizeGet senza chunk");
+            log?.Report($"  ERROR {asset.RecordName}: authorizeGet without chunk");
             return AssetDownloadOutcome.Failed;
         }
 
@@ -4694,7 +4461,7 @@ public sealed class BackupDownloadService
         LogWrapIkmProvenance(asset, "after-bind");
         // #endregion
 
-        // FillFordIkmFromContents: Record → wrap → IKM@CKFile+0x160 (unica strada).
+        // FillFordIkmFromContents: Record → wrap → IKM@CKFile+0x160 (only path).
         AssetMaterialPipeline.FillFordIkmFromContents(
             asset,
             (a, wrap) =>
@@ -4767,7 +4534,7 @@ public sealed class BackupDownloadService
         if (FordOfflineDumpWriter.ShouldKeepFlMmcsPreboundWrap(asset, out var flWhy))
         {
             log?.Report(
-                $"  {asset.RecordName}: unwrap wrap{wrapLenFail} fallito ({flWhy}) — continuo (Pipe C)");
+                $"  {asset.RecordName}: unwrap wrap{wrapLenFail} failed ({flWhy}) — continuing (Pipe C)");
             // #region agent log
             try
             {
@@ -4797,8 +4564,8 @@ public sealed class BackupDownloadService
 
         throw AbortCrypto(
             asset,
-            $"Unwrap wrap{wrapLenFail} fallito (IKM assente). " +
-            "Il download backup è stato interrotto.");
+            $"Unwrap wrap{wrapLenFail} failed (IKM missing). " +
+            "Backup download was interrupted.");
     }
 
     /// <summary>
@@ -4818,14 +4585,14 @@ public sealed class BackupDownloadService
         if (source is "keep-prebound-fl-mmcs")
         {
             log?.Report(
-                $"  {asset.RecordName}: wrap24 FL/MMCS KEK conservato (Pipe C type02)");
+                $"  {asset.RecordName}: wrap24 FL/MMCS KEK kept (Pipe C type02)");
             return;
         }
 
         if (source is "cleared-prebound" or "cleared-not-owned")
         {
             log?.Report(
-                $"  {asset.RecordName}: wrap prebound alieno rimosso (no-owned match)");
+                $"  {asset.RecordName}: alien prebound wrap removed (no-owned match)");
             // #region agent log
             try
             {
@@ -5753,7 +5520,7 @@ public sealed class BackupDownloadService
         if (copied > 0 || missingList.Count > 0)
         {
             log?.Report(
-                $"  copie path duplicati: ok={copied}, srcAssente={missingList.Count} " +
+                $"  duplicate path copies: ok={copied}, srcMissing={missingList.Count} " +
                 $"(parallel={parallelism}, {elapsedMs} ms)");
             // #region agent log
             AgentCountAlways("clone_copy_parallel", new
@@ -5841,14 +5608,13 @@ public sealed class BackupDownloadService
         var fileRecordNames = catalog.FileRecordNames;
         var preAuth = _assets.GetPreAuthMmcsAuthHeaders();
         var byF2 = MmcsAuthBuilder.IndexAuthsByChecksum(preAuth);
-        log?.Report($"  PreAuth auth disponibili: {preAuth.Count} (indice f2={byF2.Count})");
+        log?.Report($"  PreAuth auth available: {preAuth.Count} (f2 index={byF2.Count})");
 
-        // Path moderno / dual: :CN: → EN: (capture); fallback discovery/PreAuth.
-        // dual-CN+M ha già confrontato M: in catalogo; il download resta su EN:.
-        if (IsModernOrDualCatalog(catalog.Source))
+        // Path moderno: :CN: → EN: (capture); fallback discovery/PreAuth.
+        if (string.Equals(catalog.Source, "modern-CN", StringComparison.OrdinalIgnoreCase))
         {
             log?.Report(
-                $"  catalogo {catalog.Source} — auth MMCS da EN: (preferito) / PreAuth / query KA:MA");
+                "  modern-CN catalog — auth MMCS da EN: (preferito) / PreAuth / query KA:MA");
             return await ResolveModernCnDownloadAssetsAsync(
                 session, job, byF2, log, ct, enFetch);
         }
@@ -5915,7 +5681,7 @@ public sealed class BackupDownloadService
 
         if (ready.Count == 0 && preAuth.Count > 0)
         {
-            log?.Report("  join catalogo↔f2 vuoto — fallback auth PreAuth diretti (authorizeGet)");
+            log?.Report("  catalog↔f2 join empty — fallback direct PreAuth auth (authorizeGet)");
             return TakeMax(BuildAssetsFromPreAuthAuths(preAuth), job.MaxAssets);
         }
 
@@ -5941,7 +5707,7 @@ public sealed class BackupDownloadService
                 a.RecordName.StartsWith("FL:", StringComparison.Ordinal));
             var kalamaSeeds = CollectKaLaMaSeeds(enFetch, job.Device);
             log?.Report(
-                $"  N: catalogo → {fromEn.Count:N0} asset con auth " +
+                $"  N: catalog → {fromEn.Count:N0} asset con auth " +
                 $"(fileList={fileListCount}, flistHints={enFetch.FlistEntries.Count}, " +
                 $"signed={enFetch.SignedChunks.Count}, seeds KA/LA/MA={kalamaSeeds.Count})");
             log?.Report(
@@ -5956,12 +5722,12 @@ public sealed class BackupDownloadService
         {
             log?.Report(
                 $"  N: signed={enFetch.SignedChunks.Count} path={enFetch.SignedPaths.Count} " +
-                "senza auth f2/f5/f17 — discovery con seed, no stub PreAuth di massa");
+                "without auth f2/f5/f17 — discovery con seed, no stub PreAuth di massa");
         }
         else if (enFetch is not null)
         {
             log?.Report(
-                $"  N: senza materiale (resp={enFetch.TotalResponseBytes:N0} B) — fallback discovery/PreAuth");
+                $"  N: without payload (resp={enFetch.TotalResponseBytes:N0} B) — fallback discovery/PreAuth");
         }
 
         if (enFetch is { QuerySeeds.Count: > 0 })
@@ -5999,7 +5765,7 @@ public sealed class BackupDownloadService
 
         if (enFetch is { HasAuth: true })
         {
-            log?.Report("  N: aveva auth ma join KA/MA vuoto — skip stub PreAuth");
+            log?.Report("  N: had auth but KA/MA join empty — skip stub PreAuth");
             return [];
         }
 
@@ -6122,10 +5888,8 @@ public sealed class BackupDownloadService
             },
             async (asset, token) =>
             {
-                // Non saltare sotto throttle: WaitGatewayThrottle dentro TryResolve.
-                // Skip → 0 wrap → no-ikm massivo (line_search / AppDomain).
                 if (_assets.IsGatewayThrottled)
-                    await _assets.WaitGatewayThrottleAsync(token).ConfigureAwait(false);
+                    return;
                 await EnsureAssetRecordPayloadAsync(session, asset, log, token)
                     .ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex)
@@ -6791,7 +6555,7 @@ public sealed class BackupDownloadService
                     Body: null);
             }
 
-            log?.Report($"  {asset.RecordName}: FileGroup FillDecrypt (unica strada)");
+            log?.Report($"  {asset.RecordName}: FileGroup FillDecrypt (only path)");
             byte[]? mmcsKek = null;
             if (canMmcs)
                 mmcsKek = TryResolveMmcsKek(session, asset, log);
@@ -7112,7 +6876,7 @@ public sealed class BackupDownloadService
         if (!PcsSessionSeedKeys.HasAny(session))
         {
             if (_mmcsKekFailLog++ < 3)
-                log?.Report($"  {asset.RecordName}: KeySet PCS assente — skip MMCS KEK");
+                log?.Report($"  {asset.RecordName}: KeySet PCS missing — skip MMCS KEK");
             return null;
         }
 
@@ -7146,7 +6910,7 @@ public sealed class BackupDownloadService
         catch (Exception ex)
         {
             if (_mmcsKekFailLog++ < 3)
-                log?.Report($"  {asset.RecordName}: parse KeySet fallito — {ex.Message}");
+                log?.Report($"  {asset.RecordName}: parse KeySet failed — {ex.Message}");
             return null;
         }
 
@@ -7307,7 +7071,7 @@ public sealed class BackupDownloadService
         }
         else if (_mmcsKekFailLog == 6)
         {
-            log?.Report("  … KEK MMCS fail (log ridotto)");
+            log?.Report("  … KEK MMCS fail (reduced log)");
         }
 
         // #region agent log
@@ -7351,7 +7115,7 @@ public sealed class BackupDownloadService
         }
         else if (_mmcsKekOkLog == 9)
         {
-            log?.Report("  … Asset wrap unwrap OK (log ridotto)");
+            log?.Report("  … Asset wrap unwrap OK (reduced log)");
         }
 
         // #region agent log
@@ -7576,7 +7340,7 @@ public sealed class BackupDownloadService
 
         if (maDownloaded.Count == 0)
         {
-            log?.Report("  nessun MA: scaricato — Manifest.db non creato");
+            log?.Report("  no MA: downloaded — Manifest.db not created");
             return;
         }
 
@@ -7624,8 +7388,8 @@ public sealed class BackupDownloadService
                 var kind = mmcsDecrypted
                     ? (looksSqlite ? "mmcsDecrypted + SQLite" : "mmcsDecrypted (non-SQLite)")
                     : looksSqlite
-                        ? "già SQLite"
-                        : "ciphertext MMCS (non PCS class-key)";
+                        ? "already SQLite"
+                        : "MMCS ciphertext (not PCS class-key)";
                 log?.Report(
                     $"  Manifest.db (+ .encrypted in tmp) ← {Path.GetFileName(item.ObjectFile)} " +
                     $"({item.Bytes:N0} byte, record={item.Asset.RecordName}, {kind})");
@@ -7646,11 +7410,11 @@ public sealed class BackupDownloadService
             note = mmcsDecrypted
                 ? (looksSqlite
                     ? "Manifest.db = plaintext MMCS (AES-CFB); magic SQLite OK."
-                    : "Manifest.db = output MMCS decrypt; non è ancora SQLite — può servire keybag/PIN.")
+                    : "Manifest.db = MMCS decrypt output; not SQLite yet — keybag/PIN may be required.")
                 : looksSqlite
-                    ? "Manifest.db ha magic SQLite (già in chiaro)."
+                    ? "Manifest.db has SQLite magic (already plaintext)."
                     : "Manifest.db / Manifest.db.encrypted = blob MMCS assemblato (refs); " +
-                      "wrap assente o KEK non risolto. Keybag+PIN resta fuori scope.",
+                      "wrap missing or KEK unresolved. Keybag+PIN resta fuori scope.",
             candidates = byFile.Select(x => new
             {
                 record = x.Asset.RecordName,
@@ -7707,8 +7471,8 @@ public sealed class BackupDownloadService
         {
             log?.Report(
                 session.PcsEscrowedKeySet is { Length: > 32 }
-                    ? "  PCS KeySet già in sessione — skip get_records/recover"
-                    : $"  PCS Manatee già pronto ({session.PcsManateeCompactKeys!.Count}) — skip get_records/recover");
+                    ? "  PCS KeySet already in session — skip get_records/recover"
+                    : $"  PCS Manatee already ready ({session.PcsManateeCompactKeys!.Count}) — skip get_records/recover");
             return;
         }
 
@@ -7743,13 +7507,13 @@ public sealed class BackupDownloadService
 
         if (!job.EnableEscrowRecover)
         {
-            log?.Report("  Escrow recover non richiesto (EnableEscrowRecover=false)");
+            log?.Report("  Escrow recover not requested (EnableEscrowRecover=false)");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(job.IcscSecurityCode))
         {
-            log?.Report("Escrow recover richiesto ma iCSC vuoto — skip srp_init/recover");
+            log?.Report("Escrow recover requested but iCSC empty — skip srp_init/recover");
             return;
         }
 
@@ -7783,7 +7547,7 @@ public sealed class BackupDownloadService
             if (HasEscrowGetRecordsArtifacts(pcsDir))
             {
                 log?.Report(
-                    $"  escrow get_records skip — artifact già in {pcsDir}");
+                    $"  escrow get_records skip — artifact already in {pcsDir}");
                 await CopyEscrowProbeArtifactsIfMissingAsync(pcsDir, outputDirectory, ct);
                 if (File.Exists(Path.Combine(outputDirectory, "escrow_bottles.json"))
                     || File.Exists(Path.Combine(pcsDir, "escrow_bottles.json")))
@@ -7896,16 +7660,16 @@ public sealed class BackupDownloadService
             var clean = IkeBackupOutputPaths.ResolveCleanBackupDirectory(snapshotRoot);
             if (!Directory.Exists(clean))
             {
-                log?.Report("HASH: Backup/ assente — skip firme.");
+                log?.Report("HASH: Backup/ missing — skip signatures.");
                 return;
             }
 
             progress?.Report(new DownloadProgressReport
             {
-                Status = "Calcolo firme HASH (SHA-256)…",
+                Status = "Computing HASH signatures (SHA-256)…",
                 AppendToLog = true,
             });
-            log?.Report("Calcolo firme HASH (SHA-256) su Backup/…");
+            log?.Report("Computing HASH signatures (SHA-256) on Backup/…");
             var result = await OutputHashManifest
                 .WriteForDirectoryAsync(clean, log, ct)
                 .ConfigureAwait(false);
@@ -7925,7 +7689,7 @@ public sealed class BackupDownloadService
         }
         catch (Exception ex)
         {
-            log?.Report($"HASH: errore {ex.Message}");
+            log?.Report($"HASH: error {ex.Message}");
         }
     }
 
@@ -8559,7 +8323,7 @@ public sealed class BackupDownloadService
             // #endregion
             var statusCode = (int)response.StatusCode;
             var msg = EdgeChunkRemap.IsServerSideEdgeStatus(response.StatusCode)
-                ? $"edge GET HTTP {statusCode} (errore lato server Apple) " +
+                ? $"edge GET HTTP {statusCode} (Apple server-side error) " +
                   $"range={chunk.ByteRange?.Start}-{chunk.ByteRange?.End}"
                 : $"edge GET HTTP {statusCode} " +
                   $"range={chunk.ByteRange?.Start}-{chunk.ByteRange?.End}";
@@ -9222,7 +8986,7 @@ public sealed class BackupDownloadService
     }
 
     /// <summary>
-    /// Conteggi Domain.fileList: gli Asset MMCS sono i file da scaricare;
+    /// Conteggi Domain.fileList: gli Asset MMCS sono i file to download;
     /// cartelle/symlink/empty restano solo in FileMetadata.
     /// </summary>
     private readonly record struct DomainInventoryTotals(
@@ -9279,7 +9043,7 @@ public sealed class BackupDownloadService
         if (_refreshSession is null)
             return;
 
-        log?.Report("Refresh Anisette prima di query/retrieve Asset (no ckAppInit / no Re-Lock)…");
+        log?.Report("Refresh Anisette before query/retrieve Asset (no ckAppInit / no Re-Lock)…");
         try
         {
             // Soft: riusa sessione + Client-Time (no mint anisette).
@@ -9313,7 +9077,7 @@ public sealed class BackupDownloadService
         while (_assets.AnisetteRefreshBlocked && waited < maxWaitMs)
         {
             var remain = _assets.AnisetteBlockedRemainingMs;
-            log?.Report($"  attendo Anisette… ({waited / 1000}s, restano ~{remain / 1000}s)");
+            log?.Report($"  waiting for Anisette… ({waited / 1000}s, ~{remain / 1000}s remaining)");
             await Task.Delay(sliceMs, ct).ConfigureAwait(false);
             waited += sliceMs;
         }
@@ -9563,7 +9327,7 @@ public sealed class BackupDownloadService
             {
                 log?.Report(
                     $"  PrivilegedBatch: pausa throttle Apple " +
-                    $"(~{_assets.GatewayThrottleRemainingMs / 1000}s) prima wave {wave}…");
+                    $"(~{_assets.GatewayThrottleRemainingMs / 1000}s) before wave {wave}…");
                 await _assets.WaitGatewayThrottleAsync(ct).ConfigureAwait(false);
             }
 
@@ -9581,7 +9345,7 @@ public sealed class BackupDownloadService
             {
                 try
                 {
-                    log?.Report($"  refresh Anisette prima wave {wave}…");
+                    log?.Report($"  refresh Anisette before wave {wave}…");
                     await _refreshSession(session, log, ct, forceRemint: false).ConfigureAwait(false);
                     _assets.ClearGatewayUnauthorized();
                     await Task.Delay(800, ct).ConfigureAwait(false);
@@ -9605,7 +9369,7 @@ public sealed class BackupDownloadService
             attachedBefore = attachedNow;
             var stillNeed = need.Count(static a => !HasUsableMmcsAuth(a.MmcsAuth));
             log?.Report(
-                $"  wave {wave} → +{gained} auth (totale {attachedNow}/{need.Count}, " +
+                $"  wave {wave} → +{gained} auth (total {attachedNow}/{need.Count}, " +
                 $"mancano {stillNeed})");
             // #region agent log
             try
@@ -9656,7 +9420,7 @@ public sealed class BackupDownloadService
             {
                 log?.Report(
                     $"  wave {wave}: 0 auth — non riaccodo {waveSeeds.Count} seed " +
-                    $"(restano in coda {pendingSeeds.Count}; retry finale se serve)");
+                    $"(remain queued {pendingSeeds.Count}; retry finale se serve)");
                 if (pendingSeeds.Count == 0)
                     break;
                 continue;
@@ -9692,8 +9456,8 @@ public sealed class BackupDownloadService
             if (gained == 0 && _assets.AnisetteRefreshBlocked)
             {
                 log?.Report(
-                    $"  PrivilegedBatch: Anisette in cooldown — attendo, poi continuo " +
-                    $"({stillNeed} senza auth, {pendingSeeds.Count} seed in coda)…");
+                    $"  PrivilegedBatch: Anisette in cooldown — waiting, then continuing " +
+                    $"({stillNeed} without auth, {pendingSeeds.Count} seeds queued)…");
                 await PauseForAnisetteCooldownAsync(log, ct).ConfigureAwait(false);
                 if (_refreshSession is not null)
                 {
@@ -9705,7 +9469,7 @@ public sealed class BackupDownloadService
                     }
                     catch (Exception ex)
                     {
-                        log?.Report($"  refresh dopo cooldown: {ex.Message}");
+                        log?.Report($"  refresh after cooldown: {ex.Message}");
                     }
                 }
             }
@@ -9747,7 +9511,7 @@ public sealed class BackupDownloadService
 
             log?.Report(
                 $"  query/retrieve retry missing ×{retrySeeds.Count} " +
-                $"(pass {retry + 1}, ancora senza auth={missing.Count})…");
+                $"(pass {retry + 1}, still without auth={missing.Count})…");
             // #region agent log
             try
             {
@@ -9831,62 +9595,6 @@ public sealed class BackupDownloadService
                 fetched = fetched.Concat(more).ToList();
                 if (morePayload is { Length: > 0 })
                     payload = morePayload;
-            }
-        }
-
-        // Monofile PB: un seed (e varianti size/+-) per asset ancora senza auth.
-        // Chiude sticky gap che i wave ×N lasciano (es. 1 IndexedDB Moovit su 265).
-        AttachFetchedAuthToFlistAssets(need, fetched, payload, out _);
-        var monoNeed = need
-            .Where(static a => !HasUsableMmcsAuth(a.MmcsAuth)
-                && !string.IsNullOrWhiteSpace(a.RecordIdSuffix)
-                && a.AssetSignature is { Length: 21 })
-            .ToList();
-        if (monoNeed.Count > 0 && !_assets.AnisetteRefreshBlocked)
-        {
-            const int monoCap = 48;
-            var monoTake = monoNeed.Count <= monoCap
-                ? monoNeed
-                : monoNeed.Take(monoCap).ToList();
-            log?.Report(
-                $"  PrivilegedBatch monofile gap ×{monoTake.Count}" +
-                (monoNeed.Count > monoCap ? $" (di {monoNeed.Count})" : "") +
-                "…");
-            var monoRecovered = 0;
-            foreach (var asset in monoTake)
-            {
-                ct.ThrowIfCancellationRequested();
-                if (HasUsableMmcsAuth(asset.MmcsAuth))
-                    continue;
-                if (_assets.IsGatewayThrottled)
-                    await _assets.WaitGatewayThrottleAsync(ct).ConfigureAwait(false);
-
-                var type = seedTypes.TryGetValue(asset.RecordIdSuffix!, out var t) ? t : "A";
-                foreach (var seed in EnumerateMonofileAuthSeeds(
-                             devicePrefix4, asset, enBySuffix, type))
-                {
-                    var (moreMono, morePayloadMono) = await _assets
-                        .FetchPrivilegedBatchMultiAsync(
-                            session, [seed], snapshotDirectory, log, ct)
-                        .ConfigureAwait(false);
-                    if (moreMono.Count > 0)
-                        fetched.AddRange(moreMono);
-                    if (morePayloadMono is { Length: > 0 })
-                        payload = morePayloadMono;
-                    AttachFetchedAuthToFlistAssets(
-                        new[] { asset }, fetched, payload, out _);
-                    if (HasUsableMmcsAuth(asset.MmcsAuth))
-                    {
-                        monoRecovered++;
-                        break;
-                    }
-                }
-            }
-
-            if (monoRecovered > 0)
-            {
-                log?.Report(
-                    $"  PrivilegedBatch monofile: recuperati {monoRecovered}/{monoTake.Count}");
             }
         }
 
@@ -10255,93 +9963,6 @@ public sealed class BackupDownloadService
         if (sizeBytes is long sz and >= 0)
             s = CloudKitMmcsIds.EnsurePrivilegedBatchSeedSize(s, sz, overwriteExisting: true);
         return s;
-    }
-
-    /// <summary>
-    /// Seed monofile per gap auth: size flist, size da rid, varianti base64 <c>+/-</c>.
-    /// </summary>
-    private static IEnumerable<string> EnumerateMonofileAuthSeeds(
-        string devicePrefix4,
-        BackupAsset asset,
-        IReadOnlyDictionary<string, string> enBySuffix,
-        string type)
-    {
-        var rid = asset.RecordIdSuffix;
-        if (string.IsNullOrWhiteSpace(rid))
-            yield break;
-
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        void Offer(string? seed)
-        {
-            if (string.IsNullOrWhiteSpace(seed) || CloudKitMmcsIds.IsUuidRecordName(seed))
-                return;
-            seen.Add(seed);
-        }
-
-        var primary = ResolvePrivilegedBatchSeedForFlistAsset(
-            devicePrefix4, rid, asset.SizeBytes, enBySuffix, type, out _);
-        Offer(primary);
-
-        var ridSize = CloudKitMmcsIds.TryExtractSizeFromRid(rid);
-        if (ridSize is long rs
-            && asset.SizeBytes is long fs
-            && rs != fs)
-        {
-            Offer(ResolvePrivilegedBatchSeedForFlistAsset(
-                devicePrefix4, rid, rs, enBySuffix, type, out _));
-        }
-
-        if (primary is not null)
-        {
-            foreach (var v in CloudKitMmcsIds.EnumerateAssetRecordNameVariants(
-                         primary, asset.SizeBytes))
-                Offer(v);
-            if (ridSize is long alt && asset.SizeBytes is long cur && alt != cur)
-            {
-                foreach (var v in CloudKitMmcsIds.EnumerateAssetRecordNameVariants(primary, alt))
-                    Offer(v);
-            }
-        }
-
-        foreach (var s in seen)
-            yield return s;
-    }
-
-    /// <summary>Sempre-on sotto snapshot: <c>{work}/auth_gaps.jsonl</c>.</summary>
-    private static void AppendAuthGapSnapshotLog(
-        string snapshotWorkDirectory,
-        BackupAsset asset,
-        bool anisetteBlocked)
-    {
-        if (string.IsNullOrWhiteSpace(snapshotWorkDirectory))
-            return;
-        try
-        {
-            Directory.CreateDirectory(snapshotWorkDirectory);
-            var path = Path.Combine(snapshotWorkDirectory, "auth_gaps.jsonl");
-            var line = JsonSerializer.Serialize(new Dictionary<string, object?>
-            {
-                ["ts"] = DateTime.UtcNow.ToString("O"),
-                ["stage"] = "mmcs_auth_skip",
-                ["anisetteBlocked"] = anisetteBlocked,
-                ["domain"] = asset.Domain,
-                ["path"] = asset.RelativePath ?? asset.RecordName,
-                ["rid"] = asset.RecordIdSuffix,
-                ["size"] = asset.SizeBytes,
-                ["comp"] = asset.CompressionMethod,
-                ["pc"] = asset.ProtectionClass,
-                ["sig"] = asset.AssetSignature is { Length: 21 } sig
-                    ? Convert.ToHexString(sig)
-                    : null,
-                ["fileId"] = asset.EnsureFileId(),
-                ["hasAuth"] = HasUsableMmcsAuth(asset.MmcsAuth),
-            });
-            File.AppendAllText(path, line + Environment.NewLine);
-        }
-        catch
-        {
-            // ignore
-        }
     }
 
     /// <summary>
@@ -11928,7 +11549,7 @@ public sealed class BackupDownloadService
                 if (_decryptQueue is null)
                 {
                     log?.Report(
-                        $"  mmcs_cache: chunk OK per {asset.RelativePath ?? asset.RecordName}, decrypt sync");
+                        $"  mmcs_cache: chunk OK for {asset.RelativePath ?? asset.RecordName}, decrypt sync");
                     var one = await FinishFlistAssetAfterAuthorizeAsync(
                         session,
                         asset,
@@ -11950,7 +11571,7 @@ public sealed class BackupDownloadService
                 }
 
                 log?.Report(
-                    $"  mmcs_cache: chunk OK per {asset.RelativePath ?? asset.RecordName}, " +
+                    $"  mmcs_cache: chunk OK for {asset.RelativePath ?? asset.RecordName}, " +
                     "FillChunks (decrypt batch)");
 
                 var job = new BackupDecryptJob(
@@ -12036,7 +11657,7 @@ public sealed class BackupDownloadService
                 if (colon >= 0 && colon + 2 < detail.Length)
                     detail = detail[(colon + 2)..];
                 detail = detail.Replace(
-                    " Il download backup è stato interrotto.",
+                    " Backup download was interrupted.",
                     "",
                     StringComparison.Ordinal);
                 await RecordSkippedCryptoAsync(
@@ -12622,7 +12243,7 @@ public sealed class BackupDownloadService
                 return default;
 
             log?.Report(
-                $"decrypt pipeline: attendo {_pendingDecryptTasks.Count} job " +
+                $"decrypt pipeline: waiting for {_pendingDecryptTasks.Count} job " +
                 $"(inFlight={_decryptQueue?.InFlight ?? 0})…");
 
             remaining = new List<(BackupAsset Asset, Task<AssetDownloadOutcome> Task)>(_pendingDecryptTasks);
@@ -12695,7 +12316,7 @@ public sealed class BackupDownloadService
             Volatile.Write(ref _uiDecryptPending, 0);
         ReportFilesDoneProgress(progress, Volatile.Read(ref _uiFilesDecrypted), Math.Max(_uiFilesTotal, 1));
 
-        log?.Report($"decrypt pipeline: {done} job completati");
+        log?.Report($"decrypt pipeline: {done} jobs completed");
         return new DecryptDrainStats(done, addBytes, addWritten, addStaged, addMmcs, addFile);
     }
 
@@ -13181,7 +12802,7 @@ public sealed class BackupDownloadService
         var fordIkm = TryResolveFordIkm(asset, out var ikmSrc);
         if (fordIkm is not { Length: > 0 })
         {
-            log?.Report($"  ERROR large {pathLabel}: manca IKM Ford ({ikmSrc})");
+            log?.Report($"  ERROR large {pathLabel}: missing Ford IKM ({ikmSrc})");
             DecryptFailureJournal.Record(
                 snapshotDirectory, asset, "mmcs_not_decrypted", "large-asset no IKM",
                 new DecryptFailureDetails { AuthSlice = authSlice, Chunks = chunks });
@@ -13230,7 +12851,7 @@ public sealed class BackupDownloadService
         {
             log?.Report(
                 $"  ERROR large {pathLabel}: ford={fordCiphers.Count} dataHosts={dataChunks.Count} " +
-                $"(refs={plan.References.Count} dataMap={dataByContainer.Count}) — impossibile decrypt streaming");
+                $"(refs={plan.References.Count} dataMap={dataByContainer.Count}) — decrypt streaming impossible");
             DecryptFailureJournal.Record(
                 snapshotDirectory, asset, "mmcs_not_decrypted",
                 $"large-asset resolve ford={fordCiphers.Count} data={dataChunks.Count}",
@@ -13367,8 +12988,8 @@ public sealed class BackupDownloadService
                         await fsWriter.WriteFileFromPathAsync(asset, outPath, ct).ConfigureAwait(false);
                         largeCipherWritten = true;
                         log?.Report(
-                            $"  {pathLabel} → Backup/ CIFRATO/incompleto {ptLen:N0} B " +
-                            $"(atteso {expect:N0}; salvato per retry PIN/keybag)");
+                            $"  {pathLabel} → Backup/ ENCRYPTED/incomplete {ptLen:N0} B " +
+                            $"(expected {expect:N0}; saved for PIN/keybag retry)");
                     }
                     else if (File.Exists(outPath))
                     {
@@ -13382,7 +13003,7 @@ public sealed class BackupDownloadService
                 }
                 catch (Exception ex)
                 {
-                    log?.Report($"  WARN {pathLabel}: salva cifrato large fallito — {ex.Message}");
+                    log?.Report($"  WARN {pathLabel}: save encrypted large failed — {ex.Message}");
                 }
 
                 try { File.Delete(outPath); } catch { /* ignore */ }
@@ -13624,7 +13245,7 @@ public sealed class BackupDownloadService
 
             var why = !result.MmcsDecrypted
                 ? (result.AssemblyMode ?? "ike-decrypt-fail")
-                : "body assente dopo decrypt";
+                : "body missing after decrypt";
             log?.Report(
                 $"  ERROR {asset.RelativePath ?? asset.RecordName}: {why}" +
                 (result.PlanSummary is { Length: > 0 } ? $" ({result.PlanSummary})" : ""));
@@ -13890,10 +13511,10 @@ public sealed class BackupDownloadService
                         log?.Report(
                             $"  {asset.RelativePath ?? asset.RecordName} → " +
                             $"{Path.GetRelativePath(snapshotDirectory, path)} " +
-                            $"CIFRATO/incompleto {body.Length:N0} B " +
-                            $"(atteso {asset.SizeBytes?.ToString("N0") ?? "?"}; " +
+                            $"ENCRYPTED/incomplete {body.Length:N0} B " +
+                            $"(expected {asset.SizeBytes?.ToString("N0") ?? "?"}; " +
                             $"pc={asset.ProtectionClass?.ToString() ?? "?"}; " +
-                            "salvato per retry PIN/keybag)");
+                            "saved for PIN/keybag retry)");
                     }
                     else
                     {
@@ -13902,7 +13523,7 @@ public sealed class BackupDownloadService
                         cipherStaged = true;
                         log?.Report(
                             $"  {asset.RecordName} → .chunks/{Path.GetFileName(stagedPath)} " +
-                            $"CIFRATO/incompleto {body.Length:N0} B " +
+                            $"ENCRYPTED/incomplete {body.Length:N0} B " +
                             $"(pc={asset.ProtectionClass?.ToString() ?? "?"})");
                     }
                 }
@@ -13910,7 +13531,7 @@ public sealed class BackupDownloadService
                 {
                     log?.Report(
                         $"  WARN {asset.RelativePath ?? asset.RecordName}: " +
-                        $"salva cifrato fallito — {ex.Message}");
+                        $"save encrypted failed — {ex.Message}");
                 }
             }
 
@@ -14006,7 +13627,7 @@ public sealed class BackupDownloadService
         {
             log?.Report(
                 $"  {asset.RecordName}: MMCS={(result.MmcsDecrypted ? "OK" : "no")} " +
-                $"ma body non SQLite dopo decrypt " +
+                $"but body not SQLite after decrypt " +
                 $"(lzfse={lzfseExpanded}, len={body.Length:N0}, " +
                 $"head={Convert.ToHexString(body.AsSpan(0, Math.Min(8, body.Length)))})");
         }
@@ -14070,7 +13691,7 @@ public sealed class BackupDownloadService
             if (released > 0)
             {
                 log?.Report(
-                    $"  mmcs_cache: rilasciati {released} chunk dati dopo decrypt " +
+                    $"  mmcs_cache: released {released} data chunks after decrypt " +
                     $"{asset.RelativePath ?? asset.RecordName}");
             }
         }
@@ -14345,9 +13966,9 @@ public sealed class BackupDownloadService
         bool debugIsFileList = false)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("authorizeGet: manca session.Dsid.");
+            throw new InvalidOperationException("authorizeGet: missing session.Dsid.");
         if (entries.Count == 0)
-            throw new ArgumentException("Batch authorizeGet vuoto.", nameof(entries));
+            throw new ArgumentException("Batch authorizeGet empty.", nameof(entries));
 
         var mmcsAuth = UbChunkBuilder.BuildMmcsAuthHeader(entries[0]);
         var body = UbChunkBuilder.BuildAuthorizeGetRequest(entries);
@@ -14638,7 +14259,7 @@ public sealed class BackupDownloadService
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("authorizeGet: manca session.Dsid.");
+            throw new InvalidOperationException("authorizeGet: missing session.Dsid.");
 
         // Post-fileList  f1 = Assets.assetSignature verbatim (0x04‖20B).
         // Mai usare CK mmcs-auth part0 (0x01) come f1 quando la signature flist c'è.
@@ -14648,8 +14269,8 @@ public sealed class BackupDownloadService
                 is not { } flistEntry)
             {
                 throw new InvalidOperationException(
-                    "authorizeGet flist: MmcsAuth assente/incompleto con AssetSignature presente " +
-                    $"(prefisso=0x{flSig[0]:X2}, serve CAog+companion da PrivilegedBatch).");
+                    "authorizeGet flist: MmcsAuth missing/incomplete with AssetSignature present " +
+                    $"(prefix=0x{flSig[0]:X2}, needs CAog+companion from PrivilegedBatch).");
             }
 
             // #region agent log
@@ -14694,7 +14315,7 @@ public sealed class BackupDownloadService
         if (!MmcsAuthBuilder.TrySplitMmcsAuth(mmcsAuth, out var sig, out var companion, out var token))
         {
             throw new InvalidOperationException(
-                "authorizeGet: MmcsAuth assente o incompleto (attesi 3 token x-apple-mmcs-auth).");
+                "authorizeGet: MmcsAuth missing or incomplete (expected 3 tokens x-apple-mmcs-auth).");
         }
 
         // #region agent log
@@ -14754,7 +14375,7 @@ public sealed class BackupDownloadService
                         .ConfigureAwait(false))
                 {
                     throw new InvalidOperationException(
-                        $"edge refresh: MmcsAuth assente per {asset.RecordName}");
+                        $"edge refresh: MmcsAuth missing for {asset.RecordName}");
                 }
 
                 var freshAuth = await AuthorizeGetAsync(session, contentHost, asset, ct)
@@ -14772,7 +14393,7 @@ public sealed class BackupDownloadService
                 }
 
                 log?.Report(
-                    $"  edge refresh: nuovo authorizeGet per {asset.RelativePath ?? asset.RecordName}");
+                    $"  edge refresh: new authorizeGet for {asset.RelativePath ?? asset.RecordName}");
                 // #region agent log
                 AgentFlEdgeDebugLog(
                     "BackupDownloadService.CreateAssetEdgeAuthState",

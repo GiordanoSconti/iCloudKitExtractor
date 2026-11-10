@@ -72,7 +72,7 @@ public static class IosKeybagSelfTest
 
         var unlockOk = keybag.TryUnlock(passcode);
         if (!unlockOk)
-            return new SelfTestResult(false, false, false, "unlock fallito");
+            return new SelfTestResult(false, false, false, "unlock failed");
 
         if (!keybag.UnwrappedClassKeys.TryGetValue(protectionClass, out var unwrapped)
             || !unwrapped.AsSpan().SequenceEqual(classKey))
@@ -82,12 +82,12 @@ public static class IosKeybagSelfTest
 
         var wrongRejected = !keybag.TryUnlock("000000");
         if (!wrongRejected)
-            return new SelfTestResult(true, false, false, "PIN errato non rifiutato");
+            return new SelfTestResult(true, false, false, "wrong PIN not rejected");
 
         keybag.TryUnlock(passcode);
 
         if (!keybag.UnwrappedClassKeys.TryGetValue(protectionClass, out _))
-            return new SelfTestResult(true, true, false, "re-unlock fallito");
+            return new SelfTestResult(true, true, false, "re-unlock failed");
 
         var plain = Encoding.UTF8.GetBytes("bplist00" + new string('X', 40));
         var iv = Convert.FromHexString("0102030405060708090A0B0C0D0E0F10");

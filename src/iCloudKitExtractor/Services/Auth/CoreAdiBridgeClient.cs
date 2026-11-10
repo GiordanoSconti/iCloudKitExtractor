@@ -16,7 +16,7 @@ public sealed class CoreAdiBridgeClient : IAdiCryptoClient
 
     public Task ProvisionViaLibraryAsync(
         string runtimeDir, string provisioningDir, string adiId, long dsId = -2, CancellationToken ct = default) =>
-        throw new NotSupportedException("CoreADI usa MidService HTTP in AdiProvisioningService, non ProvisionViaLibrary.");
+        throw new NotSupportedException("CoreADI uses MidService HTTP in AdiProvisioningService, not ProvisionViaLibrary.");
     public async Task<bool> IsProvisionedAsync(
         string runtimeDir,
         string provisioningDir,
@@ -134,7 +134,7 @@ public sealed class CoreAdiBridgeClient : IAdiCryptoClient
     {
         var bridgePath = ResolveBridgeExecutable()
             ?? throw new InvalidOperationException(
-                "CoreAdiBridge.exe non trovato. Esegui scripts/build-coreadi-bridge.ps1.");
+                "CoreAdiBridge.exe not found. Run scripts/build-coreadi-bridge.ps1.");
 
         var args = new List<string>
         {
@@ -161,14 +161,14 @@ public sealed class CoreAdiBridgeClient : IAdiCryptoClient
             psi.ArgumentList.Add(arg);
 
         using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Impossibile avviare CoreAdiBridge.exe.");
+            ?? throw new InvalidOperationException("Cannot start CoreAdiBridge.exe.");
 
         var stdout = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
         var stderr = await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
         await process.WaitForExitAsync(ct).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(stdout))
-            throw new InvalidOperationException($"CoreAdiBridge senza output: {stderr.Trim()}");
+            throw new InvalidOperationException($"CoreAdiBridge produced no output: {stderr.Trim()}");
 
         var json = JsonDocument.Parse(stdout);
         if (json.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True)

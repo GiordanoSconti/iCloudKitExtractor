@@ -74,8 +74,8 @@ public static class CkksPasswordExport
         if (rows.Count == 0)
         {
             log?.Report(
-                "  Nessun item Passwords — OpenVault ora chiama fetchRecoverableTLKShares; " +
-                "verifica log «recoverable TLK» / view Passwords.");
+                "  No Passwords items — OpenVault now calls fetchRecoverableTLKShares; " +
+                "check log «recoverable TLK» / view Passwords.");
         }
 
         return rows.Count;

@@ -226,22 +226,22 @@ public sealed class CloudDocsDocumentCrypto
         if (zoneKeys is null)
         {
             log?.Report(
-                "  crypto: skip authorizeGet/download — senza seed PCS / zone unwrap " +
-                "i ciphertext non sarebbero decifrabili. Unlock EscrowedKeys oppure " +
-                "Octagon → CKKS OpenVault (Manatee), poi rilancia.");
+                "  crypto: skip authorizeGet/download — without PCS seed / zone unwrap " +
+                "ciphertext would not be decryptable. Unlock EscrowedKeys or " +
+                "Octagon → CKKS OpenVault (Manatee), then retry.");
             return;
         }
 
         if (recordMasters.Count == 0)
         {
             log?.Report(
-                "  crypto: ATTENZIONE — 0 record master (basename/PI). " +
-                "Download MMCS comunque; decrypt file probabilmente skip.");
+                "  crypto: WARNING — 0 record masters (basename/PI). " +
+                "Still download MMCS; file decrypt will likely skip.");
         }
 
         if (withAuth == 0)
         {
-            log?.Report("  crypto: nessun MMCS auth associabile — skip authorizeGet.");
+            log?.Report("  crypto: no associable MMCS auth — skip authorizeGet.");
             return;
         }
 
@@ -339,7 +339,7 @@ public sealed class CloudDocsDocumentCrypto
     {
         if (zonePayload is null || zonePayload.Length == 0)
         {
-            log?.Report("  crypto: nessun zone payload live — skip ProtectionInfo unwrap.");
+            log?.Report("  crypto: no live zone payload — skip ProtectionInfo unwrap.");
             return (null, Array.Empty<ProtectionZoneKeys>(), null);
         }
 
@@ -370,20 +370,20 @@ public sealed class CloudDocsDocumentCrypto
             });
         // #endregion
         log?.Report(
-            $"  crypto: decifrando zone ProtectionInfo ({zonePayload.Length:N0} B × {keys.Count} keys, {seedKind})…");
+            $"  crypto: decrypting zone ProtectionInfo ({zonePayload.Length:N0} B × {keys.Count} keys, {seedKind})…");
         // CPU-bound: non sul thread UI (Progress può riprendere sul dispatcher).
         var all = await Task.Run(
                 () => PcsProtectionZone.TryUnwrapAll(zonePayload, keys, tag), ct)
             .ConfigureAwait(false);
         log?.Report(
             all.Count > 0
-                ? $"  crypto: zone ProtectionInfo decifrata — {all.Count} unwrap OK"
-                : "  crypto: zone ProtectionInfo — nessun unwrap");
+                ? $"  crypto: zone ProtectionInfo decrypted — {all.Count} unwrap OK"
+                : "  crypto: zone ProtectionInfo — no unwrap");
         if (all.Count == 0)
         {
             log?.Report(
-                "  crypto: zone ProtectionInfo unwrap FALLITO — nessun match KeyID " +
-                "(atteso BLADERUNNER / service 2 nel KeySet escrow, oppure compact Manatee/PCS).");
+                "  crypto: zone ProtectionInfo unwrap FAILED — no KeyID match " +
+                "(expected BLADERUNNER / service 2 in escrow KeySet, or compact Manatee/PCS).");
             return (null, all, keys);
         }
 
@@ -422,9 +422,9 @@ public sealed class CloudDocsDocumentCrypto
                 allKeyIds = all.Select(static z => z.MasterKeyIdHex).ToList(),
                 dynamic = true,
                 note =
-                    "Solo payload zone/retrieve di questa run + KeySet in ICloudSession. " +
-                    "Nessuna rilettura di dump o whatsapp_docs_* precedenti. " +
-                    "largeZonePiPresent=false ⇒ manca il Cont[0] ~884 B (MasterKeySet) tipico dopo com.apple.CloudDocs.",
+                    "Only zone/retrieve payload from this run + KeySet in ICloudSession. " +
+                    "No re-read of prior dump or whatsapp_docs_* folders. " +
+                    "largeZonePiPresent=false ⇒ missing Cont[0] ~884 B (MasterKeySet) typical after com.apple.CloudDocs.",
             }, new JsonSerializerOptions { WriteIndented = true }),
             ct);
 
@@ -434,8 +434,8 @@ public sealed class CloudDocsDocumentCrypto
             $"nestedKeys={nestedKeyTotal})");
         if (nestedKeyTotal == 0)
             log?.Report(
-                "  crypto: nested MasterKeySet vuoto — record ProtectionInfo " +
-                "probabilmente non unwrap-abile finché GCM dataBlob zona non decifra.");
+                "  crypto: nested MasterKeySet empty — record ProtectionInfo " +
+                "probably not unwrap-able until zone GCM dataBlob decrypts.");
 
         return (zoneKeys, all, keys);
     }
@@ -478,7 +478,7 @@ public sealed class CloudDocsDocumentCrypto
                 }
                 catch (Exception ex)
                 {
-                    log?.Report($"  crypto: lettura KeySet fallita: {ex.Message}");
+                    log?.Report($"  crypto: lettura KeySet failed: {ex.Message}");
                 }
             }
             else
@@ -495,7 +495,7 @@ public sealed class CloudDocsDocumentCrypto
                         session.PcsKeysDirectory = dir;
                     }
                     else
-                        log?.Report($"  crypto: unlock fallito — {unlock.Message}");
+                        log?.Report($"  crypto: unlock failed — {unlock.Message}");
                 }
             }
         }
@@ -508,7 +508,7 @@ public sealed class CloudDocsDocumentCrypto
             }
             catch (Exception ex)
             {
-                log?.Report($"  crypto: KeySet Escrow non valido: {ex.Message}");
+                log?.Report($"  crypto: invalid Escrow KeySet: {ex.Message}");
             }
         }
 
@@ -527,7 +527,7 @@ public sealed class CloudDocsDocumentCrypto
         }
 
         log?.Report(
-            "  crypto: nessun seed PCS — Unlock EscrowedKeys (iCSC) oppure " +
+            "  crypto: no PCS seed — Unlock EscrowedKeys (iCSC) or " +
             "Unlock Octagon → CKKS OpenVault (Manatee), poi rilancia.");
         return null;
     }
@@ -568,7 +568,7 @@ public sealed class CloudDocsDocumentCrypto
             $"  crypto: keyring per record PI = {workingKeys.Count} " +
             $"(seed={seedKeys.Count} + nested zone)");
         log?.Report(
-            $"  crypto: decifrando record ProtectionInfo ({withRecordPi} record)…");
+            $"  crypto: decrypting record ProtectionInfo ({withRecordPi} records)…");
 
         // Pass 1: unwrap tutti i record PI (CPU-bound → thread pool).
         var unwrapped = await Task.Run(() =>
@@ -612,7 +612,7 @@ public sealed class CloudDocsDocumentCrypto
 
         // Pass 2: basename (CPU + I/O disco sync) → thread pool.
         var withBasename = entries.Count(static x => x.EncryptedBasenameHex != null);
-        log?.Report($"  crypto: decifrando encryptedBasename ({withBasename})…");
+        log?.Report($"  crypto: decrypting encryptedBasename ({withBasename})…");
         var basenameHits = await Task.Run(() =>
         {
             var hits = new List<(string RecordName, byte[] Plain, string Text)>();
@@ -671,7 +671,7 @@ public sealed class CloudDocsDocumentCrypto
         log?.Report(
             ok > 0
                 ? $"  crypto: decryptedBasename {ok}/{withBasename}"
-                : "  crypto: encryptedBasename non decifrati — verificare pairing record↔PI e AAD.");
+                : "  crypto: encryptedBasename not decrypted — verify record↔PI pairing and AAD.");
         return (ok, recordMasters, plainBasenames, recordZones);
     }
 
@@ -1110,7 +1110,7 @@ public sealed class CloudDocsDocumentCrypto
         var withDirPi = directories.Count(static x => x.RecordProtectionInfoDerHex != null);
         var withDirBasename = directories.Count(static x => x.EncryptedBasenameHex != null);
         log?.Report(
-            $"  crypto: decifrando directory ProtectionInfo/basename " +
+            $"  crypto: decrypting directory ProtectionInfo/basename " +
             $"({withDirPi} PI, {withDirBasename} basename)…");
 
         var basenameHits = await Task.Run(() =>
@@ -1190,7 +1190,7 @@ public sealed class CloudDocsDocumentCrypto
         log?.Report(
             ok > 0
                 ? $"  crypto: directoryBasename {ok}/{withDirBasename}"
-                : "  crypto: directory encryptedBasename non decifrati.");
+                : "  crypto: directory encryptedBasename not decrypted.");
         return (ok, plainBasenames);
     }
 
@@ -2384,8 +2384,8 @@ public sealed class CloudDocsDocumentCrypto
             "",
             "Modello chiavi (solo live):",
             "- KeySet PCS in ICloudSession (Escrow recover/unlock → sessione)",
-            "- zone/retrieve + record/sync + FetchRecords di questa run (byte in memoria)",
-            "- Artifact sotto crypto/ = output della run, non input da dump storici",
+            "- zone/retrieve + record/sync + FetchRecords from this run (bytes in memory)",
+            "- Artifacts under crypto/ = output from this run, not input from old dumps",
             "",
             $"Zone unwrap: {(zoneKeys is null ? "PENDING/FAIL" : "OK KeyID=" + zoneKeys.MasterKeyIdHex)}",
             $"nested MasterKeySet: {zoneKeys?.NestedPrivateKeys.Count ?? 0} keys / nestedPlain={zoneKeys?.NestedProtectionObject?.Length ?? 0} B",
@@ -2394,7 +2394,7 @@ public sealed class CloudDocsDocumentCrypto
             $"directory encryptedBasename decrypt: {directoryBasenameOk}/{directories.Count(e => e.EncryptedBasenameHex != null)}",
             $"Asset.protectionInfo (wrap24): {entries.Count(e => e.AssetProtectionInfoHex != null)}",
             "",
-            "Artifact (solo output di questa run):",
+            "Artifacts (output from this run only):",
             $"- inventory.json ({entries.Count} entry)",
             $"- directory_inventory.json / directory_path_map.json",
             $"- zone_unwrap_meta.json / zone_decrypt_key.bin (se unwrap OK)",
@@ -2599,7 +2599,7 @@ public sealed class CloudDocsDocumentCrypto
         }
 
         if (last is not null)
-            log?.Report($"  crypto {ShortName(entry.RecordName)}: authorizeGet fallito — {last.Message}");
+            log?.Report($"  crypto {ShortName(entry.RecordName)}: authorizeGet failed — {last.Message}");
         return (false, false);
     }
 
@@ -2852,7 +2852,7 @@ public sealed class CloudDocsDocumentCrypto
         var wrapCandidates = CollectAssetWrapCandidates(entry, fetchDir);
         if (wrapCandidates.Count == 0)
         {
-            log?.Report($"  crypto {ShortName(entry.RecordName)}: skip decrypt — Asset.protectionInfo assente");
+            log?.Report($"  crypto {ShortName(entry.RecordName)}: skip decrypt — Asset.protectionInfo missing");
             return false;
         }
 
@@ -2861,7 +2861,7 @@ public sealed class CloudDocsDocumentCrypto
             zoneKeys, allZoneKeys, recordZones, seedKeys, recordWindow);
         if (kek is null)
         {
-            log?.Report($"  crypto {ShortName(entry.RecordName)}: Asset wrap unwrap FALLITO");
+            log?.Report($"  crypto {ShortName(entry.RecordName)}: Asset wrap unwrap FAILED");
             return false;
         }
 
@@ -2875,7 +2875,7 @@ public sealed class CloudDocsDocumentCrypto
             // Fallback legacy: 1 chiave per edge path.
             if (edgeChunks.Count == 0 || edgeChunks.All(c => c.ChunkEncryptionKey is not { Length: > 0 }))
             {
-                log?.Report($"  crypto {ShortName(entry.RecordName)}: nessuna ChunkInfo/encryption key");
+                log?.Report($"  crypto {ShortName(entry.RecordName)}: no ChunkInfo/encryption key");
                 return false;
             }
 
@@ -2906,7 +2906,7 @@ public sealed class CloudDocsDocumentCrypto
         }
         catch (Exception ex)
         {
-            log?.Report($"  crypto {ShortName(entry.RecordName)}: decrypt/assemble FALLITO — {ex.Message}");
+            log?.Report($"  crypto {ShortName(entry.RecordName)}: decrypt/assemble FAILED — {ex.Message}");
             return false;
         }
 

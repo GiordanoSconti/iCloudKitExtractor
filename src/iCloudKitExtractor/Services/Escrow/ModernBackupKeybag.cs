@@ -83,7 +83,7 @@ public static class ModernBackupKeybag
 
         if (der.Length < 20 || der[0] != 0x30)
         {
-            error = "non è SEQUENCE DER";
+            error = "not a SEQUENCE DER";
             return false;
         }
 
@@ -91,7 +91,7 @@ public static class ModernBackupKeybag
         var i = 2;
         if ((der[1] & 0x80) != 0)
         {
-            error = "DER length lunga non supportata";
+            error = "long DER length not supported";
             return false;
         }
 
@@ -120,7 +120,7 @@ public static class ModernBackupKeybag
 
         if (t1 is not { Length: 16 } || t2 is null || t3 is not { Length: 16 })
         {
-            error = "campi [1]uuid/[2]wrapped/[3]salt mancanti";
+            error = "fields [1]uuid/[2]wrapped/[3]salt missing";
             return false;
         }
 

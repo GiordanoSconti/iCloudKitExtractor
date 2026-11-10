@@ -67,7 +67,7 @@ public sealed class PhotosCloudSyncService
             // crypto/Album, salta rete e completa decrypt+organize sulla stessa outDir.
             if (LooksLikeIncompletePhotosCloudDir(outDir))
             {
-                log?.Report("  Photos: ripresa sessione incompleta (skip download/query)…");
+                log?.Report("  Photos: resuming incomplete session (skip download/query)…");
                                 var resumed = await DecryptAndOrganizeExistingAsync(
                     session, outDir, httpRunDir: null, log, progress, ct,
                     buildRecordMetadata: buildRecordMetadata);
@@ -76,7 +76,7 @@ public sealed class PhotosCloudSyncService
                     $"resume decrypt={resumed.Ok}/{resumed.Total}");
             }
 
-            log?.Report($"  Photos CPL → zona {PhotosZone}");
+            log?.Report($"  Photos CPL → zone {PhotosZone}");
             progress?.Report(new SyncDataProgressReport("Photos: zone/retrieve…", 8));
 
             byte[]? zonePayload = null;
@@ -106,7 +106,7 @@ public sealed class PhotosCloudSyncService
                 continuationRecord: null, continuationMarker: null, log, ct);
             totalBytes += albumsPayload.Length;
 
-            progress?.Report(new SyncDataProgressReport("Photos: query relazioni…", 16));
+            progress?.Report(new SyncDataProgressReport("Photos: query relationships…", 16));
             var relationsPayload = await QueryAsync(
                 session, binding, outDir, "query_cplcontainerrelation",
                 "CPLRecordByType", "type", "CPLContainerRelation",
@@ -136,7 +136,7 @@ public sealed class PhotosCloudSyncService
                 catch (Exception ex) when (page > 1)
                 {
                     log?.Report(
-                        $"    → page {page} skip: {ex.Message} — continuo con {assetPages.Count} pagina/e già scaricate");
+                        $"    → page {page} skip: {ex.Message} — continuing with {assetPages.Count} page(s) already downloaded");
                     break;
                 }
 
@@ -224,7 +224,7 @@ public sealed class PhotosCloudSyncService
                 buildRecordMetadata: buildRecordMetadata);
 
             log?.Report(
-                $"  Photos: scaricati {downloaded}/{withAuth}, decifrati {decrypted.Ok}/{decrypted.Total} → {photosDir}");
+                $"  Photos: downloaded {downloaded}/{withAuth}, decrypted {decrypted.Ok}/{decrypted.Total} → {photosDir}");
             progress?.Report(new SyncDataProgressReport(
                 $"Photos: ok download={downloaded} decrypt={decrypted.Ok}", 98,
                 ClearPhase: true));
@@ -411,8 +411,8 @@ public sealed class PhotosCloudSyncService
 
         // 3) Sempre: catalogo crypto + cartelle Album/Nascoste/Eliminate/Preferiti + Photos.db
         progress?.Report(new SyncDataProgressReport(
-            "Photos: organizza libreria…", 96,
-            PhaseLabel: "Organizza",
+            "Photos: organize library…", 96,
+            PhaseLabel: "Organize",
             PhaseIndeterminate: true));
         try
         {
@@ -441,12 +441,12 @@ public sealed class PhotosCloudSyncService
             WriteInventory(photosDir, albums, relations, media, catalog.AlbumNames);
             PhotosViewerPublisher.Publish(photosDir, log);
             log?.Report(
-                $"  inventory.json: nomi album aggiornati " +
+                $"  inventory.json: album names updated " +
                 $"({CountNamedAlbums(albums, catalog.AlbumNames)}/{albums.Count(a => !a.IsRootFolder)})");
                     }
         catch (Exception ex)
         {
-            log?.Report($"  Photos organize ERRORE: {ex.Message}");
+            log?.Report($"  Photos organize ERROR: {ex.Message}");
             // Non abortire Sync Photos: crypto/MMCS possono essere ok; l'utente può
             // rieseguire organize. Prima: EnumerateFiles su RecordName con '/' crashava.
         }
@@ -454,15 +454,15 @@ public sealed class PhotosCloudSyncService
         // 4) Metadati PCS per-record — opzionale (checkbox UI Sync Data).
         if (!buildRecordMetadata)
         {
-            log?.Report("  Photos: BuildRecordMetadata skip (opzione OFF)");
+            log?.Report("  Photos: BuildRecordMetadata skip (option OFF)");
                         return (decrypted.Ok, decrypted.Fail, decrypted.Total);
         }
 
         try
         {
             progress?.Report(new SyncDataProgressReport(
-                "Photos: cache metadati PCS…", 97,
-                PhaseLabel: "Metadati",
+                "Photos: cache PCS metadata…", 97,
+                PhaseLabel: "Metadata",
                 PhaseIndeterminate: true));
             log?.Report("  Photos: BuildRecordMetadata…");
             var swMeta = System.Diagnostics.Stopwatch.StartNew();
@@ -471,9 +471,9 @@ public sealed class PhotosCloudSyncService
                 pageProgress: (pageIdx, pageTotal) =>
                 {
                     progress?.Report(new SyncDataProgressReport(
-                        $"Metadati PCS pagina {pageIdx}/{pageTotal}…",
+                        $"PCS metadata page {pageIdx}/{pageTotal}…",
                         97,
-                        PhaseLabel: "Metadati",
+                        PhaseLabel: "Metadata",
                         PhasePercent: 100.0 * pageIdx / Math.Max(1, pageTotal)));
                 });
             swMeta.Stop();
@@ -496,15 +496,15 @@ public sealed class PhotosCloudSyncService
     {
         if (!PcsSessionSeedKeys.HasAny(session))
         {
-            log?.Report("  PCS decrypt skip: né Escrow KeySet né Manatee in sessione");
+            log?.Report("  PCS decrypt skip: neither Escrow KeySet nor Manatee in session");
             return;
         }
 
         try
         {
-            log?.Report("  PCS decrypt metadati (crypto/ dump)…");
+            log?.Report("  PCS decrypt metadata (crypto/ dump)…");
             progress?.Report(new SyncDataProgressReport(
-                "PCS decrypt metadati…", 82, IsIndeterminate: true));
+                "PCS decrypt metadata…", 82, IsIndeterminate: true));
             var dec = SyncDataPcsDecryptor.DecryptContainerDirectory(
                 session, outDir, containerId, log);
             if (dec.DecryptedCount > 0)
@@ -776,16 +776,16 @@ public sealed class PhotosCloudSyncService
 
         if (downloadables.Count == 0)
         {
-            log?.Report("  Photos: nessun MMCS auth nelle query asset — skip download");
-            progress?.Report(new SyncDataProgressReport("Photos: nessun MMCS auth", 90));
+            log?.Report("  Photos: no MMCS auth in asset queries — skip download");
+            progress?.Report(new SyncDataProgressReport("Photos: no MMCS auth", 90));
             return 0;
         }
 
-        log?.Report($"  Photos download plan: {downloadables.Count} file unici (da {media.Count} media)");
+        log?.Report($"  Photos download plan: {downloadables.Count} unique files (from {media.Count} media)");
         progress?.Report(new SyncDataProgressReport(
             $"Photos download 0/{downloadables.Count}", 40));
         log?.Report(
-            $"  Photos: download ciphertext MMCS ×{DownloadParallelism} paralleli (+ cache sidecars)…");
+            $"  Photos: download MMCS ciphertext ×{DownloadParallelism} parallel (+ cache sidecars)…");
 
         var downloaded = 0;
         var skipped = 0;
@@ -918,7 +918,7 @@ public sealed class PhotosCloudSyncService
         var photosDir = Path.Combine(photosCloudDir, "photos");
         var allPhotos = Path.Combine(photosDir, "Sfoglia");
         if (!Directory.Exists(allPhotos))
-            throw new DirectoryNotFoundException($"Sfoglia assente: {allPhotos}");
+            throw new DirectoryNotFoundException($"Folder missing: {allPhotos}");
 
         byte[]? zonePayload = null;
         var zonePath = Path.Combine(photosCloudDir, "zones_PrimarySync.bin");
@@ -933,7 +933,7 @@ public sealed class PhotosCloudSyncService
         }
 
         if (assetPages.Count == 0)
-            throw new InvalidOperationException("Nessuna query_cplasset_p*.bin nella cartella");
+            throw new InvalidOperationException("No query_cplasset_p*.bin in folder");
 
         var media = new List<CplPhotosRecordParser.CplMedia>();
         foreach (var page in assetPages)
@@ -980,7 +980,7 @@ public sealed class PhotosCloudSyncService
             && !SfogliaLooksTokenNamed(photosDir))
         {
             log?.Report(
-                "  Photos: libreria già completa (Album/ + Photos.db + nomi) — skip decrypt/organize/BRM");
+                "  Photos: library already complete (Album/ + Photos.db + names) — skip decrypt/organize/BRM");
             return (0, 0, 0);
         }
 
@@ -1033,21 +1033,21 @@ public sealed class PhotosCloudSyncService
                 && Directory.EnumerateFileSystemEntries(cryptoDir).Any())
             {
                 log?.Report(
-                    "  crypto/ incompleto (manca filenameEnc) — re-dump PCS metadati…");
+                    "  crypto/ incomplete (missing filenameEnc) — re-dump PCS metadata…");
             }
 
             TryDumpPhotosCrypto(session, photosCloudDir, "com.apple.photos.cloud", log, progress);
         }
         else
         {
-            log?.Report("  crypto/ già presente (filenameEnc ok) — skip dump PCS");
+            log?.Report("  crypto/ already present (filenameEnc ok) — skip dump PCS");
         }
 
         // Organize SUBITO dopo MMCS (prima di BuildRecordMetadata, che su 4 pagine
         // multi-MB può restare silenzioso per decine di minuti e sembrare "bloccato").
         progress?.Report(new SyncDataProgressReport(
-            "Photos: organizza libreria…", 96,
-            PhaseLabel: "Organizza",
+            "Photos: organize library…", 96,
+            PhaseLabel: "Organize",
             PhaseIndeterminate: true));
         log?.Report("  Photos: OrganizeAsync (Album / rename / Photos.db)…");
         try
@@ -1058,12 +1058,12 @@ public sealed class PhotosCloudSyncService
             WriteInventory(photosDir, albums, relations, media, catalog.AlbumNames);
             PhotosViewerPublisher.Publish(photosDir, log);
             log?.Report(
-                $"  inventory.json: nomi album aggiornati " +
+                $"  inventory.json: album names updated " +
                 $"({CountNamedAlbums(albums, catalog.AlbumNames)}/{albums.Count(a => !a.IsRootFolder)})");
         }
         catch (Exception ex)
         {
-            log?.Report($"  Photos organize ERRORE: {ex.Message}");
+            log?.Report($"  Photos organize ERROR: {ex.Message}");
         }
 
         // Offline: i nomi file/album arrivano già da crypto/ (Organize). BRM senza zone
@@ -1072,12 +1072,12 @@ public sealed class PhotosCloudSyncService
         if (buildRecordMetadata)
         {
             log?.Report(
-                "  Photos: BuildRecordMetadata skip (offline — libreria già da crypto/; " +
-                "usa Sync Data live + checkbox solo se servono nomi PCS extra)");
+                "  Photos: BuildRecordMetadata skip (offline — library already from crypto/; " +
+                "use Sync Data live + checkbox only if extra PCS names needed)");
         }
         else
         {
-            log?.Report("  Photos: BuildRecordMetadata skip (opzione OFF)");
+            log?.Report("  Photos: BuildRecordMetadata skip (option OFF)");
         }
 
         return (dec.Ok, dec.Fail, dec.Total);
@@ -1105,7 +1105,7 @@ public sealed class PhotosCloudSyncService
         if (!Directory.Exists(cryptoRoot)
             || (!File.Exists(albumsPayloadPath) && assetPages.Length == 0))
         {
-            log?.Report("  REORG abortito: manca crypto/ o query_*.bin nella cartella indicata.");
+            log?.Report("  REORG aborted: missing crypto/ or query_*.bin in the specified folder.");
             return 0;
         }
 
@@ -1138,8 +1138,8 @@ public sealed class PhotosCloudSyncService
             && media.Count == 0)
         {
             log?.Report(
-                "  REORG abortito: crypto/ presente ma catalogo vuoto (nessun album/media). " +
-                "Nessuna modifica a Photos.db / inventory.");
+                "  REORG aborted: crypto/ present but catalog empty (no albums/media). " +
+                "No changes to Photos.db / inventory.");
             return 0;
         }
 
@@ -1149,7 +1149,7 @@ public sealed class PhotosCloudSyncService
         WriteInventory(photosDir, albums, relations, media, catalog.AlbumNames);
         PhotosViewerPublisher.Publish(photosDir, log);
         log?.Report(
-            $"  inventory.json: nomi album aggiornati " +
+            $"  inventory.json: album names updated " +
             $"({CountNamedAlbums(albums, catalog.AlbumNames)}/{albums.Count(a => !a.IsRootFolder)})");
 
         return renamed;
@@ -1410,7 +1410,7 @@ public sealed class PhotosCloudSyncService
         if (seedKeys.Count == 0)
         {
             log?.Report(
-                "  Photos PCS unwrap: seed vuoto — Unlock EscrowedKeys oppure " +
+                "  Photos PCS unwrap: empty seed — Unlock EscrowedKeys or " +
                 "Octagon/CKKS OpenVault (Manatee) prima di Sync Data Photos.");
         }
         else
@@ -1526,7 +1526,7 @@ public sealed class PhotosCloudSyncService
             if (fromRecordPi > 0)
             {
                 pool = PcsProtectionZone.MergeKeys(pool, zones);
-                log?.Report($"  PCS unwrap: +{fromRecordPi} master da recordProtectionInfo media");
+                log?.Report($"  PCS unwrap: +{fromRecordPi} masters from recordProtectionInfo media");
             }
         }
 
@@ -1540,7 +1540,7 @@ public sealed class PhotosCloudSyncService
         if (kekPool.Count == 0 && File.Exists(kekCachePath))
         {
             kekPool = await LoadKekCacheAsync(kekCachePath, ct).ConfigureAwait(false);
-            log?.Report($"  PCS unwrap: pool vuoto → riuso cache kek={kekPool.Count}");
+            log?.Report($"  PCS unwrap: empty pool → reuse cache kek={kekPool.Count}");
         }
         else if (kekPool.Count > 0)
         {
@@ -1558,8 +1558,8 @@ public sealed class PhotosCloudSyncService
         if (kekPool.Count == 0 && seedKeys.Count > 0)
         {
             log?.Report(
-                "  Photos PCS: nessun KEK da unwrap — le compact Manatee/Escrow " +
-                "non aprono ProtectionInfo CPL. Rilancia CKKS OpenVault (view Photos/PCS) " +
+                "  Photos PCS: no KEK from unwrap — Manatee/Escrow compact keys " +
+                "do not open CPL ProtectionInfo. Re-run CKKS OpenVault (Photos/PCS view) " +
                 "oppure Unlock EscrowedKeys per questo account.");
         }
 
@@ -1711,7 +1711,7 @@ public sealed class PhotosCloudSyncService
             .ToArray();
         if (cipherFiles.Length == 0)
         {
-            log?.Report("  Photos MMCS decrypt: nessun .ct/.bin da decifrare");
+            log?.Report("  Photos MMCS decrypt: no .ct/.bin to decrypt");
             return (0, 0, 0, 0);
         }
 
@@ -1782,7 +1782,7 @@ public sealed class PhotosCloudSyncService
         if (precomputedKek is { Count: > 0 })
         {
             kekPool = precomputedKek;
-            log?.Report($"  Photos MMCS decrypt: kek precomputati {kekPool.Count}");
+            log?.Report($"  Photos MMCS decrypt: precomputed kek {kekPool.Count}");
         }
         else
         {
@@ -1798,7 +1798,7 @@ public sealed class PhotosCloudSyncService
 
         if (kekPool.Count == 0)
         {
-            log?.Report("  Photos MMCS decrypt: nessun KEK — abort");
+            log?.Report("  Photos MMCS decrypt: no KEK — abort");
             return (0, cipherFiles.Length, cipherFiles.Length, 0);
         }
 

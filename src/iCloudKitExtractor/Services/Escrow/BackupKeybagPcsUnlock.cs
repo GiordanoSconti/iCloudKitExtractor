@@ -37,7 +37,7 @@ public static class BackupKeybagPcsUnlock
         {
             return new BackupKeybagPcsUnlockResult(
                 false,
-                "PCS assente — Unlock EscrowedKeys e/o CKKS OpenVault (Octagon) prima.",
+                "PCS missing — Unlock EscrowedKeys and/or CKKS OpenVault (Octagon) first.",
                 0,
                 0);
         }
@@ -45,7 +45,7 @@ public static class BackupKeybagPcsUnlock
         if (device.KeybagRawPayloads.Count == 0 && device.KeybagDataBlobs.Count == 0)
         {
             return new BackupKeybagPcsUnlockResult(
-                false, "Nessun record K: / keybagData da sbloccare.", 0, 0);
+                false, "No K: records / keybagData to unlock.", 0, 0);
         }
 
         // Escrow classico = HEAD (solo KeySet). Manatee ADP = Collect + Remember.
@@ -55,7 +55,7 @@ public static class BackupKeybagPcsUnlock
         {
             seedKeys = PcsDer.ParseKeySetPrivateKeys(session.PcsEscrowedKeySet!);
             TryAddBagPasswordKeys(session, seedKeys, log);
-            log?.Report($"Keybag PCS: {seedKeys.Count} chiavi seed (escrow KeySet)");
+            log?.Report($"Keybag PCS: {seedKeys.Count} seed keys (escrow KeySet)");
         }
         else
         {
@@ -64,7 +64,7 @@ public static class BackupKeybagPcsUnlock
                 narrowToPreferred: manateeFast && session.PcsPreferredKeyIds is { Count: > 0 },
                 log: log);
             TryAddBagPasswordKeys(session, seedKeys, log);
-            log?.Report($"Keybag PCS: {seedKeys.Count} chiavi seed (manatee)");
+            log?.Report($"Keybag PCS: {seedKeys.Count} seed keys (manatee)");
         }
 
         var poolKeys = new List<PcsCompactPrivateKey>(seedKeys);
@@ -83,7 +83,7 @@ public static class BackupKeybagPcsUnlock
         }
         else
         {
-            log?.Report("  zone mbksync payload assente — provo solo PI sui record K:");
+            log?.Report("  zone mbksync payload missing — trying PI on K: records only");
         }
 
         var decrypted = 0;
@@ -105,7 +105,7 @@ public static class BackupKeybagPcsUnlock
 
             if (decryptPool.Count == 0)
             {
-                log?.Report($"  {id}: nessun ProtectionInfo unwrapped (serve zone mbksync?)");
+                log?.Report($"  {id}: no ProtectionInfo unwrapped (needs zone mbksync?)");
                 details.Add(new { id, ok = false, error = "no-protection-zone" });
                 continue;
             }
@@ -119,7 +119,7 @@ public static class BackupKeybagPcsUnlock
 
             if (rawKb is null)
             {
-                log?.Report($"  {id}: keybagData assente");
+                log?.Report($"  {id}: keybagData missing");
                 details.Add(new { id, ok = false, error = "no-keybagData" });
                 continue;
             }
@@ -239,7 +239,7 @@ public static class BackupKeybagPcsUnlock
             else
             {
                 log?.Report(
-                    $"  {id}: plaintext {kbPlain.Length:N0} B non TLV" +
+                    $"  {id}: plaintext {kbPlain.Length:N0} B not TLV" +
                     (parseErr is null ? "" : $" ({parseErr})") +
                     (modernErr is null ? "" : $"; modern={modernErr}"));
             }
@@ -278,14 +278,14 @@ public static class BackupKeybagPcsUnlock
         {
             return new BackupKeybagPcsUnlockResult(
                 false,
-                "Nessun keybagData decifrato — verificare KeySet Escrow e zone/retrieve mbksync.",
+                "No keybagData decrypted — verify Escrow KeySet and zone/retrieve mbksync.",
                 0,
                 0);
         }
 
         return new BackupKeybagPcsUnlockResult(
             true,
-            $"OK — {decrypted} keybagData decifrati, {unlocked} sbloccati",
+            $"OK — {decrypted} keybagData decrypted, {unlocked} unlocked",
             decrypted,
             unlocked,
             firstDecryptedPath);
@@ -360,7 +360,7 @@ public static class BackupKeybagPcsUnlock
             }
 
             if (added > 0)
-                log?.Report($"  +{added} chiavi da BackupBagPassword.bin");
+                log?.Report($"  +{added} keys from BackupBagPassword.bin");
         }
         catch (Exception ex)
         {

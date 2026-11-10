@@ -34,7 +34,7 @@ public static class EscrowPcsSession
             session.PcsKeysDirectory,
             session.OctagonKeysDirectory);
         if (!string.Equals(resolved, pcsKeysDirectory, StringComparison.OrdinalIgnoreCase))
-            log?.Report($"  PCS dir → {resolved} (artifact Escrow/Octagon già presenti)");
+            log?.Report($"  PCS dir → {resolved} (Escrow/Octagon artifacts already present)");
 
         Directory.CreateDirectory(resolved);
         session.PcsKeysDirectory = resolved;
@@ -42,7 +42,7 @@ public static class EscrowPcsSession
         if (session.PcsEscrowedKeySet is { Length: > 32 })
         {
             log?.Report(
-                $"  PCS KeySet già in sessione ({session.PcsEscrowedKeySet.Length} B).");
+                $"  PCS KeySet already in session ({session.PcsEscrowedKeySet.Length} B).");
             // ADP / Sync Data Photos: aggiungi comunque Manatee da disco se presente.
             _ = TryLoadManateeFromDisk(session, resolved, log);
             return new EscrowPcsEnsureResult(true, "session", session.PcsEscrowedKeySet);
@@ -52,7 +52,7 @@ public static class EscrowPcsSession
         if (session.PcsManateeCompactKeys is { Count: > 0 } manatee)
         {
             log?.Report(
-                $"  PCS Manatee già in sessione ({manatee.Count} compact) — skip Escrow recover.");
+                $"  PCS Manatee already in session ({manatee.Count} compact) — skip Escrow recover.");
             return new EscrowPcsEnsureResult(true, "manatee-session", null);
         }
 
@@ -74,7 +74,7 @@ public static class EscrowPcsSession
         if (hasBag && !hasEscrowed)
         {
             log?.Report(
-                "  PCS: BackupBagPassword presente, pcs_escrowed_keys no — re-parse get_records cached…");
+                "  PCS: BackupBagPassword present, no pcs_escrowed_keys — re-parse cached get_records…");
             hasEscrowed = await recovery.ReparseEscrowedKeysFromCachedGetRecordsAsync(
                 resolved, log, ct);
         }
@@ -105,13 +105,13 @@ public static class EscrowPcsSession
                     false,
                     null,
                     null,
-                    $"Manca KeySet PCS e DSID. Login iCloud + Unlock EscrowedKeys in «{resolved}».");
+                    $"Missing PCS KeySet and DSID. Sign in to iCloud + Unlock EscrowedKeys in «{resolved}».");
             }
 
             log?.Report(
                 string.Equals(secret, session.Dsid, StringComparison.Ordinal)
                     ? "  PCS: Unlock EscrowedKeys live (secret=DSID)…"
-                    : "  PCS: Unlock EscrowedKeys live (secret=iCSC campo)…");
+                    : "  PCS: Unlock EscrowedKeys live (secret=iCSC field)…");
 
             var recover = await recovery.FetchEncryptedKeyBagKeyAsync(
                 session,
@@ -123,7 +123,7 @@ public static class EscrowPcsSession
             if (!recover.Success)
             {
                 return new EscrowPcsEnsureResult(
-                    false, null, null, $"Escrow recover fallito: {recover.Message}");
+                    false, null, null, $"Escrow recover failed: {recover.Message}");
             }
 
             fromFile = await TryLoadUnlockedAsync(session, resolved, log, ct);
@@ -137,7 +137,7 @@ public static class EscrowPcsSession
             if (!unwrap.Success)
             {
                 return new EscrowPcsEnsureResult(
-                    false, null, null, $"PCS unwrap fallito: {unwrap.Message}");
+                    false, null, null, $"PCS unwrap failed: {unwrap.Message}");
             }
         }
 
@@ -152,8 +152,8 @@ public static class EscrowPcsSession
                     false,
                     null,
                     null,
-                    "Manca pcs_escrowed_keys.bin dopo recover. " +
-                    "Controlla escrow_get_records_response (parse kPCSMetadataEscrowedKeys).");
+                    "Missing pcs_escrowed_keys.bin after recover. " +
+                    "Check escrow_get_records_response (parse kPCSMetadataEscrowedKeys).");
             }
         }
 
@@ -163,7 +163,7 @@ public static class EscrowPcsSession
             {
                 session.PcsEscrowedKeySet = plain;
                 session.PcsKeysDirectory = resolved;
-                log?.Report($"  PCS KeySet in sessione ({plain.Length} B) ← Unlock EscrowedKeys");
+                log?.Report($"  PCS KeySet in session ({plain.Length} B) ← Unlock EscrowedKeys");
                 return new EscrowPcsEnsureResult(true, "unlock-live", plain);
             }
 
@@ -175,7 +175,7 @@ public static class EscrowPcsSession
             if (session.PcsManateeCompactKeys is { Count: > 0 } manateeFb)
             {
                 log?.Report(
-                    $"  PCS unlock Escrow fallito, ma Manatee presente ({manateeFb.Count}) — uso quello.");
+                    $"  PCS unlock Escrow failed, but Manatee present ({manateeFb.Count}) — using Manatee.");
                 return new EscrowPcsEnsureResult(true, "manatee-fallback", null);
             }
 
@@ -184,7 +184,7 @@ public static class EscrowPcsSession
                 return manateeDiskFb with { Source = "manatee-disk-fallback" };
 
             return new EscrowPcsEnsureResult(
-                false, null, null, $"PCS unlock fallito: {unlock.Message}");
+                false, null, null, $"PCS unlock failed: {unlock.Message}");
         }
     }
 

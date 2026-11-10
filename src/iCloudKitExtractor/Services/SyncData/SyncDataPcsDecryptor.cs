@@ -32,11 +32,11 @@ public static class SyncDataPcsDecryptor
         string? zoneNameHint = null)
     {
         if (recordSyncPayload is not { Length: > 64 })
-            return new DecryptSummary(0, 0, 0, "payload vuoto");
+            return new DecryptSummary(0, 0, 0, "empty payload");
 
         var seedKeys = CollectSeedKeys(session, log);
         if (seedKeys.Count == 0)
-            return new DecryptSummary(0, 0, 0, "PCS KeySet assente (Escrow + Manatee)");
+            return new DecryptSummary(0, 0, 0, "PCS KeySet missing (Escrow + Manatee)");
 
         var preferred = PreferredFieldsForContainer(containerHint);
         var fields = CloudKitEncryptedFieldScanner.Scan(recordSyncPayload, preferred);
@@ -48,11 +48,11 @@ public static class SyncDataPcsDecryptor
             var before = fields.Count;
             fields = fields.Where(f => allow.Contains(f.FieldName)).ToList();
             if (before != fields.Count)
-                log?.Report($"  PCS: filtra campi {before}→{fields.Count} (preferred container)");
+                log?.Report($"  PCS: filter fields {before}→{fields.Count} (preferred container)");
         }
 
         if (fields.Count == 0)
-            return new DecryptSummary(0, 0, 0, "nessun campo type=20");
+            return new DecryptSummary(0, 0, 0, "no type=20 fields");
 
         var poolKeys = new List<PcsCompactPrivateKey>(seedKeys);
         var zones = new List<ProtectionZoneKeys>();
@@ -101,7 +101,7 @@ public static class SyncDataPcsDecryptor
         if (recordSyncPayload.Length >= largePayloadBytes)
         {
             log?.Report(
-                $"  PCS: payload grande ({recordSyncPayload.Length:N0} B) — " +
+                $"  PCS: large payload ({recordSyncPayload.Length:N0} B) — " +
                 "PI 200–900 + light indexed (no iterative/brute)…");
             fromRecords = UnwrapLargeRecordPayload(recordSyncPayload, poolKeys, keyToRecord);
         }
@@ -124,7 +124,7 @@ public static class SyncDataPcsDecryptor
         {
             var before = zones.Count;
             zones = CapZonesForFieldDecrypt(zones, max: 2048);
-            log?.Report($"  PCS: cap zoneKeys {before}→{zones.Count} per decrypt campi");
+            log?.Report($"  PCS: cap zoneKeys {before}→{zones.Count} for field decrypt");
         }
 
         log?.Report($"  PCS: zoneKeys={zones.Count} poolKeys={poolKeys.Count}");
@@ -137,20 +137,20 @@ public static class SyncDataPcsDecryptor
             {
                 var hint = PcsBlockedHint(containerHint);
                 log?.Report(
-                    "  PCS: nessun PublicX (Escrow/Manatee/Engram) nel payload " +
-                    $"(zoneKeys=0, publicHits=0) — skip decrypt campi. {hint}");
+                    "  PCS: no PublicX (Escrow/Manatee/Engram) in payload " +
+                    $"(zoneKeys=0, publicHits=0) — skip field decrypt. {hint}");
                 Directory.CreateDirectory(outputDirectory);
                 File.WriteAllText(
                     Path.Combine(outputDirectory, "decrypt_blocked.txt"),
-                    "zoneKeys=0 publicHits=0 — seed PCS non unwrapa ProtectionInfo. " + hint);
+                    "zoneKeys=0 publicHits=0 — PCS seed does not unwrap ProtectionInfo. " + hint);
                 return new DecryptSummary(
                     fields.Count, 0, 0,
-                    $"bloccato: nessuna seed key matcha PI ({fields.Count} ciphertext)");
+                    $"blocked: no seed key matches PI ({fields.Count} ciphertext)");
             }
 
             log?.Report(
-                $"  PCS: nessuna zone key da PI — unwrap per-field " +
-                $"(publicHits={publicHits}, più lento)");
+                $"  PCS: no zone key from PI — unwrap per-field " +
+                $"(publicHits={publicHits}, slower)");
         }
 
         Directory.CreateDirectory(outputDirectory);
@@ -251,37 +251,25 @@ public static class SyncDataPcsDecryptor
 
                 consecutiveFail = 0;
 
-                // Photos CPL: il PI che apre il ciphertext identifica il record.
-                // Messages Manatee: molte record condividono lo stesso master PCS —
-                // TryRecordNameForZone collassa tutto su un solo nome; preferisci
-                // il 64-hex più vicino al campo (nearName).
-                string? recordName;
-                if (messagesContainer
-                    && nearName is { Length: 64 }
-                    && nearName.All(static c => Uri.IsHexDigit(c)))
+                // Associazione CloudKit: il record è quello del PI la cui chiave apre
+                // il ciphertext — non il CPLMaster “più vicino” (sbaglia ~25% su CPL).
+                var recordName = TryRecordNameForZone(keyToRecord, openZone);
+                if (string.IsNullOrWhiteSpace(recordName)
+                    && openZone is not null
+                    && !string.IsNullOrWhiteSpace(nearName))
                 {
+                    // Zona aperta dal PI locale ma non ancora indicizzata (light-only):
+                    // registra per i campi successivi dello stesso master.
+                    RememberZoneRecord(keyToRecord, openZone, nearName);
                     recordName = nearName;
                 }
-                else
-                {
-                    recordName = TryRecordNameForZone(keyToRecord, openZone);
-                    if (string.IsNullOrWhiteSpace(recordName)
-                        && openZone is not null
-                        && !string.IsNullOrWhiteSpace(nearName))
-                    {
-                        RememberZoneRecord(keyToRecord, openZone, nearName);
-                        recordName = nearName;
-                    }
 
-                    recordName ??= nearName ?? "";
-                }
+                recordName ??= nearName ?? "";
 
                 okInGroup++;
                 decrypted++;
-                // Notes TextData: spesso gzip DOPO PCS — decodifica testo solo sul plain espanso.
-                var processed = PostProcess(fieldName, plain);
-                var decoded = NotesPlaintextDecoder.DecodeField(fieldName, processed);
-                processed = decoded.Processed;
+                var decoded = NotesPlaintextDecoder.DecodeField(fieldName, plain);
+                var processed = PostProcess(fieldName, decoded.Processed);
                 var ext = GuessExtension(processed);
                 var path = Path.Combine(fieldDir, $"{idx:D4}{ext}");
                 File.WriteAllBytes(path, processed);
@@ -317,8 +305,8 @@ public static class SyncDataPcsDecryptor
         }
 
         var msg = decrypted > 0
-            ? $"ok {decrypted}/{fields.Count} campi (zoneKeys={zones.Count})"
-            : $"nessun decrypt ({fields.Count} ciphertext, zoneKeys={zones.Count})";
+            ? $"ok {decrypted}/{fields.Count} fields (zoneKeys={zones.Count})"
+            : $"no decrypt ({fields.Count} ciphertext, zoneKeys={zones.Count})";
         return new DecryptSummary(fields.Count, decrypted, zones.Count, msg);
     }
 
@@ -333,7 +321,7 @@ public static class SyncDataPcsDecryptor
         IProgress<string>? log = null)
     {
         if (!Directory.Exists(containerDirectory))
-            return new DecryptSummary(0, 0, 0, "dir assente");
+            return new DecryptSummary(0, 0, 0, "directory missing");
 
         var zoneFiles = Directory.GetFiles(containerDirectory, "zones_*.bin");
         byte[]? richestZones = null;
@@ -344,15 +332,11 @@ public static class SyncDataPcsDecryptor
                 richestZones = data;
         }
 
-        // Notes: i ciphertext (TitleEncrypted / TextDataEncrypted) stanno nei
-        // record/retrieve batch, non nel record/sync (solo metadati/delta).
         var syncFiles = Directory.GetFiles(containerDirectory, "record_sync_*.bin")
             .Concat(Directory.GetFiles(containerDirectory, "query_*.bin"))
-            .Concat(EnumerateRecordRetrieveBatchBins(containerDirectory))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (syncFiles.Length == 0)
-            return new DecryptSummary(0, 0, 0, "nessun record_sync/query/retrieve");
+            return new DecryptSummary(0, 0, 0, "no record_sync/query");
 
         var totalFields = 0;
         var totalDecrypted = 0;
@@ -364,7 +348,7 @@ public static class SyncDataPcsDecryptor
         {
             var sf = syncFiles[i];
             var payload = File.ReadAllBytes(sf);
-            var tag = CryptoTagForPayloadFile(sf, containerDirectory);
+            var tag = Path.GetFileNameWithoutExtension(sf);
             log?.Report($"  PCS file {i + 1}/{syncFiles.Length}: {tag} ({payload.Length:N0} B)");
             var outDir = Path.Combine(cryptoRoot, tag);
             var zoneFromTag = TryParseZoneFromSyncTag(tag);
@@ -379,8 +363,8 @@ public static class SyncDataPcsDecryptor
         var msg = totalDecrypted > 0
             ? $"ok {totalDecrypted}/{totalFields}"
             : totalFields == 0
-                ? "nessun type=20"
-                : $"fallito 0/{totalFields}";
+                ? "no type=20"
+                : $"failed 0/{totalFields}";
         log?.Report($"  PCS decrypt: {msg} (zoneKeys≤{maxZones})");
         return new DecryptSummary(totalFields, totalDecrypted, maxZones, msg);
     }
@@ -768,59 +752,20 @@ public static class SyncDataPcsDecryptor
         return null;
     }
 
-    private static IEnumerable<string> EnumerateRecordRetrieveBatchBins(string containerDirectory)
-    {
-        if (!Directory.Exists(containerDirectory))
-            yield break;
-
-        foreach (var dir in Directory.GetDirectories(containerDirectory, "record_retrieve_*"))
-        {
-            foreach (var bin in Directory.GetFiles(dir, "batch*.bin"))
-                yield return bin;
-        }
-    }
-
     /// <summary>
-    /// Tag stabile sotto <c>crypto/</c>: sync → nome file; retrieve →
-    /// <c>record_retrieve_Notes_batch01</c>.
-    /// </summary>
-    private static string CryptoTagForPayloadFile(string filePath, string containerDirectory)
-    {
-        var file = Path.GetFileNameWithoutExtension(filePath);
-        var parent = Path.GetFileName(Path.GetDirectoryName(filePath) ?? "");
-        if (parent.StartsWith("record_retrieve_", StringComparison.OrdinalIgnoreCase))
-            return $"{parent}_{file}";
-        return file;
-    }
-
-    /// <summary>
-    /// <c>record_sync_messageManateeZone_p1</c> → <c>messageManateeZone</c>;
-    /// <c>record_retrieve_Notes_batch01</c> → <c>Notes</c>.
+    /// <c>record_sync_messageManateeZone_p1</c> → <c>messageManateeZone</c>.
     /// </summary>
     private static string? TryParseZoneFromSyncTag(string tag)
     {
-        const string syncPrefix = "record_sync_";
-        const string retrievePrefix = "record_retrieve_";
-        string rest;
-        if (tag.StartsWith(syncPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            rest = tag[syncPrefix.Length..];
-            var pIdx = rest.LastIndexOf("_p", StringComparison.OrdinalIgnoreCase);
-            if (pIdx > 0
-                && pIdx + 2 < rest.Length
-                && rest[(pIdx + 2)..].All(char.IsDigit))
-                rest = rest[..pIdx];
-        }
-        else if (tag.StartsWith(retrievePrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            rest = tag[retrievePrefix.Length..];
-            var batchIdx = rest.LastIndexOf("_batch", StringComparison.OrdinalIgnoreCase);
-            if (batchIdx > 0)
-                rest = rest[..batchIdx];
-        }
-        else
+        const string prefix = "record_sync_";
+        if (!tag.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             return null;
-
+        var rest = tag[prefix.Length..];
+        var pIdx = rest.LastIndexOf("_p", StringComparison.OrdinalIgnoreCase);
+        if (pIdx > 0
+            && pIdx + 2 < rest.Length
+            && rest[(pIdx + 2)..].All(char.IsDigit))
+            rest = rest[..pIdx];
         return string.IsNullOrWhiteSpace(rest) ? null : rest;
     }
 
@@ -839,7 +784,7 @@ public static class SyncDataPcsDecryptor
             return "BeaconStore richiede CKKS OpenVault → view Manatee (PCS service 82).";
         }
 
-        return "Esegui Escrow OTBottle/Peer + CKKS OpenVault (Manatee + Engram).";
+        return "Run Escrow OTBottle/Peer + CKKS OpenVault (Manatee + Engram).";
     }
 
     private static bool IsMessagesManateeField(string fieldName) =>
@@ -969,10 +914,9 @@ public static class SyncDataPcsDecryptor
 
     private static byte[] PostProcess(string fieldName, byte[] plain)
     {
-        // Notes TextDataEncrypted / Messages msgProto*: spesso gzip/zlib dopo PCS.
+        // Notes TextDataEncrypted: spesso gzip/zlib dopo PCS.
         if (fieldName.Contains("TextData", StringComparison.OrdinalIgnoreCase)
-            || fieldName.Contains("StandardizedContent", StringComparison.OrdinalIgnoreCase)
-            || fieldName.StartsWith("msgProto", StringComparison.OrdinalIgnoreCase))
+            || fieldName.Contains("StandardizedContent", StringComparison.OrdinalIgnoreCase))
         {
             if (TryGunzip(plain, out var gz))
                 return gz;

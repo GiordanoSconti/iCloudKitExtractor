@@ -121,7 +121,7 @@ public static class FileGroupFillDecrypt
         {
             return new StageTrace(
                 storages, 0, 0, 0, 0, 0, 0, 0, null,
-                "FileGroup senza file_checksum_chunk_references",
+                "FileGroup without file_checksum_chunk_references",
                 "ike-no-refs");
         }
 
@@ -427,7 +427,7 @@ public static class FileGroupFillDecrypt
 
             var noFord = new StageTrace(
                 storages, fordN, 0, 0, 0, 0, 0, 0, null,
-                $"Auth→storage Ford assente hosts={plan.Containers.Count} refs={plan.References.Count}",
+                $"Auth→storage Ford missing hosts={plan.Containers.Count} refs={plan.References.Count}",
                 "no-ford");
             TryDumpOraclePair(
                 asset, authBody, plan, fordIkm, storages, null, null, null, noFord, sibCache);
@@ -437,16 +437,9 @@ public static class FileGroupFillDecrypt
 
         if (fordN > 0 && fordIkm.Length == 0)
         {
-            var ikmWhy = asset.CkFileAsset?.IkmSource
-                ?? (string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex)
-                    ? "no-wrap"
-                    : "ike-no-unwrapped-key");
-            var wrapHint = string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex)
-                ? "wrap=missing"
-                : $"wrapLen≈{asset.AssetProtectionInfoHex.Length / 2}";
             var noIkm = new StageTrace(
                 storages, fordN, 0, 0, 0, 0, 0, 0, null,
-                $"manca IKM asset (FillFordIkmFromContents; {ikmWhy}; {wrapHint})",
+                "missing asset IKM (FillFordIkmFromContents)",
                 "no-ikm");
             TryDumpOraclePair(
                 asset, authBody, plan, fordIkm, storages, null, null, null, noIkm, sibCache);

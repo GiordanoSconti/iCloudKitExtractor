@@ -85,9 +85,9 @@ public sealed class AppleRuntimeLocator
 
         throw new InvalidOperationException(
             requireWin32Foundation
-                ? "AOSKit Win32 non trovato (iTunes/iCloud dal sito Apple). Con iCloud Microsoft Store usa solo CoreADI."
-                : "DLL Apple non accessibili. Installa iCloud dal Microsoft Store, tienilo in esecuzione, " +
-                  "poi riprova (le DLL verranno copiate in AppData).");
+                ? "AOSKit Win32 not found (iTunes/iCloud from Apple site). With Microsoft Store iCloud use CoreADI only."
+                : "Apple DLLs not accessible. Install iCloud from Microsoft Store, keep it running, " +
+                  "then retry (DLLs will be copied to AppData).");
     }
 
     private static bool HasCoreAdi(string directory) =>

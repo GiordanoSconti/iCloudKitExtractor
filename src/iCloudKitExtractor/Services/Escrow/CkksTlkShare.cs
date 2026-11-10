@@ -47,19 +47,19 @@ public static class CkksTlkShare
 
         if (root is not Dictionary<string, object?> arch)
         {
-            error = "tlkshare: radice non dict";
+            error = "tlkshare: root not dict";
             return false;
         }
 
         if (!arch.TryGetValue("$objects", out var objectsObj) || objectsObj is not object?[] objects)
         {
-            error = "tlkshare: $objects assente";
+            error = "tlkshare: $objects missing";
             return false;
         }
 
         if (!arch.TryGetValue("$top", out var topObj) || topObj is not Dictionary<string, object?> top)
         {
-            error = "tlkshare: $top assente";
+            error = "tlkshare: $top missing";
             return false;
         }
 

@@ -109,9 +109,9 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
 
         var detail = errors.Count > 0
             ? string.Join(" | ", errors)
-            : lastError?.Message ?? "nessun endpoint valido";
+            : lastError?.Message ?? "no valid endpoint";
         throw new InvalidOperationException(
-            $"Anisette remota non raggiungibile ({_baseUri}): {detail}");
+            $"Remote anisette unreachable ({_baseUri}): {detail}");
     }
 
     private void ThrowIfRateLimited()
@@ -284,10 +284,10 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(body));
         var payload = await JsonSerializer.DeserializeAsync<AnisetteServerResponse>(stream, cancellationToken: ct)
             .ConfigureAwait(false)
-            ?? throw new InvalidOperationException("Risposta anisette JSON vuota.");
+            ?? throw new InvalidOperationException("Empty anisette JSON response.");
 
         if (string.IsNullOrEmpty(payload.Md) || string.IsNullOrEmpty(payload.MdM))
-            throw new InvalidOperationException("JSON anisette senza X-Apple-I-MD / X-Apple-I-MD-M.");
+            throw new InvalidOperationException("Anisette JSON missing X-Apple-I-MD / X-Apple-I-MD-M.");
 
         return new AnisetteHeaders
         {

@@ -55,7 +55,7 @@ public static class CloudKitMmcsBatchBuilder
     public static byte[] BuildBatchQueryMessage(IReadOnlyList<SignedUrlChunk> chunks)
     {
         if (chunks.Count == 0)
-            throw new ArgumentException("Nessun chunk MMCS nel batch.");
+            throw new ArgumentException("No MMCS chunks in batch.");
 
         var batchUuid = Guid.NewGuid().ToString().ToUpperInvariant();
         var sessionUuid = Guid.NewGuid().ToString();
@@ -89,7 +89,7 @@ public static class CloudKitMmcsBatchBuilder
     public static byte[] BuildPreAuthTail(IReadOnlyList<SignedUrlChunk> chunks)
     {
         if (chunks.Count == 0)
-            throw new ArgumentException("Nessun chunk MMCS nel batch.");
+            throw new ArgumentException("No MMCS chunks in batch.");
 
         var chunkBytes = BuildChunkList(chunks);
         var tail = new ProtobufWriter();

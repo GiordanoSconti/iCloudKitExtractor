@@ -18,7 +18,7 @@ public static class PhotosViewerPublisher
         var payload = ResolvePayloadDirectory();
         if (payload is null)
         {
-            log?.Report("  Viewer: payload non trovato (compila PhotosViewer)");
+            log?.Report("  Viewer: payload not found (build PhotosViewer)");
             return;
         }
 
@@ -50,7 +50,7 @@ public static class PhotosViewerPublisher
         }
         catch (Exception ex)
         {
-            log?.Report($"  Viewer: copia fallita ({ex.Message})");
+            log?.Report($"  Viewer: copia failed ({ex.Message})");
         }
     }
 

@@ -357,7 +357,7 @@ public sealed class MmcsChunkAssemblySession
         catch { /* ignore */ }
         // #endregion
         if (removed > 0)
-            log?.Report($"  mmcs_cache({mode}): rimossi {removed:N0} chunk (FL completato)");
+            log?.Report($"  mmcs_cache({mode}): removed {removed:N0} chunks (FL completed)");
         return removed;
     }
 
@@ -1092,7 +1092,7 @@ public sealed class MmcsChunkAssemblySession
                             ? ex.Message
                             : ex.Message.Contains("edge GET HTTP", StringComparison.Ordinal)
                                 ? ex.Message
-                                : $"edge GET fallito: {ex.Message}";
+                                : $"edge GET failed: {ex.Message}";
                     RecordChunkDownloadFailure(keys, reason);
                     log?.Report(
                         $"  WARN edge chunk skip (continua): oid={get.EdgeHeaders?.ObjectId} " +

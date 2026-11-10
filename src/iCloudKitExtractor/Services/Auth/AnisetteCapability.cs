@@ -69,14 +69,14 @@ public static class AnisetteCapability
     {
         if (localSpoof)
         {
-            return "AnisetteServer :6969 usa CoreADI Windows (non emulazione akd). " +
+            return "AnisetteServer :6969 uses CoreADI Windows (not akd emulation). " +
                    "Per flusso iPhone interno: Anisette.py su :6971 — vedi docs/IPHONE_INTERNAL_FLOW.md.";
         }
 
         if (IsFridaIphoneBackend(backend))
         {
             return $"Anisette iPhone Frida/akd ({serverUrl}) — OTP da AuthKit sul device jailbroken, " +
-                   $"MD-M {SummarizeMdM(remote?.MdM)}. Nessun worker Android.";
+                   $"MD-M {SummarizeMdM(remote?.MdM)}. No Android worker.";
         }
 
         if (remote is not null && IsDockerMacAnisette(remote))
@@ -98,7 +98,7 @@ public static class AnisetteCapability
     public static string SummarizeMdM(string? mdM)
     {
         if (string.IsNullOrEmpty(mdM))
-            return "(vuoto — mint su GET / al login)";
+            return "(empty — mint on GET / at login)";
         return mdM.Length <= 16 ? mdM : mdM[..16] + "…";
     }
 }

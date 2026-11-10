@@ -41,7 +41,7 @@ public static class BeaconDeviceInventory
     {
         var crypto = Path.Combine(outDir, "crypto");
         if (!Directory.Exists(crypto))
-            return new BuildResult([], "", "crypto/ assente");
+            return new BuildResult([], "", "crypto/ missing");
 
         var byRecord = new Dictionary<string, Dictionary<string, string>>(
             StringComparer.OrdinalIgnoreCase);
@@ -123,7 +123,7 @@ public static class BeaconDeviceInventory
             }
 
             devices.Add(new DeviceRow(
-                string.IsNullOrWhiteSpace(name) ? "(senza nome)" : name,
+                string.IsNullOrWhiteSpace(name) ? "(no name)" : name,
                 emoji,
                 kind,
                 model,
@@ -153,8 +153,8 @@ public static class BeaconDeviceInventory
         var tsvPath = Path.Combine(outDir, "devices.tsv");
         WriteTsv(tsvPath, devices);
         var msg = devices.Count == 0
-            ? "nessun MasterBeacon decifrato"
-            : $"{devices.Count} dispositivi → {tsvPath}";
+            ? "no decrypted MasterBeacon"
+            : $"{devices.Count} devices → {tsvPath}";
         return new BuildResult(devices, tsvPath, msg);
     }
 
@@ -162,7 +162,7 @@ public static class BeaconDeviceInventory
     {
         if (devices.Count == 0)
         {
-            yield return "(tabella dispositivi vuota)";
+            yield return "(empty device table)";
             yield break;
         }
 

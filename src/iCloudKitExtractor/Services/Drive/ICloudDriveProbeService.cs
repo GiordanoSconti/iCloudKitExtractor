@@ -149,7 +149,7 @@ public sealed class ICloudDriveProbeService
             if (string.IsNullOrWhiteSpace(session.CloudKitUserId)
                 || string.IsNullOrWhiteSpace(session.CloudKitAuthToken))
             {
-                log?.Report("  ckAppInit CloudDocs incompleto — abort.");
+                log?.Report("  ckAppInit CloudDocs incomplete — abort.");
                 return new ICloudDriveProbeResult(outDir, false, 0, 0, 0, "ckAppInit incompleto");
             }
 
@@ -203,7 +203,7 @@ public sealed class ICloudDriveProbeService
             }
 
             var ordered = OrderDriveZones(zones, options);
-            log?.Report($"  zone da processare ({ordered.Count}): {string.Join(", ", ordered)}");
+            log?.Report($"  zones to process ({ordered.Count}): {string.Join(", ", ordered)}");
             // #region agent log
             AgentLog("H-IF1", "ICloudDriveProbeService.cs:zones", "zones_selected", new
             {
@@ -240,7 +240,7 @@ public sealed class ICloudDriveProbeService
                 }
                 catch (Exception ex)
                 {
-                    log?.Report($"    ERRORE zone/retrieve: {ex.Message}");
+                    log?.Report($"    ERROR zone/retrieve: {ex.Message}");
                     continue;
                 }
 
@@ -309,7 +309,7 @@ public sealed class ICloudDriveProbeService
                         if (token is not null
                             && token.AsSpan().SequenceEqual(cont.SyncContinuationToken!))
                         {
-                            log?.Report("    syncToken invariato — stop");
+                            log?.Report("    syncToken unchanged — stop");
                             break;
                         }
 
@@ -416,7 +416,7 @@ public sealed class ICloudDriveProbeService
 
             await WriteFilesManifestAsync(outDir, docsDir, zoneSummaries, log, ct);
 
-            progress?.Report(new ICloudDriveProgress("done", 100, "completato"));
+            progress?.Report(new ICloudDriveProgress("done", 100, "completed"));
             log?.Report(
                 $"{modeLabel} finito: zone={zonesProcessed} contentFetch={recordsFetched} → {outDir}");
             return new ICloudDriveProbeResult(
@@ -497,7 +497,7 @@ public sealed class ICloudDriveProbeService
                 }
                 catch (Exception ex)
                 {
-                    log?.Report($"    {batchTag}: ERRORE {ex.Message}");
+                    log?.Report($"    {batchTag}: ERROR {ex.Message}");
                 }
             }
         }
@@ -517,7 +517,7 @@ public sealed class ICloudDriveProbeService
             progress?.Report(new ICloudDriveProgress(
                 "Decrypt", Math.Min(92, percent), $"PCS decrypt {zone}…"));
             log?.Report(
-                $"  crypto: avvio decifratura PCS (Escrow/Manatee) per zona «{zone}»…");
+                $"  crypto: starting PCS decrypt (Escrow/Manatee) for zone «{zone}»…");
             var crypto = new CloudDocsDocumentCrypto(_http);
             await crypto.ProcessAsync(
                 session, fetchDir, zone, zonePayloadLive, log,
@@ -640,7 +640,7 @@ public sealed class ICloudDriveProbeService
                 {
                     foreach (var n in sliceCanonical)
                         resolvedOrAttempted.Add(n);
-                    log?.Report($"    {batchTag}: ERRORE {ex.Message}");
+                    log?.Report($"    {batchTag}: ERROR {ex.Message}");
                 }
             }
         }

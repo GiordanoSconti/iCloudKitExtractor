@@ -101,14 +101,14 @@ public sealed class ContactsCardDavClient
             PropFindMethod, EnsureTrailingSlash(principalUrl), "0", PropHome, auth, session, ct)
             .ConfigureAwait(false);
         var homeHref = FirstHref(homeXml, CardDav + "addressbook-home-set")
-            ?? throw new InvalidOperationException("CardDAV: addressbook-home-set assente.");
+            ?? throw new InvalidOperationException("CardDAV: addressbook-home-set missing.");
         var homeUrl = EnsureTrailingSlash(Absolutize(host, homeHref));
         var displayName = FirstElementValue(homeXml, Dav + "displayname");
 
         var colXml = await DavAsync(
             PropFindMethod, homeUrl, "1", PropCollections, auth, session, ct).ConfigureAwait(false);
         var bookHref = FindAddressbookHref(colXml)
-            ?? throw new InvalidOperationException("CardDAV: nessuna collection addressbook.");
+            ?? throw new InvalidOperationException("CardDAV: no addressbook collection.");
         var bookUrl = EnsureTrailingSlash(Absolutize(host, bookHref));
         var ctag = FirstElementValue(colXml, Cs + "getctag");
 
@@ -135,7 +135,7 @@ public sealed class ContactsCardDavClient
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(contactUrl))
-            throw new ArgumentException("URL contatto mancante.", nameof(contactUrl));
+            throw new ArgumentException("Missing contact URL.", nameof(contactUrl));
 
         var (auth, _, _) = Begin(session);
         var (bytes, contentType, code) = await GetBytesAsync(contactUrl.Trim(), auth, session, ct)
@@ -148,7 +148,7 @@ public sealed class ContactsCardDavClient
 
         var text = Encoding.UTF8.GetString(bytes);
         if (string.IsNullOrWhiteSpace(text))
-            throw new InvalidOperationException($"Contacts GET vCard vuoto (ct={contentType}).");
+            throw new InvalidOperationException($"Contacts GET empty vCard (ct={contentType}).");
         return text;
     }
 
@@ -159,7 +159,7 @@ public sealed class ContactsCardDavClient
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(photoUrl))
-            throw new ArgumentException("URL foto mancante.", nameof(photoUrl));
+            throw new ArgumentException("Missing photo URL.", nameof(photoUrl));
 
         var (auth, _, _) = Begin(session);
         var (bytes, contentType, code) = await GetBytesAsync(photoUrl.Trim(), auth, session, ct)
@@ -249,20 +249,20 @@ public sealed class ContactsCardDavClient
         }
 
         if (snap.Contacts.Count == 0)
-            sb.AppendLine("(nessun contatto nell'addressbook)");
+            sb.AppendLine("(no contacts in address book)");
         sb.AppendLine();
-        sb.AppendLine("Seleziona un contatto nel pannello a destra per caricare vCard o foto.");
+        sb.AppendLine("Select a contact in the right panel to load vCard or photo.");
         return sb.ToString().TrimEnd();
     }
 
     private (string Auth, string Host, string Dsid) Begin(ICloudSession session)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Sessione senza DSID.");
+            throw new InvalidOperationException("Session has no DSID.");
 
         var secret = SessionMmeAuth.ResolveSecret(session);
         if (string.IsNullOrWhiteSpace(secret))
-            throw new InvalidOperationException("Manca secret sessione (MobileMeAuthToken / UAEA…).");
+            throw new InvalidOperationException("Missing session secret (MobileMeAuthToken / UAEA…).");
 
         var dsid = session.Dsid.Trim();
         var auth = $"Basic {AppleHttpExtensions.BasicAuth(dsid, secret)}";

@@ -1,11 +1,9 @@
 using System.IO;
-using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Protocol;
 using iCloudKitExtractor.Services;
-using iCloudKitExtractor.Services.Forensics;
 using Microsoft.Data.Sqlite;
 
 namespace iCloudKitExtractor.Services.Backup;
@@ -32,32 +30,10 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
         string snapshotDirectory,
         CancellationToken ct = default)
     {
-        SqliteBootstrap.EnsureInitialized();
         Directory.CreateDirectory(snapshotDirectory);
         var dbPath = Path.Combine(snapshotDirectory, "Manifest.db");
-        // Path snapshot spesso contiene `[GUID][timestamp]` — ConnectionStringBuilder
-        // evita che `[…]` spezzi la connection string (TargetInvocationException).
-        var cs = new SqliteConnectionStringBuilder
-        {
-            DataSource = dbPath,
-            DefaultTimeout = 30,
-            Pooling = false,
-        }.ToString();
-        SqliteConnection conn;
-        try
-        {
-            conn = new SqliteConnection(cs);
-            await conn.OpenAsync(ct);
-        }
-        catch (Exception ex) when (ex is TypeInitializationException
-                                       or TargetInvocationException
-                                       or InvalidOperationException
-                                       or SqliteException)
-        {
-            throw new InvalidOperationException(
-                $"Apertura Manifest.db fallita ({dbPath}). {Flatten(ex)}",
-                ex);
-        }
+        var conn = new SqliteConnection($"Data Source={dbPath};Default Timeout=30");
+        await conn.OpenAsync(ct);
 
         await using (var cmd = conn.CreateCommand())
         {
@@ -110,7 +86,7 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
                 "WriteFile richiede Domain+RelativePath (metadata decrypt).");
 
         var fileId = asset.EnsureFileId()
-                     ?? throw new InvalidOperationException("fileID non calcolabile");
+                     ?? throw new InvalidOperationException("fileID cannot be computed");
 
         var path = IkeBackupOutputPaths.ToShardedFilePath(_snapshotDirectory, fileId);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -132,7 +108,7 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
                 "WriteFile richiede Domain+RelativePath (metadata decrypt).");
 
         var fileId = asset.EnsureFileId()
-                     ?? throw new InvalidOperationException("fileID non calcolabile");
+                     ?? throw new InvalidOperationException("fileID cannot be computed");
 
         var path = IkeBackupOutputPaths.ToShardedFilePath(_snapshotDirectory, fileId);
         var srcFull = Path.GetFullPath(sourcePath);
@@ -163,7 +139,7 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
                 "CopyExisting richiede Domain+RelativePath (metadata decrypt).");
 
         var fileId = asset.EnsureFileId()
-                     ?? throw new InvalidOperationException("fileID non calcolabile");
+                     ?? throw new InvalidOperationException("fileID cannot be computed");
         var path = IkeBackupOutputPaths.ToShardedFilePath(_snapshotDirectory, fileId);
         var srcFull = Path.GetFullPath(sourcePath);
         var dstFull = Path.GetFullPath(path);
@@ -369,58 +345,11 @@ public sealed class BackupFilesystemWriter : IAsyncDisposable
         return new string(chars);
     }
 
-    private static string Flatten(Exception ex)
-    {
-        var parts = new List<string>();
-        for (Exception? e = ex; e is not null; e = e.InnerException)
-            parts.Add($"{e.GetType().Name}: {e.Message}");
-        return string.Join(" → ", parts);
-    }
-
-    /// <summary>
-    /// Checkpoint WAL + chiudi connessione così HASH/integrità può leggere
-    /// <c>Manifest.db</c> senza lock (e -wal/-shm si consolidano).
-    /// </summary>
-    public async Task CloseForHashingAsync(CancellationToken ct = default)
-    {
-        if (!_opened)
-            return;
-
-        try
-        {
-            await _dbWrite.WaitAsync(ct).ConfigureAwait(false);
-            try
-            {
-                await using var cmd = _conn.CreateCommand();
-                cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
-                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-            finally
-            {
-                _dbWrite.Release();
-            }
-        }
-        catch
-        {
-            // Checkpoint best-effort: chiudi comunque.
-        }
-
-        await DisposeAsync().ConfigureAwait(false);
-    }
-
     public async ValueTask DisposeAsync()
     {
-        if (!_opened)
-            return;
-        _opened = false;
-        try
-        {
-            await _conn.DisposeAsync().ConfigureAwait(false);
-        }
-        finally
-        {
-            _dbWrite.Dispose();
-        }
+        if (_opened)
+            await _conn.DisposeAsync();
+        _dbWrite.Dispose();
     }
 
     // #region agent log

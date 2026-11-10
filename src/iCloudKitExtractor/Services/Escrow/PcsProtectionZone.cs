@@ -20,7 +20,7 @@ public static class PcsGcmDataA
     public static byte[] Decrypt(ReadOnlySpan<byte> key, ReadOnlySpan<byte> data, ReadOnlySpan<byte> extraAad = default)
     {
         if (data.IsEmpty)
-            throw new CryptographicException("GCMDataA vuoto");
+            throw new CryptographicException("empty GCMDataA");
 
         var version = data[0];
         int headerLen = version switch
@@ -29,7 +29,7 @@ public static class PcsGcmDataA
             1 => 1,
             2 => 3,
             3 => data.Length >= 4 ? 4 + data[3] : throw new CryptographicException("GCMDataA v3 corto"),
-            _ => throw new CryptographicException($"GCMDataA version non supportata: {version}"),
+            _ => throw new CryptographicException($"GCMDataA version not supported: {version}"),
         };
         var nonceLen = version == 0 ? 8 : 12;
         var tagLen = version == 0 ? 8 : 12;

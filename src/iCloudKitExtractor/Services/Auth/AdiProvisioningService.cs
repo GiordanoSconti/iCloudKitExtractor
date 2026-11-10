@@ -173,8 +173,8 @@ public sealed class AdiProvisioningService
         new(
             "Apple MidService HTTP 433 (Anisette Reprovision Required / machine data changed). " +
             (softRepair
-                ? "Riprova tra qualche minuto con POST /provision (soft). "
-                : "Il wipe newIdentity è stato annullato (device store ripristinato). " +
+                ? "Retry in a few minutes with POST /provision (soft). "
+                : "newIdentity wipe was canceled (device store restored). " +
                   "Non ripetere newIdentity a raffica — causa 503 su :6971. ") +
             "Dettaglio: " + ex.Message,
             ex);
@@ -266,7 +266,7 @@ public sealed class AdiProvisioningService
             && nested is Dictionary<string, object?> nestedDict)
             return nestedDict;
 
-        throw new InvalidOperationException("URL bag provisioning non trovato nella risposta lookup.");
+        throw new InvalidOperationException("Provisioning bag URL not found in lookup response.");
     }
 
     private static readonly byte[] EmptyMidStartPlist = Encoding.UTF8.GetBytes(
@@ -300,9 +300,9 @@ public sealed class AdiProvisioningService
         }
 
         var dict = AppleXmlPlist.GetResponseDict(body)
-            ?? throw new InvalidOperationException("Risposta midStartProvisioning non valida.");
+            ?? throw new InvalidOperationException("Invalid midStartProvisioning response.");
         var spim = AppleXmlPlist.GetString(dict, "spim")
-            ?? throw new InvalidOperationException("SPIM mancante in midStartProvisioning.");
+            ?? throw new InvalidOperationException("SPIM missing in midStartProvisioning.");
         return Convert.FromBase64String(spim);
     }
 
@@ -330,17 +330,17 @@ public sealed class AdiProvisioningService
         }
 
         var dict = AppleXmlPlist.GetResponseDict(body)
-            ?? throw new InvalidOperationException("Risposta midFinishProvisioning non valida.");
+            ?? throw new InvalidOperationException("Invalid midFinishProvisioning response.");
 
         var ptmText = AppleXmlPlist.GetString(dict, "ptm")
-            ?? throw new InvalidOperationException("PTM mancante.");
+            ?? throw new InvalidOperationException("PTM missing.");
         var tkText = AppleXmlPlist.GetString(dict, "tk")
-            ?? throw new InvalidOperationException("TK mancante.");
+            ?? throw new InvalidOperationException("TK missing.");
         var rinfoText = AppleXmlPlist.GetString(dict, "X-Apple-I-MD-RINFO")
-            ?? throw new InvalidOperationException("X-Apple-I-MD-RINFO mancante.");
+            ?? throw new InvalidOperationException("X-Apple-I-MD-RINFO missing.");
 
         if (!ulong.TryParse(rinfoText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var routing))
-            throw new InvalidOperationException("X-Apple-I-MD-RINFO non numerico.");
+            throw new InvalidOperationException("X-Apple-I-MD-RINFO is not numeric.");
 
         return (Convert.FromBase64String(ptmText), Convert.FromBase64String(tkText), routing);
     }

@@ -94,8 +94,17 @@ public static class IkeLogOptions
     {
         if (!Quiet)
             return true;
+        // Probe FG hw/sha: pochi messaggi, utili anche in Quiet (UI + log Informazioni).
+        if (IsForegroundMmcsProbeLine(line))
+            return true;
         return IsErrorLine(line);
     }
+
+    /// <summary>Linee probe Hardware-Id / plist-sha256 Foreground Restore.</summary>
+    public static bool IsForegroundMmcsProbeLine(string? line) =>
+        !string.IsNullOrEmpty(line)
+        && (line.Contains("FG observe", StringComparison.Ordinal)
+            || line.Contains("FG seed", StringComparison.Ordinal));
 
     /// <summary>
     /// Journal <c>decrypt_failures</c>: in quiet solo stage “hard fail”.
@@ -180,11 +189,11 @@ public static class IkeLogOptions
                || HasHttpResponseStatusError(scan)
                || ContainsAny(scan,
                    "Exception", "NullReference", "Unauthorized",
-                   "decrypt fail", "decrypt fallito", "crypto abort", "Invalid nonce",
+                   "decrypt fail", "decrypt failed", "crypto abort", "Invalid nonce",
                    "≠ assetSize", "size_mismatch", "no-ikm", "no-resolve",
                    "Stream was too long", "OutOfMemory",
                    "batch fail", "Collection was modified",
-                   "decrypt_failures", "MmcsAuth assente");
+                   "decrypt_failures", "MmcsAuth missing");
     }
 
     private static bool IsTruthy(string env) =>

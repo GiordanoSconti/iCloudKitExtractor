@@ -22,11 +22,11 @@ public sealed class SharedStreamsClient
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Sessione senza DSID.");
+            throw new InvalidOperationException("Session has no DSID.");
 
         var secrets = SessionMmeAuth.ResolveSecretCandidates(session);
         if (secrets.Count == 0)
-            throw new InvalidOperationException("Manca secret sessione (MobileMeAuthToken / UAEA…).");
+            throw new InvalidOperationException("Missing session secret (MobileMeAuthToken / UAEA…).");
 
         var host = ResolveHost(session);
         var url = $"{host.TrimEnd('/')}/{session.Dsid.Trim()}/sharedstreams/webgetalbumslist";
@@ -56,7 +56,7 @@ public sealed class SharedStreamsClient
         }
 
         throw new InvalidOperationException(
-            "SharedStreams webgetalbumslist fallito.\n" + string.Join("\n", errors));
+            "SharedStreams webgetalbumslist failed.\n" + string.Join("\n", errors));
     }
 
     private async Task<(int Code, string Text, string Url)> PostAlbumListAsync(
@@ -156,7 +156,7 @@ public sealed class SharedStreamsClient
                 }
 
                 if (albums.GetArrayLength() == 0)
-                    sb.AppendLine("(nessun album Shared Streams sull'account)");
+                    sb.AppendLine("(no Shared Streams albums on account)");
             }
 
             sb.AppendLine();

@@ -34,7 +34,7 @@ public sealed class CloudKitQueryService
 
         log?.Report($"CloudKit: discovery query da {seeds.Count} seed…");
         if (seeds.Count == 0)
-            log?.Report("  nessun seed asset nel catalogo bootstrap");
+            log?.Report("  no asset seeds in bootstrap catalog");
 
         return await DiscoverViaBatchFetchBfsAsync(session, seeds, log, restore, ct);
     }
@@ -70,7 +70,7 @@ public sealed class CloudKitQueryService
             var head = prioritizedSeeds[0];
             log?.Report(
                 $"  BFS seed head → {head[..Math.Min(48, head.Length)]}… " +
-                $"({prioritizedSeeds.Count} candidati, priorità KA>MA>LA>NA>JA)");
+                $"({prioritizedSeeds.Count} candidates, priority KA>MA>LA>NA>JA)");
         }
 
         var fetched = 0;

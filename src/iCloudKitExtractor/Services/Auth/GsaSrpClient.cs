@@ -46,11 +46,11 @@ public sealed class GsaSrpClient
     {
         var B = BytesToBigInt(serverB);
         if (B % N == BigInteger.Zero)
-            throw new InvalidOperationException("Chiave pubblica server non valida.");
+            throw new InvalidOperationException("Invalid server public key.");
 
         var u = HashToBigInt(Concat(PadBigInt(_A), PadBigInt(B)));
         if (u == BigInteger.Zero)
-            throw new InvalidOperationException("Parametro u nullo.");
+            throw new InvalidOperationException("SRP parameter u is null.");
 
         var x = HashToBigInt(Concat(salt, SHA256.HashData(Concat(
             new byte[] { 0x3A },
@@ -86,7 +86,7 @@ public sealed class GsaSrpClient
     public byte[] DecryptSpd(byte[] encryptedSpd)
     {
         if (_K.Length == 0)
-            throw new InvalidOperationException("Chiave di sessione SRP non disponibile.");
+            throw new InvalidOperationException("SRP session key not available.");
         return GsaSpdDecoder.DecryptSpd(_K, encryptedSpd);
     }
 

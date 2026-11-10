@@ -457,9 +457,9 @@ file static class EscrowAesKeyWrap
     public static byte[] Unwrap(ReadOnlySpan<byte> kek, ReadOnlySpan<byte> wrapped)
     {
         if (wrapped.Length % 8 != 0 || wrapped.Length < 24)
-            throw new CryptographicException("wrap lunghezza non valida");
+            throw new CryptographicException("invalid wrap length");
         if (kek.Length is not (16 or 24 or 32))
-            throw new CryptographicException("KEK lunghezza non valida");
+            throw new CryptographicException("invalid KEK length");
 
         var n = wrapped.Length / 8 - 1;
         var a = BinaryPrimitives.ReadUInt64BigEndian(wrapped);

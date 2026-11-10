@@ -166,7 +166,7 @@ internal static class EdgeChunkRemap
             if (!lookup.TryGetValue(key, out var match))
             {
                 throw new InvalidOperationException(
-                    $"edge refresh: chunk assente oid={key.Item1} range={key.Start}-{key.End}");
+                    $"edge refresh: chunk missing oid={key.Item1} range={key.Start}-{key.End}");
             }
 
             result.Add(match);

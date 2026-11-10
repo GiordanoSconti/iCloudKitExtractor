@@ -66,7 +66,7 @@ public sealed class EscrowRecoveryService
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Sessione senza dsid.");
+            throw new InvalidOperationException("Session has no dsid.");
 
         Directory.CreateDirectory(outputDirectory);
         var useSms = sms?.Enabled == true;
@@ -92,7 +92,7 @@ public sealed class EscrowRecoveryService
         try
         {
             await EscrowBottlesParser.SaveBottlesJsonAsync(outputDirectory, records.RawBody, ct);
-            log?.Report("  escrow_bottles.json / pcs_* salvati da metadata");
+            log?.Report("  escrow_bottles.json / pcs_* saved from metadata");
         }
         catch (Exception ex)
         {
@@ -102,7 +102,7 @@ public sealed class EscrowRecoveryService
         if (!EscrowProxyClient.IsEscrowSuccess(records))
         {
             var err = ExtractMessage(records.Parsed) ?? $"HTTP {records.HttpStatus}";
-            return new EscrowRecoveryResult(false, $"get_records fallito: {err}");
+            return new EscrowRecoveryResult(false, $"get_records failed: {err}");
         }
 
         string? phoneToken = sms?.PhoneNumberToken?.Trim();
@@ -119,7 +119,7 @@ public sealed class EscrowRecoveryService
             if (!EscrowProxyClient.IsEscrowSuccess(targets))
             {
                 var err = ExtractMessage(targets.Parsed) ?? $"HTTP {targets.HttpStatus}";
-                return new EscrowRecoveryResult(false, $"get_sms_targets fallito: {err}");
+                return new EscrowRecoveryResult(false, $"get_sms_targets failed: {err}");
             }
 
             phoneToken ??= EscrowProxyClient.ExtractPhoneNumberToken(targets.Parsed);
@@ -127,7 +127,7 @@ public sealed class EscrowRecoveryService
             {
                 return new EscrowRecoveryResult(
                     false,
-                    "get_sms_targets OK ma phoneNumberToken assente — inseriscilo manualmente.");
+                    "get_sms_targets OK but phoneNumberToken missing — enter it manually.");
             }
 
             log?.Report($"  phoneNumberToken OK ({phoneToken.Length} char)");
@@ -143,27 +143,27 @@ public sealed class EscrowRecoveryService
                 if (!EscrowProxyClient.IsEscrowSuccess(challenge))
                 {
                     var err = ExtractMessage(challenge.Parsed) ?? $"HTTP {challenge.HttpStatus}";
-                    return new EscrowRecoveryResult(false, $"generate_sms_challenge fallito: {err}");
+                    return new EscrowRecoveryResult(false, $"generate_sms_challenge failed: {err}");
                 }
 
                 if (string.IsNullOrWhiteSpace(smsCode))
                 {
                     return new EscrowRecoveryResult(
                         false,
-                        "SMS inviato. Inserisci il codice ricevuto e ripeti con variante SMS attiva.");
+                        "SMS sent. Enter the received code and retry with SMS variant enabled.");
                 }
             }
 
             if (string.IsNullOrWhiteSpace(smsCode))
             {
                 return new EscrowRecoveryResult(
-                    false, "Variante SMS attiva: serve il codice SMS (smsChallengeCode).");
+                    false, "SMS variant enabled: SMS code required (smsChallengeCode).");
             }
         }
 
         log?.Report($"Escrow: srp_init / recover (identity=dsid={session.Dsid})…");
         log?.Report(
-            "  ATTENZIONE: ogni recover fallito consuma 1 tentativo escrow (limite duro ~10).");
+            "  WARNING: each failed recover consumes 1 escrow attempt (hard limit ~10).");
 
         EscrowSrpClient? srp = null;
         byte[]? recordId = null;
@@ -215,12 +215,12 @@ public sealed class EscrowRecoveryService
             if (!EscrowProxyClient.IsEscrowSuccess(init))
             {
                 var err = ExtractMessage(init.Parsed) ?? $"HTTP {init.HttpStatus}";
-                return new EscrowRecoveryResult(false, $"srp_init fallito: {err}");
+                return new EscrowRecoveryResult(false, $"srp_init failed: {err}");
             }
 
             var respBlob = AppleXmlPlist.GetEscrowRespBlob(init.Parsed!);
             if (respBlob is null || respBlob.Length == 0)
-                return new EscrowRecoveryResult(false, "srp_init senza respBlob");
+                return new EscrowRecoveryResult(false, "srp_init without respBlob");
 
             await File.WriteAllBytesAsync(
                 Path.Combine(outputDirectory, "escrow_srp_init_respBlob.bin"),
@@ -232,7 +232,7 @@ public sealed class EscrowRecoveryService
             {
                 return new EscrowRecoveryResult(
                     false,
-                    "Impossibile parsare salt/B dal respBlob srp_init — artefatti salvati.");
+                    "Cannot parse salt/B from srp_init respBlob — artifacts saved.");
             }
 
             correlationId = EscrowSecureBackupBlob.FormatRecordId(recordId);
@@ -241,7 +241,7 @@ public sealed class EscrowRecoveryService
 
             var srpDsid = AppleXmlPlist.GetString(init.Parsed!, "dsid") ?? session.Dsid;
             if (!string.Equals(srpDsid, session.Dsid, StringComparison.Ordinal))
-                log?.Report($"  dsid srp_init={srpDsid} (login={session.Dsid}) — uso quello di srp_init");
+                log?.Report($"  dsid srp_init={srpDsid} (login={session.Dsid}) — using srp_init value");
 
             // Se srp_init restituisce un dsid diverso, ricalcola col dsid corretto.
             var secret = srpDsid;
@@ -251,7 +251,7 @@ public sealed class EscrowRecoveryService
             }
             catch (Exception ex)
             {
-                return new EscrowRecoveryResult(false, $"Calcolo SRP fallito: {ex.Message}");
+                return new EscrowRecoveryResult(false, $"Computing SRP failed: {ex.Message}");
             }
 
             var recoverBlob = EscrowSecureBackupBlob.BuildRecoverBlob(
@@ -285,7 +285,7 @@ public sealed class EscrowRecoveryService
             if (EscrowProxyClient.IsEscrowSuccess(recover))
             {
                 winningPasscodeName = candidate.Name;
-                log?.Report($"  recover OK con passcode={candidate.Name}");
+                log?.Report($"  recover OK with passcode={candidate.Name}");
                 break;
             }
 
@@ -300,7 +300,7 @@ public sealed class EscrowRecoveryService
             {
                 return new EscrowRecoveryResult(
                     false,
-                    "recover bloccato dal limite tentativi escrow — stop candidati. " +
+                    "recover blocked by escrow attempt limit — stopping candidates. " +
                     string.Join(" | ", attemptErrors));
             }
         }
@@ -310,16 +310,16 @@ public sealed class EscrowRecoveryService
         {
             return new EscrowRecoveryResult(
                 false,
-                "recover fallito per tutti i candidati passcode: "
+                "recover failed for all passcode candidates: "
                 + string.Join(" | ", attemptErrors)
                 + (useSms
-                    ? " (M1/SMS rifiutati)"
-                    : " (M1 rifiutato: nessun passcode accettato)"));
+                    ? " (M1/SMS rejected)"
+                    : " (M1 rejected: no passcode accepted)"));
         }
 
         var recoverResp = AppleXmlPlist.GetEscrowRespBlob(recover.Parsed!);
         if (recoverResp is null || recoverResp.Length == 0)
-            return new EscrowRecoveryResult(false, "recover senza respBlob");
+            return new EscrowRecoveryResult(false, "recover without respBlob");
 
         var wrappedPath = Path.Combine(outputDirectory, EncryptedKeyBagKeyWrappedFileName);
         await File.WriteAllBytesAsync(wrappedPath, recoverResp, ct);
@@ -341,9 +341,9 @@ public sealed class EscrowRecoveryService
                     Path.Combine(outputDirectory, "escrow_recover_m2.bin"), m2, ct);
                 log?.Report($"  recover M2 tag=0x24 ({m2.Length} B)");
                 if (srp.VerifyServerM2(m2))
-                    log?.Report("  M2 OK (prova server verificata)");
+                    log?.Report("  M2 OK (server proof verified)");
                 else
-                    log?.Report("  WARN: M2 non verifica — K/encoding potrebbero non coincidere");
+                    log?.Report("  WARN: M2 does not verify — K/encoding may not match");
             }
 
             await File.WriteAllBytesAsync(
@@ -363,13 +363,13 @@ public sealed class EscrowRecoveryService
         else
         {
             encryptedKeyBagKey = recoverResp;
-            log?.Report("  nessun TLV interno — uso respBlob intero come blob cifrato");
+            log?.Report("  no inner TLV — using full respBlob as encrypted blob");
         }
 
         var keyPath = Path.Combine(outputDirectory, EncryptedKeyBagKeyFileName);
         await File.WriteAllBytesAsync(keyPath, encryptedKeyBagKey, ct);
         log?.Report(
-            $"  KeyBagKey cifrato → {EncryptedKeyBagKeyFileName} ({encryptedKeyBagKey.Length:N0} B)");
+            $"  KeyBagKey encrypted → {EncryptedKeyBagKeyFileName} ({encryptedKeyBagKey.Length:N0} B)");
 
         byte[]? decrypted = srp.TryDecryptEscrowPayload(encryptedKeyBagKey, out var mutAMethod)
                             ?? srp.TryDecryptEscrowPayload(recoverResp, out mutAMethod);
@@ -410,7 +410,7 @@ public sealed class EscrowRecoveryService
         }
         else
         {
-            log?.Report("  unwrap recover fallito — blob cifrato salvato comunque.");
+            log?.Report("  unwrap recover failed — encrypted blob saved anyway.");
         }
 
         if (keybagPath is not null)
@@ -498,8 +498,8 @@ public sealed class EscrowRecoveryService
         if (!File.Exists(cached) || new FileInfo(cached).Length < 1024)
         {
             log?.Report(
-                "  pcs_escrowed_keys assente e nessuna get_records cached — " +
-                "serve Unlock EscrowedKeys completo (recover include get_records).");
+                "  pcs_escrowed_keys missing and no cached get_records — " +
+                "full Unlock EscrowedKeys required (recover includes get_records).");
             return false;
         }
 
@@ -520,8 +520,8 @@ public sealed class EscrowRecoveryService
         if (path is null)
         {
             log?.Report(
-                "  re-parse OK ma pcs_escrowed_keys.bin ancora assente — " +
-                "metadata PCS senza kPCSMetadataEscrowedKeys estraibile.");
+                "  re-parse OK but pcs_escrowed_keys.bin still missing — " +
+                "PCS metadata without extractable kPCSMetadataEscrowedKeys.");
             return false;
         }
 

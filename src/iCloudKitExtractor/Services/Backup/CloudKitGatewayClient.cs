@@ -205,7 +205,7 @@ public sealed class CloudKitGatewayClient
                     catch (Exception refreshEx)
                     {
                         throw new InvalidOperationException(
-                            $"CloudKit {operationKey} HTTP 401 e refresh Anisette fallito: {refreshEx.Message}",
+                            $"CloudKit {operationKey} HTTP 401 and Anisette refresh failed: {refreshEx.Message}",
                             lastError);
                     }
                 }

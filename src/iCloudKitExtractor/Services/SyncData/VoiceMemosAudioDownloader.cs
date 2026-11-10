@@ -19,11 +19,6 @@ public sealed class VoiceMemosAudioDownloader
     public const string ContainerId = "com.apple.VoiceMemosContainer";
     public const string MessagesContainerId = "com.apple.messages.cloud";
     public const string SyncZone = "com.apple.coredata.cloudkit.zone";
-    /// <summary>
-    /// Zona sistema CloudKit spesso advertisa in zone/retrieve Voice Memos.
-    /// Tentativo controllato di record/sync (può RetryAfter).
-    /// </summary>
-    public const string MetadataZone = "metadata_zone";
 
     private readonly HttpClient _http;
 
@@ -60,14 +55,14 @@ public sealed class VoiceMemosAudioDownloader
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
         {
-            log?.Report($"  {LogTag}: DSID assente");
+            log?.Report($"  {LogTag}: DSID missing");
             return 0;
         }
 
         var syncFiles = Directory.GetFiles(containerDirectory, "record_sync_*.bin");
         if (syncFiles.Length == 0)
         {
-            log?.Report($"  {LogTag}: nessun record_sync");
+            log?.Report($"  {LogTag}: no record_sync");
             return 0;
         }
 
@@ -94,7 +89,7 @@ public sealed class VoiceMemosAudioDownloader
 
         if (assets.Count == 0)
         {
-            log?.Report($"  {LogTag}: nessun ckAsset con auth/signature (solo metadata sync?)");
+            log?.Report($"  {LogTag}: no ckAsset con auth/signature (solo metadata sync?)");
             return 0;
         }
 
@@ -104,7 +99,7 @@ public sealed class VoiceMemosAudioDownloader
 
         var kekPool = BuildKekPool(session, containerDirectory, log);
         if (kekPool.Count == 0)
-            log?.Report($"  {LogTag}: KEK pool vuoto — scarico ciphertext, decrypt forse fallisce");
+            log?.Report($"  {LogTag}: empty KEK pool — downloading ciphertext, decrypt may fail");
 
         var outDir = Path.Combine(containerDirectory, OutputSubdirectory);
         Directory.CreateDirectory(outDir);
@@ -264,7 +259,7 @@ public sealed class VoiceMemosAudioDownloader
         var plain = TryDecrypt(cipher, authBody, asset.ProtectionWrap, kekPool, out var reason);
         if (plain is null)
         {
-            log?.Report($"    scaricato {cipher.Length:N0} B ciphertext — decrypt: {reason}");
+            log?.Report($"    downloaded {cipher.Length:N0} B ciphertext — decrypt: {reason}");
             // Per Messages teniamo il .ct: utile per analisi offline anche senza KEK.
             return false;
         }
@@ -390,7 +385,7 @@ public sealed class VoiceMemosAudioDownloader
             }
         }
 
-        return lastErr ?? "edge GET fallito";
+        return lastErr ?? "edge GET failed";
     }
 
     private async Task DownloadChunksAsync(

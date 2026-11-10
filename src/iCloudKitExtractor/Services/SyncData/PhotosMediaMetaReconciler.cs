@@ -28,7 +28,7 @@ public static class PhotosMediaMetaReconciler
         var pool = BuildMetaPool(cache);
         if (pool.Count == 0)
         {
-            log?.Report("  mediaMeta rebind: pool vuoto (nessun GPS in mediaMetaDataEnc)");
+            log?.Report("  mediaMeta rebind: empty pool (no GPS in mediaMetaDataEnc)");
             return 0;
         }
 

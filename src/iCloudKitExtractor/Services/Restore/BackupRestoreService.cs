@@ -29,32 +29,32 @@ public static class BackupRestoreService
         CancellationToken ct = default)
     {
         if (!File.Exists(encryptedFilePath))
-            throw new FileNotFoundException("File cifrato non trovato", encryptedFilePath);
+            throw new FileNotFoundException("Encrypted file not found", encryptedFilePath);
 
         Directory.CreateDirectory(outputDirectory);
 
         var keybags = keybagRecords?.ToList() ?? LoadKeybags(keybagsJsonPath, outputDirectory);
         if (keybags.Count == 0)
             throw new InvalidOperationException(
-                "Nessun keybag trovato. Esegui prima il download (keybags.json / keybag_*.pb).");
+                "No keybag found. Run download first (keybags.json / keybag_*.pb).");
 
         if (keybags.All(CloudKitResponseParser.IsKeybagRecordId))
             throw new InvalidOperationException(
-                "keybags.json contiene solo id K:<uuid>, non i blob TLV. " +
-                "I keybag_data_*.bin sono ancora cifrati PCS: esegui escrow recover (iCSC) " +
-                "nella tab Decifra, poi riprova quando compare un keybag TLV chiaro.");
+                "keybags.json contains only K:<uuid> ids, not TLV blobs. " +
+                "keybag_data_*.bin files are still PCS-encrypted: run escrow recover (iCSC) " +
+                "in the Escrow tab, then retry when a clear TLV keybag appears.");
 
         // Se abbiamo solo payload non-TLV (PCS), gate esplicito.
         var parseable = keybags.Count(k => IosKeybag.TryParse(k, out _, out _));
         if (parseable == 0)
         {
             throw new InvalidOperationException(
-                "Nessun keybag TLV in chiaro. keybagData è ancora protetto da PCS. " +
-                "Passi: 1) login iCloud 2) iCSC → Escrow recover 3) unwrap PCS " +
-                "4) passcode dispositivo su Manifest.db / file.");
+                "No clear TLV keybag. keybagData is still PCS-protected. " +
+                "Steps: 1) iCloud login 2) iCSC → Escrow recover 3) PCS unwrap " +
+                "4) device passcode on Manifest.db / files.");
         }
 
-        log?.Report($"Keybag da provare: {keybags.Count} (TLV parseable={parseable})");
+        log?.Report($"Keybags to try: {keybags.Count} (TLV parseable={parseable})");
 
         PasscodeCrackResult? cracked = null;
 
@@ -72,12 +72,12 @@ public static class BackupRestoreService
 
         if (cracked is null)
             throw new InvalidOperationException(
-                "Passcode non trovato. Verifica PIN dispositivo o fornisci candidati extra.");
+                "Passcode not found. Check device PIN or supply extra candidates.");
 
         var encrypted = await File.ReadAllBytesAsync(encryptedFilePath, ct);
         var decrypted = BackupBlobDecryptor.TryDecryptFile(encrypted, cracked.ClassKeys, log)
             ?? throw new InvalidOperationException(
-                "Passcode OK ma decifra blob fallita — potrebbe servire Manifest.db per la class key corretta.");
+                "Passcode OK but blob decrypt failed — Manifest.db may be needed for the correct class key.");
 
         var baseName = Path.GetFileNameWithoutExtension(encryptedFilePath);
         var outPath = Path.Combine(outputDirectory, baseName + ".dec");
@@ -91,10 +91,10 @@ public static class BackupRestoreService
             protectionClass = decrypted.ProtectionClass,
             method = decrypted.Method,
             output = outPath,
-            note = "Passcode = PIN di blocco dispositivo (non password Apple ID / 2FA)"
+            note = "Passcode = device lock PIN (not Apple ID password / 2FA)"
         }, new JsonSerializerOptions { WriteIndented = true }), ct);
 
-        log?.Report($"Salvato: {outPath}");
+        log?.Report($"Saved: {outPath}");
 
         return new SingleFileRestoreResult(
             cracked.Passcode,

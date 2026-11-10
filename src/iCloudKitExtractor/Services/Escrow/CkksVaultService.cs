@@ -78,7 +78,7 @@ public sealed class CkksVaultService
         Directory.CreateDirectory(outputDirectory);
         var viewList = (views ?? DefaultViews).Where(v => !string.IsNullOrWhiteSpace(v)).ToList();
         if (viewList.Count == 0)
-            return new CkksVaultOpenResult(false, "Nessuna view CKKS richiesta.");
+            return new CkksVaultOpenResult(false, "No CKKS views requested.");
 
         if (preloadedTlks is { Count: > 0 })
         {
@@ -99,7 +99,7 @@ public sealed class CkksVaultService
         {
             return new CkksVaultOpenResult(
                 false,
-                "Serve peer encryption PKCS#8 (OTBottle/RK) oppure TLK preloaded (CkksTlkByView).");
+                "Peer encryption PKCS#8 (OTBottle/RK) or preloaded TLK (CkksTlkByView) required.");
         }
 
         // Ricarica peer keys da disco se sessione parziale.
@@ -126,7 +126,7 @@ public sealed class CkksVaultService
             if (string.IsNullOrWhiteSpace(session.CloudKitUserId)
                 || string.IsNullOrWhiteSpace(session.CloudKitAuthToken))
             {
-                return new CkksVaultOpenResult(false, "ckAppInit keychain senza cloudKitUserId/token.");
+                return new CkksVaultOpenResult(false, "ckAppInit keychain missing cloudKitUserId/token.");
             }
 
             if (hasPeer)
@@ -176,7 +176,7 @@ public sealed class CkksVaultService
             else if (alreadyHaveTlks && !prefetchRecoverableTlks)
             {
                 log?.Report(
-                    $"  skip fetchRecoverable (TLK già preloaded: {string.Join(", ", recoverableTlks.Keys)})");
+                    $"  skip fetchRecoverable (TLK already preloaded: {string.Join(", ", recoverableTlks.Keys)})");
             }
 
             // Engram (Messages) resta isolato: non entra in PcsManateeCompactKeys (pool backup).
@@ -260,7 +260,7 @@ public sealed class CkksVaultService
                 }
 
                 log?.Report(
-                    $"  Manatee PCS keys → sessione backup ({manateePcs.Count}, searchparty/82={svc82})");
+                    $"  Manatee PCS keys → backup session ({manateePcs.Count}, searchparty/82={svc82})");
             }
 
             if (engramPcs.Count > 0)
@@ -282,7 +282,7 @@ public sealed class CkksVaultService
                 }
 
                 log?.Report(
-                    $"  Engram PCS keys → sessione Messages-only ({engramPcs.Count}) " +
+                    $"  Engram PCS keys → Messages-only session ({engramPcs.Count}) " +
                     "(escluse dal pool backup)");
             }
 
@@ -342,7 +342,7 @@ public sealed class CkksVaultService
                   + (errors.Count > 0 ? $" (warn: {errors.Count})" : "")
                 : errors.Count > 0
                     ? string.Join("; ", errors.Take(3))
-                    : "Nessuna chiave/item CKKS recuperata.";
+                    : "No CKKS keys/items recovered.";
 
             return new CkksVaultOpenResult(
                 ok, msg,
@@ -405,7 +405,7 @@ public sealed class CkksVaultService
         }
 
         if (records.Count == 0)
-            return new ViewOpenResult(false, "nessun record in zone", 0, 0, 0, [], [], null);
+            return new ViewOpenResult(false, "no records in zone", 0, 0, 0, [], [], null);
 
         var tlkShares = records.Count(r => r.Type.Equals("tlkshare", StringComparison.OrdinalIgnoreCase));
         log?.Report($"  records={records.Count} (tlkshare={tlkShares})");
@@ -430,7 +430,7 @@ public sealed class CkksVaultService
             else
             {
                 return new ViewOpenResult(
-                    false, tlkErr ?? "TLK unwrap fallito", records.Count, 0, 0, [], [], null);
+                    false, tlkErr ?? "TLK unwrap failed", records.Count, 0, 0, [], [], null);
             }
         }
 
@@ -442,7 +442,7 @@ public sealed class CkksVaultService
         var (classKeys, classMap) = DeriveClassKeys(records, tlk);
         if (classKeys.Count == 0)
             return new ViewOpenResult(
-                false, "nessuna classA/classC synckey", records.Count, 1, 0, [], [], tlkPath);
+                false, "no classA/classC synckey", records.Count, 1, 0, [], [], tlkPath);
 
         log?.Report($"  TLK OK ({tlk.Length} B), classKeys={classKeys.Count}");
 
@@ -505,7 +505,7 @@ public sealed class CkksVaultService
             if (string.IsNullOrWhiteSpace(session.CloudKitUserId)
                 || string.IsNullOrWhiteSpace(session.CloudKitAuthToken))
             {
-                return (false, 0, 0, 0, "ckAppInit senza token");
+                return (false, 0, 0, 0, "ckAppInit without token");
             }
 
             var records = await FetchZoneRecordsAsync(
@@ -646,7 +646,7 @@ public sealed class CkksVaultService
             var wrapped = rec.FieldString("wrappedkey");
             if (string.IsNullOrEmpty(wrapped))
             {
-                error = "tlkshare senza wrappedkey";
+                error = "tlkshare without wrappedkey";
                 continue;
             }
 
@@ -692,11 +692,11 @@ public sealed class CkksVaultService
                 }
             }
 
-            error = $"nessun TLKShare per peer {TrimId(peerId)}";
+            error = $"no TLKShare per peer {TrimId(peerId)}";
             return false;
         }
 
-        error ??= "TLKShare unwrap fallito";
+        error ??= "TLKShare unwrap failed";
         return false;
     }
 
@@ -744,7 +744,7 @@ public sealed class CkksVaultService
         string view, CkksRecord rec, IReadOnlyList<byte[]> classKeys)
     {
         var wrappedB64 = rec.FieldString("wrappedkey")
-                         ?? throw new InvalidDataException("item senza wrappedkey");
+                         ?? throw new InvalidDataException("item without wrappedkey");
         var wrapped = Convert.FromBase64String(wrappedB64);
         byte[]? itemKey = null;
         foreach (var ck in classKeys)
@@ -761,10 +761,10 @@ public sealed class CkksVaultService
         }
 
         if (itemKey is null)
-            throw new InvalidDataException("nessuna class key unwrapa la per-item key");
+            throw new InvalidDataException("no class key unwraps the per-item key");
 
         var data = rec.FieldBytes("data")
-                   ?? throw new InvalidDataException("item senza data");
+                   ?? throw new InvalidDataException("item without data");
         var aad = BuildItemAad(rec);
         var padded = CkksKeys.DecryptItem(itemKey, data, aad);
         var plain = CkksKeys.TrimPkcs7StylePadding(padded);

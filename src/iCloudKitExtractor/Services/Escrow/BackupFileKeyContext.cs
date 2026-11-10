@@ -120,7 +120,7 @@ public sealed class BackupFileKeyContext
 
         if (!TryExtractPersistentKey(encryptionKey, out var persistentKey, out var ekUuidHex))
         {
-            error = "EncryptionKey persistentKey assente";
+            error = "EncryptionKey persistentKey missing";
             return false;
         }
 
@@ -188,8 +188,8 @@ public sealed class BackupFileKeyContext
         }
 
         error ??= _classicKeybag is null && _modernBagKeys.Count == 0
-            ? "keybag assente"
-            : "unwrap class/bagKey fallito";
+            ? "keybag missing"
+            : "unwrap class/bagKey failed";
         return false;
     }
 

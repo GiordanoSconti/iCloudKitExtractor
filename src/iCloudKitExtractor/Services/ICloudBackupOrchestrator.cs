@@ -73,12 +73,12 @@ public sealed class ICloudBackupOrchestrator
             if (result.Requires2Fa)
                 throw new TwoFactorRequiredException(
                     result.Session!,
-                    result.Error ?? "2FA richiesto.",
+                    result.Error ?? "2FA required.",
                     result.VerificationOptions);
         }
 
         if (!result.Success || result.Session is null)
-            throw new InvalidOperationException(result.Error ?? "Autenticazione fallita.");
+            throw new InvalidOperationException(result.Error ?? "Authentication failed.");
 
         RememberCredentials(appleId, password);
         var session = result.Session;
@@ -130,7 +130,7 @@ public sealed class ICloudBackupOrchestrator
                 var ensure = await EscrowPcsSession.EnsureKeySetAsync(
                     session, _http, pcsDir, iCloudSecurityCode: null, sms: null, log, ct);
                 if (!ensure.Success)
-                    log?.Report($"PCS KeySet (lista): {ensure.Message} — backupProperties resterà cifrato");
+                    log?.Report($"PCS KeySet (lista): {ensure.Message} — backupProperties will stay encrypted");
             }
             catch (Exception ex)
             {
@@ -151,7 +151,7 @@ public sealed class ICloudBackupOrchestrator
 
         var devices = await ck.ListDevicesAsync(session, log, mbsManifest, ct);
         _lastBackupListService = ck;
-        log?.Report($"CloudKit: trovati {devices.Count} dispositivi con backup");
+        log?.Report($"CloudKit: found {devices.Count} devices with backup");
         foreach (var d in devices)
         {
             log?.Report($"  {d.DisplayName ?? d.DeviceUuid} ({d.ProductType ?? "?"}) — {d.Snapshots.Count} snapshot");
@@ -162,7 +162,7 @@ public sealed class ICloudBackupOrchestrator
             if (mbsManifest is { Length: > 0 })
                 LogMbsManifest(mbsManifest, log);
             else
-                log?.Report("mbs manifest (post-lista): non disponibile");
+                log?.Report("mbs manifest (post-list): unavailable");
         }
         catch (Exception ex)
         {
@@ -193,7 +193,7 @@ public sealed class ICloudBackupOrchestrator
             return;
         if (manifest is not { Length: > 0 })
         {
-            log.Report("mbs manifest: (vuoto)");
+            log.Report("mbs manifest: (empty)");
             return;
         }
 
@@ -233,12 +233,12 @@ public sealed class ICloudBackupOrchestrator
             || session.Anisette.IsClientTimeStale(TimeSpan.FromMinutes(12));
         if (hardStale)
         {
-            log?.Report("  remint Anisette prima di ckAppInit (OTP assente/stallo)…");
+            log?.Report("  remint Anisette before ckAppInit (OTP missing/stale)…");
             await RefreshAnisetteAsync(session, ct, forceRemint: true);
         }
         else
         {
-            log?.Report("  reuse Anisette sessione prima di ckAppInit…");
+            log?.Report("  reuse session Anisette before ckAppInit…");
             await RefreshAnisetteAsync(session, ct, forceRemint: false);
         }
 
@@ -264,7 +264,7 @@ public sealed class ICloudBackupOrchestrator
     {
         if (!forceRemint)
         {
-            log?.Report("  reuse Anisette sessione (no ckAppInit)…");
+            log?.Report("  reuse session Anisette (no ckAppInit)…");
             await RefreshAnisetteAsync(session, ct, forceRemint: false).ConfigureAwait(false);
             return;
         }
@@ -289,13 +289,13 @@ public sealed class ICloudBackupOrchestrator
         }
         catch (Exception softEx)
         {
-            log?.Report($"  soft refresh 401 fallito: {softEx.Message}");
+            log?.Report($"  soft refresh 401 failed: {softEx.Message}");
         }
 
         if (!HasStoredCredentials)
         {
             throw new InvalidOperationException(
-                "Refresh 401: soft fallito e password non in RAM — rifare Accesso dalla UI.");
+                "Refresh 401: soft refresh failed and password not in RAM — sign in again from the UI.");
         }
 
         try
@@ -310,12 +310,12 @@ public sealed class ICloudBackupOrchestrator
             if (handler is null)
                 throw;
 
-            log?.Report($"  Relogin richiede intervento UI ({reloginEx.Kind})…");
+            log?.Report($"  Relogin requires UI intervention ({reloginEx.Kind})…");
             var ok = await handler(session, reloginEx, log, ct).ConfigureAwait(false);
             if (!ok)
             {
                 throw new InvalidOperationException(
-                    "Recupero sessione mid-download annullato o fallito.",
+                    "Mid-download session recovery canceled or failed.",
                     reloginEx);
             }
         }
@@ -335,14 +335,14 @@ public sealed class ICloudBackupOrchestrator
         if (HasStoredCredentials)
         {
             log?.Report(
-                "  refresh sessione post-Escrow (GrandSlam) — evita ckAppInit 401 su Cuttlefish…");
+                "  refresh session post-Escrow (GrandSlam) — avoids ckAppInit 401 on Cuttlefish…");
             await ReloginIntoSessionAsync(session, log, ct).ConfigureAwait(false);
             return;
         }
 
         log?.Report(
-            "  WARN: password non in RAM dopo Escrow — ckAppInit può rispondere 401; " +
-            "se fallisce, rifai Accesso e poi «OTBottle / Peer».");
+            "  WARN: password not in RAM after Escrow — ckAppInit può rispondere 401; " +
+            "if it fails, sign in again then «OTBottle / Peer».");
         await RefreshAnisetteAsync(session, ct, forceRemint: false).ConfigureAwait(false);
     }
 
@@ -357,13 +357,13 @@ public sealed class ICloudBackupOrchestrator
     {
         if (!HasStoredCredentials)
             throw new InvalidOperationException(
-                "Re-login mid-download: password non in RAM — rifare Accesso dalla UI.");
+                "Re-login mid-download: password not in RAM — sign in again from the UI.");
 
         await _reloginGate.WaitAsync(ct).ConfigureAwait(false);
         Interlocked.Exchange(ref _insideRelogin, 1);
         try
         {
-            log?.Report("  re-login GrandSlam (sessione scaduta / 401)…");
+            log?.Report("  re-login GrandSlam (session expired / 401)…");
             var auth = CreateAuthService();
             auth.Progress += p => log?.Report($"  {p.Step}: {p.Message}");
 
@@ -374,14 +374,14 @@ public sealed class ICloudBackupOrchestrator
             {
                 throw new SessionReloginException(
                     SessionReloginKind.Requires2Fa,
-                    result.Error ?? "Re-login mid-download richiede 2FA.",
+                    result.Error ?? "Re-login mid-download requires 2FA.",
                     result.Session,
                     result.VerificationOptions);
             }
 
             if (!result.Success || result.Session is null)
             {
-                var msg = result.Error ?? "Re-login mid-download fallito.";
+                var msg = result.Error ?? "Re-login mid-download failed.";
                 throw new SessionReloginException(
                     LooksLikePasswordRejected(msg)
                         ? SessionReloginKind.PasswordRejected
@@ -391,9 +391,9 @@ public sealed class ICloudBackupOrchestrator
 
             AbsorbAuthIntoSession(session, result.Session);
             log?.Report(
-                "  re-login OK — token aggiornati (PCS/Octagon invariati), ckAppInit…");
+                "  re-login OK — tokens updated (PCS/Octagon unchanged), ckAppInit…");
             await BootstrapCloudKitAsync(session, log, ct).ConfigureAwait(false);
-            log?.Report("  sessione CloudKit rinnovata.");
+            log?.Report("  CloudKit session renewed.");
         }
         finally
         {
@@ -413,9 +413,9 @@ public sealed class ICloudBackupOrchestrator
         CancellationToken ct = default)
     {
         AbsorbAuthIntoSession(liveSession, authenticated);
-        log?.Report("  sessione live aggiornata da Accesso/2FA — ckAppInit…");
+        log?.Report("  live session updated from Sign-in/2FA — ckAppInit…");
         await BootstrapCloudKitAsync(liveSession, log, ct).ConfigureAwait(false);
-        log?.Report("  sessione CloudKit rinnovata (UI).");
+        log?.Report("  CloudKit session renewed (UI).");
     }
 
     private static bool LooksLikePasswordRejected(string message) =>
@@ -511,21 +511,21 @@ public sealed class ICloudBackupOrchestrator
         if (string.IsNullOrEmpty(session.CloudKitAuthToken))
         {
             throw new InvalidOperationException(
-                "Manca cloudKitToken per ckAppInit. " +
-                "In hybrid serve get_account_settings dopo authenticate; " +
+                "Missing cloudKitToken for ckAppInit. " +
+                "In hybrid mode, get_account_settings is required after authenticate; " +
                 "in flow iPhone arriva da GsService2/validate (X-Apple-GS-Token cloudkit.auth).");
         }
 
         static string Prefix(string? t) => string.IsNullOrEmpty(t)
-            ? "(vuoto)"
+            ? "(empty)"
             : $"{t[..Math.Min(4, t.Length)]}…(len={t.Length})";
         log?.Report($"ckAppInit container={CloudKitContainerBinding.Backup.ContainerId}… dsid={session.Dsid} "
                     + $"mmeToken={Prefix(session.MobileMeAuthToken)} ckGs={Prefix(session.CloudKitGsToken)} "
-                    + $"ckToken={Prefix(session.CloudKitAuthToken)} ckUser={(string.IsNullOrEmpty(session.CloudKitUserId) ? "(vuoto)" : "presente")}");
+                    + $"ckToken={Prefix(session.CloudKitAuthToken)} ckUser={(string.IsNullOrEmpty(session.CloudKitUserId) ? "(empty)" : "presente")}");
         await SendCkAppInitAsync(session, CloudKitContainerBinding.Backup.ContainerId, log, ct);
 
         if (string.IsNullOrEmpty(session.CloudKitUserId))
-            throw new InvalidOperationException("ckAppInit senza cloudKitUserId.");
+            throw new InvalidOperationException("ckAppInit missing cloudKitUserId.");
     }
 
     /// <summary>
@@ -647,7 +647,7 @@ public sealed class ICloudBackupOrchestrator
         CancellationToken ct)
     {
         if (string.IsNullOrEmpty(session.Dsid))
-            throw new InvalidOperationException("Manca dsid per get_account_settings.");
+            throw new InvalidOperationException("Missing dsid for get_account_settings.");
 
         var mmeSecret = session.MobileMeAuthToken;
         if (string.IsNullOrEmpty(mmeSecret) && !string.IsNullOrEmpty(session.GsICloudAuthToken))
@@ -655,7 +655,7 @@ public sealed class ICloudBackupOrchestrator
         if (string.IsNullOrEmpty(mmeSecret) && !string.IsNullOrEmpty(session.CloudKitGsToken))
             mmeSecret = session.CloudKitGsToken;
         if (string.IsNullOrEmpty(mmeSecret))
-            throw new InvalidOperationException("Manca mmeAuthToken / gs.icloud.auth per get_account_settings.");
+            throw new InvalidOperationException("Missing mmeAuthToken / gs.icloud.auth for get_account_settings.");
 
         log?.Report("get_account_settings…");
 
@@ -676,9 +676,9 @@ public sealed class ICloudBackupOrchestrator
                     log))
             {
                 if (!string.IsNullOrEmpty(session.CloudKitAuthToken))
-                    log?.Report("get_account_settings OK — cloudKitToken ricevuto (AuthKitWin).");
+                    log?.Report("get_account_settings OK — cloudKitToken received (AuthKitWin).");
                 else
-                    log?.Report("get_account_settings OK — senza cloudKitToken nel plist.");
+                    log?.Report("get_account_settings OK — no cloudKitToken in plist.");
                 if (!string.IsNullOrWhiteSpace(session.EscrowProxyUrl))
                     log?.Report($"  escrowProxyUrl → {session.EscrowProxyUrl}");
                 return;
@@ -697,9 +697,9 @@ public sealed class ICloudBackupOrchestrator
                 log))
         {
             if (!string.IsNullOrEmpty(session.CloudKitAuthToken))
-                log?.Report("get_account_settings OK — cloudKitToken ricevuto.");
+                log?.Report("get_account_settings OK — cloudKitToken received.");
             else
-                log?.Report("get_account_settings OK — senza cloudKitToken nel plist.");
+                log?.Report("get_account_settings OK — no cloudKitToken in plist.");
             if (!string.IsNullOrWhiteSpace(session.EscrowProxyUrl))
                 log?.Report($"  escrowProxyUrl → {session.EscrowProxyUrl}");
             return;
@@ -726,7 +726,7 @@ public sealed class ICloudBackupOrchestrator
             }
         }
 
-        throw new InvalidOperationException("get_account_settings fallito — impossibile ottenere cloudKitToken.");
+        throw new InvalidOperationException("get_account_settings failed — cannot obtain cloudKitToken.");
     }
 
     private async Task<bool> TryAccountSettingsRequestAsync(

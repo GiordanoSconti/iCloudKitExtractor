@@ -93,7 +93,7 @@ public sealed class BackupSnapshot
 
     public string PasscodeLabel => WasPasscodeSet switch
     {
-        true => "sì",
+        true => "yes",
         false => "no",
         null => "—"
     };
@@ -109,7 +109,7 @@ public sealed class BackupSnapshot
 
     public string BackupPropsStatusLabel =>
         string.IsNullOrWhiteSpace(BackupPropertiesStatus)
-            ? (BackupPropertiesCiphertext is { Length: > 0 } ? "cifrato" : "—")
+            ? (BackupPropertiesCiphertext is { Length: > 0 } ? "encrypted" : "—")
             : BackupPropertiesStatus;
 
     private static string FormatBytes(long bytes)
@@ -279,7 +279,7 @@ public sealed class DownloadProgressReport
 {
     /// <summary>Byte payload Backup (chunk data / body materializzati) — non traffico HTTP totale.</summary>
     public long BytesDownloaded { get; init; }
-    /// <summary>Stima byte payload Backup ancora da scaricare (denominatore barra Backup).</summary>
+    /// <summary>Stima byte payload Backup ancora to download (denominatore barra Backup).</summary>
     public long TotalBytes { get; init; }
     /// <summary>
     /// Traffico HTTP cumulato (body request + response) dal Reset del meter durante lo snapshot.
@@ -297,7 +297,7 @@ public sealed class DownloadProgressReport
     public int FilesDecryptFailed { get; init; }
     /// <summary>
     /// File scritti in Backup/ ancora ciphertext (no file-AES plaintext): parity incompleta PC1/PC2
-    /// oppure body CIFRATO/incompleto su fallimento MMCS.
+    /// oppure body ENCRYPTED/incomplete su fallimento MMCS.
     /// </summary>
     public int FilesCiphertextSaved { get; init; }
     /// <summary>Totale file previsti (stesso denominatore delle barre Scaricati/Decifrati).</summary>

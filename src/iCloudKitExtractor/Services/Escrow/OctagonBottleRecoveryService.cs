@@ -81,7 +81,7 @@ public sealed class OctagonBottleRecoveryService
         CancellationToken ct = default)
     {
         Directory.CreateDirectory(outputDirectory);
-        log?.Report("Octagon: get_records (lista bottle iCDP, non distruttivo)…");
+        log?.Report("Octagon: get_records (iCDP bottle list, non-destructive)…");
         var records = await _client.GetRecordsAsync(session, log, ct);
         await EscrowProxyClient.SaveProbeArtifactsAsync(outputDirectory, records, ct);
         try
@@ -97,7 +97,7 @@ public sealed class OctagonBottleRecoveryService
         {
             var err = AppleXmlPlist.GetString(records.Parsed!, "message")
                       ?? $"HTTP {records.HttpStatus}";
-            return ([], $"get_records fallito: {err}");
+            return ([], $"get_records failed: {err}");
         }
 
         var list = ListIcdpBottles(records.RawBody);
@@ -123,23 +123,23 @@ public sealed class OctagonBottleRecoveryService
         {
             return new OctagonBottleRecoveryResult(
                 false,
-                "REFUSED: recover iCDP consuma 1 tentativo irreversibile (max ~10). "
-                + "Conferma esplicitamente prima di procedere.");
+                "REFUSED: recover iCDP consumes 1 irreversible attempt (max ~10). "
+                + "Explicitly confirm before proceeding.");
         }
 
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            return new OctagonBottleRecoveryResult(false, "Sessione senza dsid.");
+            return new OctagonBottleRecoveryResult(false, "Session has no dsid.");
         if (!IsIcdpLabel(bottleLabel))
-            return new OctagonBottleRecoveryResult(false, "Label non iCDP: " + bottleLabel);
+            return new OctagonBottleRecoveryResult(false, "Label is not iCDP: " + bottleLabel);
         if (string.IsNullOrWhiteSpace(devicePasscode))
-            return new OctagonBottleRecoveryResult(false, "Serve il passcode del dispositivo della bottle.");
+            return new OctagonBottleRecoveryResult(false, "Device passcode for the bottle is required.");
 
         Directory.CreateDirectory(outputDirectory);
         var passcode = EscrowSrpClient.NormalizeIcsc(devicePasscode);
         var label = bottleLabel.Trim();
 
         log?.Report($"Octagon Unlock → label={label}");
-        log?.Report("  ATTENZIONE: recover fallito consuma 1 tentativo HSM (limite ~10).");
+        log?.Report("  WARNING: failed recover consumes 1 HSM attempt (limit ~10).");
         // iCDP ≠ PCS: SRP P = passcode device (dsid:passcode). PCS usa dsid:dsid.
         // Passcode serve anche al PBKDF2 post-recover → EscrowBottle.
         // -6015 "Credential is not verified" = M1 sbagliato (secret SRP errato).
@@ -152,7 +152,7 @@ public sealed class OctagonBottleRecoveryService
         {
             return new OctagonBottleRecoveryResult(
                 false,
-                "PET/AppleId assenti — rifai login GSA (serve com.apple.gs.idms.pet per iCDP).",
+                "PET/AppleId missing — sign in again with GSA (com.apple.gs.idms.pet required for iCDP).",
                 label);
         }
 
@@ -181,14 +181,14 @@ public sealed class OctagonBottleRecoveryService
         {
             var err = AppleXmlPlist.GetString(init.Parsed!, "message") ?? $"HTTP {init.HttpStatus}";
             var hint = init.HttpStatus == 401
-                ? " — auth iCDP (Basic email+PET). Rifai login GSA se PET scaduto."
+                ? " — iCDP auth (Basic email+PET). Sign in again with GSA if PET expired."
                 : "";
-            return new OctagonBottleRecoveryResult(false, $"srp_init fallito: {err}{hint}", label);
+            return new OctagonBottleRecoveryResult(false, $"srp_init failed: {err}{hint}", label);
         }
 
         var respBlob = AppleXmlPlist.GetEscrowRespBlob(init.Parsed!);
         if (respBlob is not { Length: > 0 })
-            return new OctagonBottleRecoveryResult(false, "srp_init senza respBlob", label);
+            return new OctagonBottleRecoveryResult(false, "srp_init without respBlob", label);
 
         await File.WriteAllBytesAsync(
             Path.Combine(outputDirectory, "octagon_srp_init_respBlob.bin"), respBlob, ct);
@@ -197,7 +197,7 @@ public sealed class OctagonBottleRecoveryService
                 respBlob, out var sessionId, out var recordId, out var salt, out var serverB))
         {
             return new OctagonBottleRecoveryResult(
-                false, "Impossibile parsare salt/B da srp_init respBlob", label);
+                false, "Cannot parse salt/B from srp_init respBlob", label);
         }
 
         var correlationId = EscrowSecureBackupBlob.FormatRecordId(recordId);
@@ -220,7 +220,7 @@ public sealed class OctagonBottleRecoveryService
         }
         catch (Exception ex)
         {
-            return new OctagonBottleRecoveryResult(false, $"Calcolo SRP fallito: {ex.Message}", label);
+            return new OctagonBottleRecoveryResult(false, $"Computing SRP failed: {ex.Message}", label);
         }
 
         const uint recoverVersion = 0;
@@ -253,14 +253,14 @@ public sealed class OctagonBottleRecoveryService
             var status = AppleXmlPlist.GetString(recover.Parsed!, "status");
             return new OctagonBottleRecoveryResult(
                 false,
-                $"recover FALLITO: {err}" + (status is null ? "" : $" (status={status})")
-                + " — tentativo consumato.",
+                $"recover FAILED: {err}" + (status is null ? "" : $" (status={status})")
+                + " — attempt consumed.",
                 label);
         }
 
         var recoverResp = AppleXmlPlist.GetEscrowRespBlob(recover.Parsed!);
         if (recoverResp is not { Length: > 0 })
-            return new OctagonBottleRecoveryResult(false, "recover senza respBlob", label);
+            return new OctagonBottleRecoveryResult(false, "recover without respBlob", label);
 
         await File.WriteAllBytesAsync(
             Path.Combine(outputDirectory, "octagon_recover_respBlob.bin"), recoverResp, ct);
@@ -304,7 +304,7 @@ public sealed class OctagonBottleRecoveryService
         if (inner is not { Length: > 0 })
         {
             return new OctagonBottleRecoveryResult(
-                false, "Decrypt AES(K_SRP) fallito sul recover respBlob", label);
+                false, "Decrypt AES(K_SRP) failed on recover respBlob", label);
         }
 
         await File.WriteAllBytesAsync(
@@ -316,7 +316,7 @@ public sealed class OctagonBottleRecoveryService
         {
             return new OctagonBottleRecoveryResult(
                 false,
-                $"Unwrap EscrowBottle fallito (passcode device?): {unwrapErr}",
+                $"Unwrap EscrowBottle failed (device passcode?): {unwrapErr}",
                 label);
         }
 
@@ -327,7 +327,7 @@ public sealed class OctagonBottleRecoveryService
         if (!TryExtractBottledPeerEntropy(bottlePlist, out var entropy, out var entErr))
         {
             return new OctagonBottleRecoveryResult(
-                false, $"BottledPeerEntropy assente: {entErr}", label,
+                false, $"BottledPeerEntropy missing: {entErr}", label,
                 BottlePlistPath: bottlePath, Pbkdf2Rounds: rounds);
         }
 
@@ -344,7 +344,7 @@ public sealed class OctagonBottleRecoveryService
         }
         else
         {
-            log?.Report("  WARN: Adsid assente — skip derive HKDF (serve per OTBottle AES-GCM).");
+            log?.Report("  WARN: Adsid missing — skip derive HKDF (needed for OTBottle AES-GCM).");
         }
 
         session.OctagonBottledPeerEntropy = entropy;
@@ -424,7 +424,7 @@ public sealed class OctagonBottleRecoveryService
                     return TryEntropyFromDict(parsed, out entropy, out error);
                 }
 
-                error = "plist non parsabile";
+                error = "plist not parseable";
                 return false;
             }
 
@@ -470,7 +470,7 @@ public sealed class OctagonBottleRecoveryService
             }
         }
 
-        error = "chiave BottledPeerEntropy non trovata nel plist";
+        error = "BottledPeerEntropy key not found in plist";
         return false;
     }
 
@@ -685,7 +685,7 @@ public static class OctagonBottleCrypto
 
         if (ciphertext.Length == 0 || tag.Length == 0 || iv.Length == 0)
         {
-            error = "AuthenticatedCiphertext incompleto";
+            error = "AuthenticatedCiphertext incomplete";
             return false;
         }
 
@@ -791,7 +791,7 @@ public static class OctagonBottleCrypto
 
         if (authBlob is null)
         {
-            error = "OTBottle senza Contents (field 12)";
+            error = "OTBottle without Contents (field 12)";
             return false;
         }
 
@@ -822,7 +822,7 @@ public static class OctagonBottleCrypto
 
         if (ciphertext.Length == 0 || tag.Length == 0 || iv.Length == 0)
         {
-            error = "AuthenticatedCiphertext incompleto";
+            error = "AuthenticatedCiphertext incomplete";
             return false;
         }
 
@@ -856,7 +856,7 @@ public static class OctagonBottleCrypto
 
         if (sigPk is null || encPk is null)
         {
-            error = "bottle contents senza peer signing/encryption keys";
+            error = "bottle contents without peer signing/encryption keys";
             return false;
         }
 

@@ -86,7 +86,7 @@ public sealed class EscrowSrpClient
 
         var passwordBytes = Encoding.UTF8.GetBytes(NormalizeIcsc(password));
         if (!IsValidServerB(serverB))
-            throw new InvalidOperationException("Chiave pubblica server escrow non valida (B).");
+            throw new InvalidOperationException("Invalid escrow server public key (B).");
 
         var B = BytesToBigInt(serverB);
         var padA = _padA;
@@ -95,7 +95,7 @@ public sealed class EscrowSrpClient
         // u = H(PAD(A) ‖ PAD(B))
         var u = HashToBigInt(Concat(padA, padB));
         if (u == BigInteger.Zero)
-            throw new InvalidOperationException("Parametro u SRP nullo.");
+            throw new InvalidOperationException("SRP parameter u is null.");
 
         // inner = SHA256(I || ":" || P); x = SHA256(salt_64 || inner)
         var inner = SHA256.HashData(Concat(_identityBytes, [0x3A], passwordBytes));
@@ -532,7 +532,7 @@ public static class EscrowSecureBackupBlob
         bool nestInnerKeyVault = true)
     {
         if (string.IsNullOrWhiteSpace(dsid))
-            throw new ArgumentException("dsid richiesto.", nameof(dsid));
+            throw new ArgumentException("dsid required.", nameof(dsid));
         // Wire slot must fit size(4)+data; keep headroom for bottle body.
         if (payloadWireSlot is < 68 or > 8192)
             throw new ArgumentOutOfRangeException(nameof(payloadWireSlot));

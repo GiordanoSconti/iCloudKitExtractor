@@ -40,7 +40,7 @@ public sealed class CoreAdiAnisetteProvider : IAnisetteProvider
         }
 
         if (string.IsNullOrEmpty(otp.Md) || string.IsNullOrEmpty(otp.MdM) || string.IsNullOrEmpty(otp.MdRinfo))
-            throw new InvalidOperationException("CoreADI non ha restituito header Anisette completi.");
+            throw new InvalidOperationException("CoreADI did not return complete Anisette headers.");
 
         var culture = _deviceStore.Profile.IsIosClass
             ? CultureInfo.GetCultureInfo("en-US")

@@ -51,16 +51,16 @@ public static class SnapshotBackupPropertiesDecryptor
             });
         // #endregion
         if (withCipher == 0)
-            return new DecryptSummary(0, 0, "nessun backupProperties cifrato");
+            return new DecryptSummary(0, 0, "no encrypted backupProperties");
 
         if (!PcsSessionSeedKeys.HasAny(session))
         {
             foreach (var s in list.Where(s => s.BackupPropertiesCiphertext is { Length: > 16 }))
-                s.BackupPropertiesStatus ??= "cifrato (PCS KeySet assente)";
+                s.BackupPropertiesStatus ??= "encrypted (PCS KeySet missing)";
             // #region agent log
             AgentBpLog("H-BP1", "bp_keyset_absent", new { withCipher });
             // #endregion
-            return new DecryptSummary(withCipher, 0, "PCS KeySet assente");
+            return new DecryptSummary(withCipher, 0, "PCS KeySet missing");
         }
 
         var manateeFast = PcsSessionSeedKeys.IsManateePrimary(session);
@@ -83,7 +83,7 @@ public static class SnapshotBackupPropertiesDecryptor
                 manatee = session.PcsManateeCompactKeys?.Count ?? 0,
             });
             // #endregion
-            return new DecryptSummary(withCipher, 0, "KeySet senza chiavi private");
+            return new DecryptSummary(withCipher, 0, "KeySet without private keys");
         }
 
         // #region agent log
@@ -144,7 +144,7 @@ public static class SnapshotBackupPropertiesDecryptor
         }
         else
         {
-            log?.Report("  backupProperties: zone payload assente — unwrap da catalog");
+            log?.Report("  backupProperties: zone payload missing — unwrap from catalog");
         }
 
         // Runtime evidence (bp-align): zone-only DecryptKey non apre backupProperties;
@@ -222,8 +222,8 @@ public static class SnapshotBackupPropertiesDecryptor
 
         if (shareKeys.Count == 0)
         {
-            log?.Report("  backupProperties: nessuna ShareProtection — decrypt impossibile");
-            return new DecryptSummary(withCipher, 0, "ShareProtection assente");
+            log?.Report("  backupProperties: no ShareProtection — decrypt impossible");
+            return new DecryptSummary(withCipher, 0, "ShareProtection missing");
         }
 
         var decrypted = 0;
@@ -270,7 +270,7 @@ public static class SnapshotBackupPropertiesDecryptor
 
             if (plain is not { Length: > 0 })
             {
-                snapshot.BackupPropertiesStatus = "decrypt fallito";
+                snapshot.BackupPropertiesStatus = "decrypt failed";
                 continue;
             }
 
@@ -289,7 +289,7 @@ public static class SnapshotBackupPropertiesDecryptor
         swTotal.Stop();
         var msg = decrypted > 0
             ? $"ok {decrypted}/{withCipher} (regular={viaRegular}, fallback={viaFallback}, {swTotal.ElapsedMilliseconds} ms)"
-            : $"nessun decrypt riuscito ({withCipher} ciphertext, {swTotal.ElapsedMilliseconds} ms)";
+            : $"no decrypt succeeded ({withCipher} ciphertext, {swTotal.ElapsedMilliseconds} ms)";
         log?.Report($"  backupProperties: {msg}");
         // #region agent log
         AgentBpLog(
@@ -511,7 +511,7 @@ public static class SnapshotBackupPropertiesDecryptor
             var xmlStart = IndexOfXmlPlist(plain);
             if (xmlStart < 0)
             {
-                error = "né bplist né xml";
+                error = "neither bplist nor xml";
                 return false;
             }
 

@@ -90,14 +90,14 @@ public sealed class OctagonCuttlefishService
                 || string.IsNullOrWhiteSpace(session.CloudKitAuthToken))
             {
                 return new OctagonViableBottlesFetchResult(
-                    false, "ckAppInit keychain senza cloudKitUserId/token.", [], [], []);
+                    false, "ckAppInit keychain missing cloudKitUserId/token.", [], [], []);
             }
 
             var dbUrl = ResolveDatabaseUrl(session);
             if (string.IsNullOrWhiteSpace(dbUrl))
             {
                 return new OctagonViableBottlesFetchResult(
-                    false, "CloudKit database URL assente dopo ckAppInit.", [], [], []);
+                    false, "CloudKit database URL missing after ckAppInit.", [], [], []);
             }
 
             var codeBase = dbUrl.Replace("-ckdatabase.", "-ckcoderouter.", StringComparison.Ordinal);
@@ -130,11 +130,11 @@ public sealed class OctagonCuttlefishService
         if (session.OctagonBottledPeerEntropy is not { Length: > 0 })
         {
             return new OctagonPeerRecoveryResult(
-                false, "BottledPeerEntropy assente — fai prima Unlock Octagon bottle.");
+                false, "BottledPeerEntropy missing — run Unlock Octagon bottle first.");
         }
 
         if (string.IsNullOrWhiteSpace(session.Adsid))
-            return new OctagonPeerRecoveryResult(false, "Adsid assente (serve come salt HKDF).");
+            return new OctagonPeerRecoveryResult(false, "Adsid missing (used as HKDF salt).");
 
         Directory.CreateDirectory(outputDirectory);
 
@@ -150,14 +150,14 @@ public sealed class OctagonCuttlefishService
                 || string.IsNullOrWhiteSpace(session.CloudKitAuthToken))
             {
                 return new OctagonPeerRecoveryResult(
-                    false, "ckAppInit keychain senza cloudKitUserId/token.");
+                    false, "ckAppInit keychain missing cloudKitUserId/token.");
             }
 
             var dbUrl = ResolveDatabaseUrl(session);
             if (string.IsNullOrWhiteSpace(dbUrl))
             {
                 return new OctagonPeerRecoveryResult(
-                    false, "CloudKit database URL assente dopo ckAppInit.");
+                    false, "CloudKit database URL missing after ckAppInit.");
             }
 
             var codeBase = dbUrl.Replace("-ckdatabase.", "-ckcoderouter.", StringComparison.Ordinal);
@@ -187,7 +187,7 @@ public sealed class OctagonCuttlefishService
             {
                 return new OctagonPeerRecoveryResult(
                     false,
-                    "Nessuna OTBottle con Contents (fetchViableBottles vuoto o solo metadati).",
+                    "No OTBottle with Contents (fetchViableBottles empty or metadata only).",
                     ViableCount: viable.Count,
                     PartialCount: partial.Count);
             }
@@ -198,10 +198,10 @@ public sealed class OctagonCuttlefishService
                     string.Equals(b.EscrowRecordLabel, preferLabel, StringComparison.Ordinal)))
             {
                 log?.Report(
-                    $"  WARN: bottle Escrow sbloccata ({TrimLabel(preferLabel)}" +
+                    $"  WARN: unlocked Escrow bottle ({TrimLabel(preferLabel)}" +
                     (string.IsNullOrWhiteSpace(preferSerial) ? "" : $", serial={preferSerial}") +
-                    ") non ha Contents in fetchViableBottles. " +
-                    "Provo tutte le OTBottle (GCM fallirà se l'entropy non matcha).");
+                    ") has no Contents in fetchViableBottles. " +
+                    "Trying all OTBottles (GCM will fail if entropy does not match).");
             }
 
             OctagonViableBottle? match = null;
@@ -236,7 +236,7 @@ public sealed class OctagonCuttlefishService
                 }
 
                 lastErr = err;
-                log?.Report($"    GCM fail ({err}) — prossima bottle…");
+                log?.Report($"    GCM fail ({err}) — next bottle…");
             }
 
             if (match is null
@@ -245,7 +245,7 @@ public sealed class OctagonCuttlefishService
             {
                 return new OctagonPeerRecoveryResult(
                     false,
-                    $"Decrypt OTBottle fallito su {ordered.Count} candidate(s): {lastErr}. " +
+                    $"Decrypt OTBottle failed on {ordered.Count} candidate(s): {lastErr}. " +
                     "L'entropy Escrow deve provenire dalla stessa bottle/device delle Contents " +
                     "in fetchViableBottles (sblocca una bottle SHA256:… presente nella lista viable).",
                     EscrowLabel: preferLabel,
@@ -336,7 +336,7 @@ public sealed class OctagonCuttlefishService
         if (string.IsNullOrWhiteSpace(peerId) && !(allowEmpty && forPeerId is not null))
         {
             return new RecoverableTlkSharesResult(
-                false, "OctagonPeerId assente.",
+                false, "OctagonPeerId missing.",
                 new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase),
                 []);
         }
@@ -346,7 +346,7 @@ public sealed class OctagonCuttlefishService
         if (session.OctagonPeerEncryptionPkcs8 is not { Length: > 0 })
         {
             return new RecoverableTlkSharesResult(
-                false, "Peer encryption PKCS#8 assente.",
+                false, "Peer encryption PKCS#8 missing.",
                 new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase),
                 []);
         }
@@ -371,7 +371,7 @@ public sealed class OctagonCuttlefishService
             if (string.IsNullOrWhiteSpace(dbUrl))
             {
                 return new RecoverableTlkSharesResult(
-                    false, "CloudKit database URL assente.",
+                    false, "CloudKit database URL missing.",
                     new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase),
                     []);
             }
@@ -431,7 +431,7 @@ public sealed class OctagonCuttlefishService
             if (raw is null)
             {
                 return new RecoverableTlkSharesResult(
-                    false, lastErr ?? "fetchRecoverableTLKShares fallito.",
+                    false, lastErr ?? "fetchRecoverableTLKShares failed.",
                     new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase),
                     []);
             }
@@ -496,7 +496,7 @@ public sealed class OctagonCuttlefishService
                 tlkByView.Count > 0,
                 tlkByView.Count > 0
                     ? $"OK — {unwrapped} TLK da recoverable shares."
-                    : "Nessun TLK unwrapped dal recoverable body.",
+                    : "No TLK unwrapped from recoverable body.",
                 tlkByView,
                 syncRecs,
                 shareHint);
@@ -797,7 +797,7 @@ public sealed class OctagonCuttlefishService
 
             var dbUrl = ResolveDatabaseUrl(session);
             if (string.IsNullOrWhiteSpace(dbUrl))
-                return (false, 0, [], "CloudKit database URL assente.");
+                return (false, 0, [], "CloudKit database URL missing.");
 
             var codeBase = dbUrl.Replace("-ckdatabase.", "-ckcoderouter.", StringComparison.Ordinal);
             log?.Report($"  probe invoke {functionName}…");
@@ -909,9 +909,9 @@ public sealed class OctagonCuttlefishService
         string? functionName = null)
     {
         var mme = session.MobileMeAuthToken
-                  ?? throw new InvalidOperationException("mmeAuthToken assente.");
+                  ?? throw new InvalidOperationException("mmeAuthToken missing.");
         var ckTok = session.CloudKitAuthToken
-                    ?? throw new InvalidOperationException("CloudKitAuthToken assente.");
+                    ?? throw new InvalidOperationException("CloudKitAuthToken missing.");
 
         request.Headers.TryAddWithoutValidation("Accept", "application/json");
         request.Headers.TryAddWithoutValidation(

@@ -27,7 +27,7 @@ public static class CloudKitDelimitedRequest
     {
         var zones = zoneNames.ToList();
         if (zones.Count == 0)
-            throw new ArgumentException("Nessuna zona da recuperare.");
+            throw new ArgumentException("No zone to retrieve.");
         // Lab ACL: header identity (cloudKitUserId) may differ from zone owner.
         var owner = string.IsNullOrWhiteSpace(zoneOwnerUserId) ? cloudKitUserId : zoneOwnerUserId;
 
@@ -95,11 +95,14 @@ public static class CloudKitDelimitedRequest
         string zoneName,
         IEnumerable<string> recordNames,
         RestoreRequestContext? restore = null,
-        CloudKitContainerBinding? container = null)
+        CloudKitContainerBinding? container = null,
+        string? zoneOwnerUserId = null)
     {
         var names = recordNames.ToList();
         if (names.Count == 0)
-            throw new ArgumentException("Nessun record da recuperare.");
+            throw new ArgumentException("No records to retrieve.");
+
+        var owner = string.IsNullOrWhiteSpace(zoneOwnerUserId) ? cloudKitUserId : zoneOwnerUserId;
 
         byte[]? payload = null;
         for (var i = 0; i < names.Count; i++)
@@ -109,7 +112,8 @@ public static class CloudKitDelimitedRequest
             inner.WriteVarint(2, FetchRecordsType);
             inner.WriteVarint(4, 1);
 
-            var retrieve = BuildRecordRetrieveBody(names[i], zoneName, cloudKitUserId);
+            // Lab ACL: header identity (cloudKitUserId) may differ from zone/record owner.
+            var retrieve = BuildRecordRetrieveBody(names[i], zoneName, owner);
 
             var op = new ProtobufWriter();
             if (i == 0)
@@ -387,7 +391,7 @@ public static class CloudKitDelimitedRequest
         byte[]? continuationMarker = null)
     {
         if (string.IsNullOrWhiteSpace(queryRecordType))
-            throw new ArgumentException("queryRecordType assente.", nameof(queryRecordType));
+            throw new ArgumentException("queryRecordType missing.", nameof(queryRecordType));
 
         var inner = new ProtobufWriter();
         inner.WriteString(1, Guid.NewGuid().ToString().ToUpperInvariant());

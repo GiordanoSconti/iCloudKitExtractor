@@ -31,7 +31,7 @@ public static class EscrowPcsUnlock
         {
             return new EscrowPcsUnlockResult(
                 false,
-                $"Manca {EscrowPcsKeyUnwrap.BackupBagPasswordFileName} — esegui prima Unwrap PCS.");
+                $"Missing {EscrowPcsKeyUnwrap.BackupBagPasswordFileName} — run Unwrap PCS first.");
         }
 
         var keysPath = ResolveEscrowedKeysPath(outputDirectory);
@@ -39,7 +39,7 @@ public static class EscrowPcsUnlock
         {
             return new EscrowPcsUnlockResult(
                 false,
-                $"Manca {EscrowedKeysFileName} (o {EscrowedKeysAltFileName}) — riesegui get_records / recover.");
+                $"Missing {EscrowedKeysFileName} (or {EscrowedKeysAltFileName}) — re-run get_records / recover.");
         }
 
         var bag = await File.ReadAllBytesAsync(bagPath, ct);
@@ -64,7 +64,7 @@ public static class EscrowPcsUnlock
         {
             if (!PcsDer.TryParseBackupEscrow(kPcsMetadataEscrowedKeys, out var escrow) || escrow is null)
             {
-                return (Ok: false, Message: "BackupEscrow DER (appl[4]) non parsabile.",
+                return (Ok: false, Message: "BackupEscrow DER (appl[4]) not parseable.",
                     Plain: (byte[]?)null, KeyIdHex: (string?)null, Service: (int?)null);
             }
 
@@ -75,13 +75,13 @@ public static class EscrowPcsUnlock
             }
             catch (Exception ex)
             {
-                return (Ok: false, Message: $"KeySet BackupBagPassword non parsabile: {ex.Message}",
+                return (Ok: false, Message: $"KeySet BackupBagPassword not parseable: {ex.Message}",
                     Plain: null, KeyIdHex: null, Service: null);
             }
 
             if (keys.Count == 0)
             {
-                return (Ok: false, Message: "KeySet senza chiavi private.",
+                return (Ok: false, Message: "KeySet has no private keys.",
                     Plain: null, KeyIdHex: null, Service: null);
             }
 
@@ -89,7 +89,7 @@ public static class EscrowPcsUnlock
             if (master is null)
             {
                 return (Ok: false,
-                    Message: $"Nessuna master key per public X={Convert.ToHexString(escrow.MasterKeyPublic.AsSpan(0, Math.Min(8, escrow.MasterKeyPublic.Length)))}…",
+                    Message: $"No master key for public X={Convert.ToHexString(escrow.MasterKeyPublic.AsSpan(0, Math.Min(8, escrow.MasterKeyPublic.Length)))}…",
                     Plain: null, KeyIdHex: null, Service: null);
             }
 
@@ -101,7 +101,7 @@ public static class EscrowPcsUnlock
             }
             catch (Exception ex)
             {
-                return (Ok: false, Message: $"RFC6637 unwrap fallito: {ex.Message}",
+                return (Ok: false, Message: $"RFC6637 unwrap failed: {ex.Message}",
                     Plain: null, KeyIdHex: keyIdHex, Service: master.Service);
             }
 
@@ -112,7 +112,7 @@ public static class EscrowPcsUnlock
             }
             catch (Exception ex)
             {
-                return (Ok: false, Message: $"AES-GCM DataB fallito: {ex.Message}",
+                return (Ok: false, Message: $"AES-GCM DataB failed: {ex.Message}",
                     Plain: null, KeyIdHex: keyIdHex, Service: master.Service);
             }
         }, ct);
@@ -142,7 +142,7 @@ public static class EscrowPcsUnlock
         log?.Report($"  Unlock PCS OK → {outPath} ({crypto.Plain.Length} B)");
         return new EscrowPcsUnlockResult(
             true,
-            $"PCS KeySet sbloccato ({crypto.Plain.Length} B)",
+            $"PCS KeySet unlocked ({crypto.Plain.Length} B)",
             outPath,
             crypto.Plain,
             crypto.KeyIdHex);

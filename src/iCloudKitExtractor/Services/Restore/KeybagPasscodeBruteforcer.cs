@@ -33,7 +33,7 @@ public static class KeybagPasscodeBruteforcer
             {
                 if (keybag.TryUnlock(passcode))
                 {
-                    log?.Report($"  passcode trovato: {MaskPasscode(passcode)} ({keybag.UnwrappedClassKeys.Count} class keys)");
+                    log?.Report($"  passcode found: {MaskPasscode(passcode)} ({keybag.UnwrappedClassKeys.Count} class keys)");
                     return new PasscodeCrackResult(passcode, keybag, keybag.UnwrappedClassKeys);
                 }
             }
@@ -72,7 +72,7 @@ public static class KeybagPasscodeBruteforcer
                     var passcode = pin.ToString($"D{digits}");
                     if (keybag.TryUnlock(passcode))
                     {
-                        log?.Report($"  PIN trovato: {MaskPasscode(passcode)}");
+                        log?.Report($"  PIN found: {MaskPasscode(passcode)}");
                         return new PasscodeCrackResult(passcode, keybag, keybag.UnwrappedClassKeys);
                     }
 

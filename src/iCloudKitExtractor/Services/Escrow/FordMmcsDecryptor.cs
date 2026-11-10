@@ -157,7 +157,7 @@ public static class FordMmcsDecryptor
             return pt;
         }
 
-        throw new CryptographicException("Ford AES-SIV decrypt fallito (key/AD)");
+        throw new CryptographicException("Ford AES-SIV decrypt failed (key/AD)");
     }
 
     private static bool TryAesSivFord(
@@ -591,7 +591,7 @@ public static class FordMmcsDecryptor
         }
 
         if (keys.Count == 0)
-            throw new CryptographicException("ParseFordInfo: nessuna chunk key (0x04‖32)");
+            throw new CryptographicException("ParseFordInfo: no chunk key (0x04‖32)");
         return keys;
     }
 
@@ -614,7 +614,7 @@ public static class FordMmcsDecryptor
         ReadOnlySpan<byte> headerMac20 = default)
     {
         if (dataChunk.IsEmpty)
-            throw new CryptographicException("data chunk vuoto");
+            throw new CryptographicException("empty data chunk");
 
         var derived60 = HkdfSha256(fordChunkKey, SignatureKeyInfo, 0x60);
         var k1 = derived60.AsSpan(0x00, 0x20).ToArray();
@@ -663,7 +663,7 @@ public static class FordMmcsDecryptor
                 });
             // #endregion
             throw new CryptographicException(
-                "Chunk decrypt: MAC/SIV verify fallito (staging MAC20)", last);
+                "Chunk decrypt: MAC/SIV verify failed (staging MAC20)", last);
         }
 
         if (dataChunk.Length > ChunkHdrLen)
@@ -691,10 +691,10 @@ public static class FordMmcsDecryptor
                 return pt;
 
             throw new CryptographicException(
-                "Chunk decrypt: MAC/SIV verify fallito (hdr‖ct)", last);
+                "Chunk decrypt: MAC/SIV verify failed (hdr‖ct)", last);
         }
 
-        throw new CryptographicException("data chunk: serve MAC authorizeGet o hdr‖ct");
+        throw new CryptographicException("data chunk: needs authorizeGet MAC or hdr‖ct");
     }
 
     /// <summary>
@@ -736,7 +736,7 @@ public static class FordMmcsDecryptor
             var n = FindMacVerifiedPrefixLength(k1, hdr, decrypted, plainLengthHint);
             if (n <= 0)
             {
-                error = new CryptographicException("Chunk AES-CTR decrypt: MAC verify fallito (fallback)");
+                error = new CryptographicException("Chunk AES-CTR decrypt: MAC verify failed (fallback)");
                 return false;
             }
 
@@ -1426,7 +1426,7 @@ public static class FordMmcsDecryptor
         ChunkTree tree)
     {
         if (hosts.Count == 0)
-            throw new CryptographicException("host-walk: nessun storage materializzato");
+            throw new CryptographicException("host-walk: no storage materializzato");
 
         var pipes = new List<string>(hosts.Count);
         var fordBytes = 0;
@@ -1533,12 +1533,12 @@ public static class FordMmcsDecryptor
         ChunkTree? chunkTree = null)
     {
         if (authorizeGetBody.IsEmpty)
-            throw new CryptographicException("align: authorizeGet body mancante");
+            throw new CryptographicException("align: authorizeGet body missing");
 
         var chunkKeys = CollectFordKeysFromEmptyStorages(fileEncryptionKey, fordStorages).ToList();
         var plan = UbChunkBuilder.BuildDecryptPlan(authorizeGetBody);
         // Interleaved/packed-host già restituisce slice per-ref (len == ChunkInfo.Length).
-        // Ri-slicare su cryptoSum del FileGroup intero → "refs slice fallito: packed=512…".
+        // Ri-slicare su cryptoSum del FileGroup intero → "refs slice failed: packed=512…".
         string slicePath;
         var aligned = TryUsePreSlicedRefChunks(dataHostChunks, plan);
         if (aligned is not null)
@@ -1969,7 +1969,7 @@ public static class FordMmcsDecryptor
         long? dataObjectStart = null)
     {
         if (authorizeGetBody.IsEmpty)
-            throw new CryptographicException("align: authorizeGet body mancante");
+            throw new CryptographicException("align: authorizeGet body missing");
 
         var chunkKeys = CollectFordKeysFromEmptyStorages(fileEncryptionKey, fordStorages).ToList();
         var plan = UbChunkBuilder.BuildDecryptPlan(authorizeGetBody);
@@ -1986,7 +1986,7 @@ public static class FordMmcsDecryptor
             {
                 throw new InvalidOperationException(
                     $"data hosts concat {packedSum:N0} B troppo grande per slice packed; " +
-                    "serve geometria per-host (perHostOwned/pre-sliced)");
+                    "needs per-host geometry (perHostOwned/pre-sliced)");
             }
 
             aligned = SliceDataByFileRefs(
@@ -2317,7 +2317,7 @@ public static class FordMmcsDecryptor
         }
 
         throw new CryptographicException(
-            $"refs slice fallito: packed={packed.Length} refs={fileRefs.Count} cryptoSum={plan.TotalCryptoBytes}");
+            $"refs slice failed: packed={packed.Length} refs={fileRefs.Count} cryptoSum={plan.TotalCryptoBytes}");
     }
 
     private static List<byte[]> TrySliceRefsAtPackedStart(
@@ -2459,7 +2459,7 @@ public static class FordMmcsDecryptor
 
         if (keys.Count == 0)
         {
-            throw new CryptographicException("Ford AES-SIV decrypt fallito (key/AD)");
+            throw new CryptographicException("Ford AES-SIV decrypt failed (key/AD)");
         }
 
         var chunkKeys = keys;
@@ -2503,7 +2503,7 @@ public static class FordMmcsDecryptor
         if (fillStrict)
         {
             throw new CryptographicException(
-                $"strict: refs slice/assemble fallito keys={chunkKeys.Count} " +
+                $"strict: refs slice/assemble failed keys={chunkKeys.Count} " +
                 $"refs={plan?.References.Count ?? 0} macs={macs.Count}");
         }
 
@@ -2571,7 +2571,7 @@ public static class FordMmcsDecryptor
                 {
                     pt = ChunkDecrypt(key, chunk, plainHint, macs[mi]);
                     if (!VerifyDigestWithChunkKey(key, pt, macs[mi]))
-                        throw new CryptographicException("VerifyDigest fallito (HMAC/SHA256≠ChunkInfo)");
+                        throw new CryptographicException("VerifyDigest failed (HMAC/SHA256≠ChunkInfo)");
                     break;
                 }
                 catch (Exception ex)
@@ -2582,7 +2582,7 @@ public static class FordMmcsDecryptor
             }
 
             if (pt is null)
-                throw new CryptographicException("ChunkDecrypt: nessun MAC authorizeGet valido", last);
+                throw new CryptographicException("ChunkDecrypt: no MAC authorizeGet valido", last);
 
             ms.Write(pt);
         }
@@ -2992,7 +2992,7 @@ public static class FordMmcsDecryptor
             }
 
             if (n <= 0)
-                throw new CryptographicException($"Ford align: slice {i} vuoto (off={off})");
+                throw new CryptographicException($"Ford align: slice {i} empty (off={off})");
             var slice = new byte[n];
             Buffer.BlockCopy(concat, off, slice, 0, n);
             slices.Add(slice);

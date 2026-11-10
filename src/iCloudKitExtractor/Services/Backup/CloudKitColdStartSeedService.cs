@@ -28,7 +28,7 @@ public sealed class CloudKitColdStartSeedService
         var cnEntries = CloudKitManifestChecksumParser.ParseCnEntries(devicePayload, snapshotPayload);
         if (cnEntries.Count == 0)
         {
-            log?.Report("  manifestChecksums (:CN:) assente nel bootstrap");
+            log?.Report("  manifestChecksums (:CN:) missing in bootstrap");
             return [];
         }
 

@@ -33,27 +33,22 @@ public sealed class CloudKitPreAuthService
     {
         var catalog = UbChunkCatalog.Empty;
 
-        restore.TryAbsorbFromPayload(devicePayload);
-        restore.TryAbsorbFromPayload(snapshotPayload);
-        restore.TryAbsorbFromPayload(mbsPayload);
-        restore.TryAbsorbFromPayload(lockPayload);
-
-        var absorbed = ForegroundRestorePlistExtractor.Resolve(
-            devicePayload, snapshotPayload, mbsPayload, lockPayload);
-        if (absorbed is not null)
-            log?.Report(
-                $"  Foreground assorbito da risposta (hw={SafePrefix(absorbed.HardwareIdHex, 12)}…)");
-        restore.EnsureForeground(session, device);
+        restore.TryAbsorbFromPayload(devicePayload, "preAuth D:", log);
+        restore.TryAbsorbFromPayload(snapshotPayload, "preAuth S:", log);
+        restore.TryAbsorbFromPayload(mbsPayload, "preAuth mbs", log);
+        restore.TryAbsorbFromPayload(lockPayload, "preAuth Lock", log);
+        restore.EnsureForeground(session, device, log);
+        log?.Report("  " + restore.FormatObservedSummary());
 
         var foreground = restore.Foreground!;
         log?.Report(
-            $"  Foreground Restore (proto={foreground.ProtoVersion}, sha256={SafePrefix(foreground.PlistSha256Base64, 12)}…, hw={SafePrefix(foreground.HardwareIdHex, 12)}…)");
+            $"  Foreground Restore in use (proto={foreground.ProtoVersion}, sha256={SafePrefix(foreground.PlistSha256Base64, 12)}…, hw={SafePrefix(foreground.HardwareIdHex, 12)}…)");
 
         var cnEntries = CloudKitManifestChecksumParser.ParseCnEntries(
             devicePayload, snapshotPayload, mbsPayload, lockPayload);
         if (cnEntries.Count == 0)
         {
-            log?.Report("  manifestChecksums (:CN:) assente — PreAuth senza frame N:");
+            log?.Report("  manifestChecksums (:CN:) missing — PreAuth without N: frame");
             return Finish(catalog, log);
         }
 
@@ -96,11 +91,11 @@ public sealed class CloudKitPreAuthService
         IProgress<string>? log = null,
         CancellationToken ct = default)
     {
-        restore.TryAbsorbFromPayload(devicePayload);
-        restore.TryAbsorbFromPayload(snapshotPayload);
-        restore.TryAbsorbFromPayload(mbsPayload);
-        restore.TryAbsorbFromPayload(lockPayload);
-        restore.EnsureForeground(session, device);
+        restore.TryAbsorbFromPayload(devicePayload, "preAuth2 D:", log);
+        restore.TryAbsorbFromPayload(snapshotPayload, "preAuth2 S:", log);
+        restore.TryAbsorbFromPayload(mbsPayload, "preAuth2 mbs", log);
+        restore.TryAbsorbFromPayload(lockPayload, "preAuth2 Lock", log);
+        restore.EnsureForeground(session, device, log);
 
         var cnEntries = CloudKitManifestChecksumParser.ParseCnEntries(
             devicePayload, snapshotPayload, mbsPayload, lockPayload);
@@ -126,7 +121,7 @@ public sealed class CloudKitPreAuthService
             try
             {
                 var payload = await _gateway.QueryRetrieveWscPreAuthAsync(session, body, ct, restore);
-                restore.TryAbsorbFromPayload(payload);
+                restore.TryAbsorbFromPayload(payload, $"preAuth query r{round}", log);
 
                 var parsed = UbChunkCatalogParser.Parse(payload);
                 catalog = catalog.Merge(parsed);
@@ -181,7 +176,7 @@ public sealed class CloudKitPreAuthService
             try
             {
                 var payload = await _gateway.RecordRetrieveWscPreAuthAsync(session, body, ct, restore);
-                restore.TryAbsorbFromPayload(payload);
+                restore.TryAbsorbFromPayload(payload, $"preAuth record r{round}", log);
 
                 var parsed = UbChunkCatalogParser.Parse(payload);
                 catalog = catalog.Merge(parsed);
@@ -218,7 +213,7 @@ public sealed class CloudKitPreAuthService
     private static CloudKitPreAuthResult Finish(UbChunkCatalog catalog, IProgress<string>? log)
     {
         if (catalog.RecordNames.Count == 0 && catalog.SignedChunks.Count == 0)
-            log?.Report("  PreAuth → catalogo vuoto (verifica batch S: e Lock)");
+            log?.Report("  PreAuth → empty catalog (check S: batch and Lock)");
 
         return new CloudKitPreAuthResult { Catalog = catalog };
     }

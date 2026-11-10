@@ -42,7 +42,7 @@ public sealed class OctagonEscrowSrp
         var username = Encoding.UTF8.GetBytes(dsid.Trim());
         var password = Encoding.UTF8.GetBytes(EscrowSrpClient.NormalizeIcsc(passcode));
         if (!EscrowSrpClient.IsValidServerB(serverB))
-            throw new InvalidOperationException("B server escrow non valida.");
+            throw new InvalidOperationException("Invalid escrow server B.");
 
         var B = BytesToBigInt(serverB);
         var trimB = TrimBigInt(B);
@@ -51,7 +51,7 @@ public sealed class OctagonEscrowSrp
         var x = HashToBigInt(Concat(salt, inner));
         var u = HashToBigInt(Concat(_trimA, trimB));
         if (u == BigInteger.Zero)
-            throw new InvalidOperationException("Parametro u SRP nullo.");
+            throw new InvalidOperationException("SRP parameter u is null.");
 
         var kgx = k * BigInteger.ModPow(G, x, N) % N;
         var baseS = (B - kgx + N) % N;

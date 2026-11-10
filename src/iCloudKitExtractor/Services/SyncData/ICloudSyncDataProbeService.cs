@@ -12,14 +12,10 @@ namespace iCloudKitExtractor.Services.SyncData;
 /// <summary>
 /// Probe iCloud Sync Data (capture <c>capture_http_20260802_054842</c>):
 /// Escrow KeySet già in sessione → per ogni container
-/// ckAppInit → zone/retrieve(default) → zone/sync →
-/// per zona custom: zone/retrieve → record/sync → record/retrieve.
-/// (AppDefaultZone: getChanges non supportato — ck1e0lk64 / ck13ujr18.)
+/// ckAppInit → zone/retrieve → record/sync (download payload grezzi).
 /// </summary>
 public sealed class ICloudSyncDataProbeService
 {
-    private const int RecordRetrieveBatchSize = 8;
-
     private readonly HttpClient _http;
     private readonly ICloudBackupOrchestrator _orchestrator;
     private readonly CloudKitGatewayClient _gateway;
@@ -47,14 +43,14 @@ public sealed class ICloudSyncDataProbeService
         bool buildPhotosRecordMetadata = false)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Sessione senza dsid — effettua il login.");
+            throw new InvalidOperationException("Session has no dsid — sign in first.");
         if (string.IsNullOrWhiteSpace(session.CloudKitAuthToken)
             && string.IsNullOrWhiteSpace(session.MobileMeAuthToken)
             && string.IsNullOrWhiteSpace(session.CloudKitGsToken)
             && string.IsNullOrWhiteSpace(session.IdentityToken)
             && string.IsNullOrWhiteSpace(session.GsIdmsToken))
         {
-            throw new InvalidOperationException("Sessione senza token CloudKit/MME/Identity.");
+            throw new InvalidOperationException("Session has no CloudKit/MME/Identity token.");
         }
 
         var ids = selectedCategoryIds is { Count: > 0 }
@@ -110,7 +106,7 @@ public sealed class ICloudSyncDataProbeService
                     Path.Combine(outDir, "ck", "apple.photos.cloud")))
             {
                 WriteRunLog(
-                    $"Photos: ultima sessione locale incompleta → ripresa {Path.GetFileName(outDir)} (no re-download)");
+                    $"Photos: last local session incomplete → resuming {Path.GetFileName(outDir)} (no re-download)");
             }
             WriteRunLog($"Log file → {runLogPath}");
             await _orchestrator.RefreshAnisetteOnlyAsync(session, teeLog, ct).ConfigureAwait(false);
@@ -138,16 +134,16 @@ public sealed class ICloudSyncDataProbeService
 
             var containers = SyncDataCategoryCatalog.ContainersForSelection(ids);
             if (containers.Count == 0 && !includeAccountInfo)
-                throw new InvalidOperationException("Nessuna categoria Sync Data selezionata.");
+                throw new InvalidOperationException("No Sync Data category selected.");
 
             if (containers.Count == 0)
             {
                 WriteRunLog(
                     includeAccountInfo
                         ? "CloudKit Sync — skip (solo Account Info)"
-                        : "CloudKit Sync — skip (nessun container)");
+                        : "CloudKit Sync — skip (no containers)");
                 progress?.Report(new SyncDataProgressReport(
-                    "Completato (senza CloudKit container)", 100));
+                    "Completed (no CloudKit container)", 100));
                 return new SyncDataProbeResult(outDir, containerResults, runLogPath);
             }
 
@@ -156,32 +152,22 @@ public sealed class ICloudSyncDataProbeService
                 $"CloudKit Sync ({containers.Count} container)…", 5));
 
 
-            var nContainers = Math.Max(1, containers.Count);
             for (var i = 0; i < containers.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
                 var binding = containers[i];
-                var progressBase = 5 + 90.0 * i / nContainers;
-                var progressSpan = 90.0 / nContainers;
                 progress?.Report(new SyncDataProgressReport(
                     $"Container {i + 1}/{containers.Count}: {ShortContainerName(binding.ContainerId)}",
-                    progressBase,
-                    PhaseLabel: ShortContainerName(binding.ContainerId),
-                    PhasePercent: 0,
-                    PhaseIndeterminate: true));
+                    5 + 90.0 * i / Math.Max(1, containers.Count)));
                 containerResults.Add(
                     await ProbeContainerAsync(
                         session, binding, outDir, teeLog, progress, anisetteRefresh, ct,
-                        buildPhotosRecordMetadata,
-                        progressBase, progressSpan,
-                        containerIndex: i + 1,
-                        containerCount: containers.Count));
-                // Distanzia i container: evita cascata cknegrxn → HTTP 503.
-                await Task.Delay(900, ct);
+                        buildPhotosRecordMetadata));
+                await Task.Delay(250, ct);
             }
 
             var ok = containerResults.Count(static r => r.Ok);
-            WriteRunLog($"Sync Data completato: {ok}/{containerResults.Count} container OK → {outDir}");
+            WriteRunLog($"Sync Data completed: {ok}/{containerResults.Count} containers OK → {outDir}");
             try
             {
                 WriteRunLog("Calcolo firme HASH (SHA-256)…");
@@ -197,8 +183,7 @@ public sealed class ICloudSyncDataProbeService
             }
 
             progress?.Report(new SyncDataProgressReport(
-                $"Completato: {ok}/{containerResults.Count} container OK", 100,
-                ClearPhase: true));
+                $"Completed: {ok}/{containerResults.Count} container OK", 100));
             return new SyncDataProbeResult(outDir, containerResults, runLogPath);
         }
         finally
@@ -232,7 +217,7 @@ public sealed class ICloudSyncDataProbeService
         }
         catch (Exception ex)
         {
-            log?.Report($"  Account Info ERRORE: {ex.Message}");
+            log?.Report($"  Account Info ERROR: {ex.Message}");
         }
     }
 
@@ -244,43 +229,23 @@ public sealed class ICloudSyncDataProbeService
         IProgress<SyncDataProgressReport>? progress,
         SyncDataAnisetteRefresh anisetteRefresh,
         CancellationToken ct,
-        bool buildPhotosRecordMetadata = false,
-        double progressBase = 0,
-        double progressSpan = 90,
-        int containerIndex = 1,
-        int containerCount = 1)
+        bool buildPhotosRecordMetadata = false)
     {
         var shortName = ShortContainerName(binding.ContainerId);
         var outDir = Path.Combine(rootOut, "ck", Sanitize(shortName));
         Directory.CreateDirectory(outDir);
         log?.Report($"—— {binding.ContainerId} ——");
 
-        void Report(
-            string detail,
-            double frac,
-            string phase,
-            double? phasePct = null,
-            bool phaseIndeterminate = false)
-        {
-            var overall = progressBase + progressSpan * Math.Clamp(frac, 0, 1);
-            progress?.Report(new SyncDataProgressReport(
-                $"[{containerIndex}/{containerCount}] {shortName}: {detail}",
-                Percent: overall,
-                PhaseLabel: phase,
-                PhasePercent: phasePct,
-                PhaseIndeterminate: phaseIndeterminate));
-        }
 
         try
         {
             await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
-            Report("ckAppInit…", 0.02, "ckAppInit", phaseIndeterminate: true);
+            progress?.Report(new SyncDataProgressReport($"ckAppInit {shortName}…", IsIndeterminate: true));
             await _orchestrator.CkAppInitAsync(session, binding.ContainerId, log, ct);
             if (string.IsNullOrWhiteSpace(session.CloudKitUserId)
                 || string.IsNullOrWhiteSpace(session.CloudKitAuthToken))
             {
-                log?.Report("  ckAppInit incompleto — skip");
-                Report("ckAppInit incompleto — skip", 1.0, "skip", 100);
+                log?.Report("  ckAppInit incomplete — skip");
                 return new SyncDataContainerResult(binding.ContainerId, false, 0, "ckAppInit incompleto");
             }
 
@@ -292,7 +257,6 @@ public sealed class ICloudSyncDataProbeService
 
             if (binding.ContainerId.Equals("com.apple.photos.cloud", StringComparison.OrdinalIgnoreCase))
             {
-                Report("Photos recover…", 0.05, "Photos", phaseIndeterminate: true);
                 var photos = new PhotosCloudSyncService(_http, _gateway);
                 photos.SetAnisetteRefresh(anisetteRefresh);
                 return await photos.RecoverAsync(
@@ -302,7 +266,6 @@ public sealed class ICloudSyncDataProbeService
 
             if (binding.ContainerId.Equals("com.apple.notes", StringComparison.OrdinalIgnoreCase))
             {
-                Report("Notes recover…", 0.05, "Notes", phaseIndeterminate: true);
                 var notes = new NotesCloudSyncService(_gateway);
                 notes.SetAnisetteRefresh(anisetteRefresh);
                 return await notes.RecoverAsync(session, binding, outDir, log, progress, ct);
@@ -310,149 +273,91 @@ public sealed class ICloudSyncDataProbeService
 
             var zones = new HashSet<string>(StringComparer.Ordinal);
             long totalBytes = 0;
-            var callsContainer = IsCallHistoryContainer(binding.ContainerId);
-            var sawHttp503 = false;
 
             // zone/retrieve solo su zone di sistema CloudKit (niente nomi inventati).
             foreach (var zoneHint in new[] { "default", "_defaultZone" })
             {
                 ct.ThrowIfCancellationRequested();
-                Report($"zone/retrieve {zoneHint}…", 0.08, "zone/retrieve", phaseIndeterminate: true);
                 await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
-                var (ok, bytes, names, errNote) = await ZoneRetrieveAsync(
+                var (ok, bytes, names) = await ZoneRetrieveAsync(
                     session, binding, outDir, zoneHint, log, ct);
                 totalBytes += bytes;
                 foreach (var z in names)
                     zones.Add(z);
-                if (IsHttp503Message(errNote))
-                {
-                    sawHttp503 = true;
-                    // Calls: non martellare anche _defaultZone se default è già 503.
-                    if (callsContainer)
-                    {
-                        log?.Report(
-                            "  Calls: HTTP 503 su zone/retrieve — stop retrieve, " +
-                            "attesa 10 s prima di zone/sync…");
-                        Report("HTTP 503 — attesa…", 0.10, "backoff", phaseIndeterminate: true);
-                        await Task.Delay(10_000, ct).ConfigureAwait(false);
-                        break;
-                    }
-                }
-
                 _ = ok;
             }
-
-            // AppDefaultZone: getChanges / record/sync non supportati (ck1e0lk64, ck13ujr18).
-            // Solo zone/retrieve sopra; i record vivono nelle custom zone.
-            log?.Report(
-                "  record/sync _defaultZone skip — AppDefaultZone non supporta getChanges " +
-                "(Only custom zones / ck1e0lk64)");
 
             // Database changes → altre zone
             string? zoneSyncReason = null;
             try
             {
-                Report("zone/sync (database changes)…", 0.15, "zone/sync", phaseIndeterminate: true);
                 await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
                 log?.Report("  zone/sync (database changes)…");
-                var (zsyncBytes, zsyncErr, zsyncNames) = await ZoneSyncWithRateLimitRetryAsync(
-                    session, binding, outDir, log, ct);
-                totalBytes += zsyncBytes;
-                zoneSyncReason = zsyncErr;
-                if (IsHttp503Message(zsyncErr))
-                    sawHttp503 = true;
-                foreach (var z in zsyncNames)
-                    zones.Add(z);
+                var body = CloudKitDelimitedRequest.BuildZoneRetrieveChanges(
+                    session.CloudKitUserId, container: binding);
+                var payload = await _gateway.ZoneChangesAsync(session, body, ct, binding);
+                totalBytes += payload.Length;
+                await SaveAsync(outDir, "zone_changes", payload, ct);
+                if (CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var zsyncErr))
+                {
+                    zoneSyncReason = zsyncErr
+                        ?? CloudKitResponseParser.TryGetCloudKitReason(payload)
+                        ?? $"payload errore {payload.Length} B";
+                    log?.Report($"  zone/sync → {payload.Length:N0} B — error: {zoneSyncReason}");
+                }
+                else
+                {
+                    var note = CloudKitResponseParser.TryGetCloudKitReason(payload)
+                        ?? CloudKitResponseParser.DescribeCompactPayload(payload);
+                    log?.Report(
+                        $"  zone/sync → {payload.Length:N0} B" +
+                        (note is null ? "" : $" — {note}"));
+
+                    var strings = CloudKitResponseParser.ExtractDiagnosticStrings(payload);
+                    foreach (var z in WhatsAppCloudKitProbeService.ExtractLikelyZoneNames(strings))
+                        zones.Add(z);
+                }
             }
             catch (Exception ex)
             {
                 zoneSyncReason = ex.Message;
                 log?.Report($"  zone/sync skip: {ex.Message}");
-                if (IsHttp503Message(ex.Message))
-                {
-                    sawHttp503 = true;
-                    Report("zone/sync HTTP 503 — attesa…", 0.16, "backoff", phaseIndeterminate: true);
-                    await Task.Delay(callsContainer ? 12_000 : 8_000, ct).ConfigureAwait(false);
-                }
             }
 
-            // Default già syncata sopra; qui solo zone custom (no doppio passaggio).
+            // _defaultZone non supporta record/sync (ck1e0lk64); scarta fingerprint spuri.
             // metadata_zone = zona sistema CloudKit: spesso solo RetryAfter, zero record utili.
-            // NON scartare com.apple.coredata.cloudkit.zone: è la zona dati di Voice Memos
-            // (e altri Core Data CloudKit) — blacklistata per errore in fe63242.
             zones.RemoveWhere(IsDefaultZoneName);
             zones.RemoveWhere(IsCloudKitSystemZone);
             zones.RemoveWhere(static z => !IsPlausibleCustomZone(z));
 
-            // Voice Memos: forza zona Core Data + tentativo controllato di metadata_zone
-            // (advertised in zone/retrieve; può RetryAfter — RecordSync lo gestisce).
-            if (binding.ContainerId.Equals(
-                    VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase))
-            {
-                var before = zones.Count;
-                zones.Add(VoiceMemosAudioDownloader.SyncZone);
-                zones.Add(VoiceMemosAudioDownloader.MetadataZone);
-                if (zones.Count > before)
-                {
-                    log?.Report(
-                        $"  Voice Memos: seed zone " +
-                        $"{VoiceMemosAudioDownloader.SyncZone}, " +
-                        $"{VoiceMemosAudioDownloader.MetadataZone}");
-                }
-            }
-
             if (zones.Count == 0)
             {
-                if (callsContainer && IsOptionalFeatureDisabled(zoneSyncReason))
+                if (IsCallHistoryContainer(binding.ContainerId)
+                    && zoneSyncReason is not null
+                    && zoneSyncReason.Contains("Optional feature", StringComparison.OrdinalIgnoreCase))
                 {
                     log?.Report(
-                        "  Calls: CloudKit «optional feature disabled» (ckm4qn70) — " +
-                        "questo container non espone Call History. " +
-                        "Phone/FaceTime ON ≠ sync CK. Usa backup dispositivo iCloud " +
-                        "(CallHistory.store / CallHistoryDB), non Sync Data.");
-                    Report("optional feature disabled", 0.9, "Calls", 100);
-                }
-                else if (callsContainer && sawHttp503)
-                {
-                    log?.Report(
-                        "  Calls: HTTP 503 su ckdatabase — rate-limit/partizione satura. " +
-                        "Riprova tra qualche minuto; se poi compare ckm4qn70 il container " +
-                        "è disabilitato lato server (nessuna zona da inventare).");
-                    Report("HTTP 503 — nessuna zona", 0.9, "Calls", 100);
+                        "  Calls: CloudKit «optional feature disabled» (ckm4qn70) — no zones from server. " +
+                        "No invented zones. Phone & FaceTime ON ≠ Call History on CloudKit. " +
+                        "Alternative: history in device iCloud backup.");
                 }
                 else
                 {
                     log?.Report(
                         zoneSyncReason is not null
-                            ? $"  nessuna custom zone per record/sync — motivo: {zoneSyncReason}"
-                            : "  nessuna custom zone per record/sync (zone/retrieve e zone/sync senza zone utili)");
-                    Report("nessuna custom zone", 0.85, "zone/sync", 100);
+                            ? $"  no custom zone for record/sync — reason: {zoneSyncReason}"
+                            : "  no custom zone for record/sync (zone/retrieve and zone/sync with no useful zones)");
                 }
             }
             else
             {
-                var zoneList = zones.OrderBy(z => z, StringComparer.Ordinal).ToList();
-                log?.Report($"  zone da sync: {string.Join(", ", zoneList)}");
-                for (var zi = 0; zi < zoneList.Count; zi++)
+                log?.Report(
+                    $"  zone da sync: {string.Join(", ", zones.OrderBy(z => z, StringComparer.Ordinal))}");
+                foreach (var zone in zones.OrderBy(z => z, StringComparer.Ordinal))
                 {
-                    var zone = zoneList[zi];
                     ct.ThrowIfCancellationRequested();
-                    var zoneFrac = 0.20 + 0.55 * (zi / (double)Math.Max(1, zoneList.Count));
-                    var zonePhasePct = 100.0 * (zi + 1) / zoneList.Count;
-                    Report(
-                        $"zona {zi + 1}/{zoneList.Count}: {zone}",
-                        zoneFrac, "zone", zonePhasePct);
-
                     await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
-                    Report($"zone/retrieve {zone}…", zoneFrac + 0.02, "zone/retrieve", zonePhasePct);
-                    var (_, zoneBytes, _, _) = await ZoneRetrieveAsync(
-                        session, binding, outDir, zone, log, ct);
-                    totalBytes += zoneBytes;
-
-                    totalBytes += await SyncAndRetrieveZoneAsync(
-                        session, binding, outDir, zone, log, anisetteRefresh, ct,
-                        progress, Report, zoneFrac + 0.05, zonePhasePct);
-
+                    totalBytes += await RecordSyncAsync(session, binding, outDir, zone, log, ct);
                     await Task.Delay(150, ct);
                 }
             }
@@ -460,7 +365,6 @@ public sealed class ICloudSyncDataProbeService
             // PCS decrypt: Escrow KeySet e/o Manatee (CKKS OpenVault / disco).
             if (PcsSessionSeedKeys.HasAny(session))
             {
-                Report("PCS decrypt…", 0.80, "PCS", phaseIndeterminate: true);
                 try
                 {
                     var dec = await Task.Run(
@@ -480,14 +384,13 @@ public sealed class ICloudSyncDataProbeService
             else
             {
                 log?.Report(
-                    "  PCS decrypt skip — né Escrow KeySet né Manatee " +
+                    "  PCS decrypt skip — neither Escrow KeySet nor Manatee " +
                     "(Unlock EscrowedKeys oppure Octagon/CKKS OpenVault)");
             }
 
             // Voice Memos / Messages: download CKAsset via content.icloud.com dopo PCS.
-            var isVoiceMemos = binding.ContainerId.Equals(
-                VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase);
-            if (isVoiceMemos
+            if (binding.ContainerId.Equals(
+                    VoiceMemosAudioDownloader.ContainerId, StringComparison.OrdinalIgnoreCase)
                 || binding.ContainerId.Equals(
                     VoiceMemosAudioDownloader.MessagesContainerId, StringComparison.OrdinalIgnoreCase))
             {
@@ -496,8 +399,6 @@ public sealed class ICloudSyncDataProbeService
                     StringComparison.OrdinalIgnoreCase);
                 try
                 {
-                    Report(isMessages ? "MMCS Messages…" : "MMCS Voice Memos…",
-                        0.88, "MMCS", phaseIndeterminate: true);
                     await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
                     var dl = isMessages
                         ? VoiceMemosAudioDownloader.ForMessages(_http)
@@ -506,9 +407,9 @@ public sealed class ICloudSyncDataProbeService
                     if (isMessages && n == 0)
                     {
                         log?.Report(
-                            "  Messages: nessun ckAsset MMCS in chiaro. Zone *ManateeZone sono PCS-Manatee — " +
-                            "serve CKKS OpenVault (view Manatee) che riesca a unwrap PublicX nei record; " +
-                            "poi allegati/blob possono comparire come Asset con auth.");
+                            "  Messages: no plaintext ckAsset MMCS. *ManateeZone zones are PCS-Manatee — " +
+                            "CKKS OpenVault (Manatee view) must unwrap PublicX in records; " +
+                            "then attachments/blobs may appear as Assets with auth.");
                     }
                 }
                 catch (Exception ex)
@@ -517,50 +418,16 @@ public sealed class ICloudSyncDataProbeService
                 }
             }
 
-            if (isVoiceMemos)
-            {
-                try
-                {
-                    Report("Voice Memos inventory…", 0.94, "inventory", phaseIndeterminate: true);
-                    _ = VoiceMemosInventoryBuilder.Build(outDir, log);
-                }
-                catch (Exception ex)
-                {
-                    log?.Report($"  Voice Memos inventory skip: {ex.Message}");
-                }
-            }
-
-            var isMessagesContainer = binding.ContainerId.Equals(
-                VoiceMemosAudioDownloader.MessagesContainerId,
-                StringComparison.OrdinalIgnoreCase);
-            if (isMessagesContainer)
-            {
-                try
-                {
-                    Report("Messages inventory…", 0.94, "inventory", phaseIndeterminate: true);
-                    _ = MessagesInventoryBuilder.Build(outDir, log);
-                    Report("Messages HTML viewer…", 0.96, "viewer", phaseIndeterminate: true);
-                    await MessagesHtmlViewerPublisher.PublishAsync(
-                        outDir, ownHandles: null, log, ct).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    log?.Report($"  Messages inventory/viewer skip: {ex.Message}");
-                }
-            }
-
-            Report("completato", 1.0, "done", 100);
             return new SyncDataContainerResult(binding.ContainerId, true, totalBytes, null);
         }
         catch (Exception ex)
         {
-            log?.Report($"  ERRORE: {ex.Message}");
-            Report($"ERRORE: {ex.Message}", 1.0, "error", 100);
+            log?.Report($"  ERROR: {ex.Message}");
             return new SyncDataContainerResult(binding.ContainerId, false, 0, ex.Message);
         }
     }
 
-    private async Task<(bool Ok, long Bytes, List<string> Zones, string? ErrorNote)> ZoneRetrieveAsync(
+    private async Task<(bool Ok, long Bytes, List<string> Zones)> ZoneRetrieveAsync(
         ICloudSession session,
         CloudKitContainerBinding binding,
         string outDir,
@@ -605,137 +472,34 @@ public sealed class ICloudSyncDataProbeService
                 }
             }
 
-            return (!isErr, payload.Length, zones, isErr ? note : null);
+            return (!isErr, payload.Length, zones);
         }
         catch (Exception ex)
         {
             log?.Report($"    zone/retrieve {zone}: {ex.Message}");
-            return (false, 0, [], ex.Message);
+            return (false, 0, []);
         }
     }
 
     private const int MaxRecordSyncPages = 24;
 
-    private async Task<(long Bytes, string? Error, List<string> Zones)> ZoneSyncWithRateLimitRetryAsync(
+    private async Task<long> RecordSyncAsync(
         ICloudSession session,
         CloudKitContainerBinding binding,
         string outDir,
+        string zone,
         IProgress<string>? log,
         CancellationToken ct)
-    {
-        var zones = new List<string>();
-        long total = 0;
-        string? lastErr = null;
-
-        for (var attempt = 1; attempt <= 2; attempt++)
-        {
-            var body = CloudKitDelimitedRequest.BuildZoneRetrieveChanges(
-                session.CloudKitUserId, container: binding);
-            var payload = await _gateway.ZoneChangesAsync(session, body, ct, binding);
-            total += payload.Length;
-            var tag = attempt == 1 ? "zone_changes" : "zone_changes_retry";
-            await SaveAsync(outDir, tag, payload, ct);
-
-            if (CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var zsyncErr))
-            {
-                lastErr = zsyncErr
-                    ?? CloudKitResponseParser.TryGetCloudKitReason(payload)
-                    ?? $"payload errore {payload.Length} B";
-                log?.Report($"  zone/sync → {payload.Length:N0} B — errore: {lastErr}");
-                if (IsRateLimitReason(lastErr) && attempt < 2)
-                {
-                    log?.Report("  zone/sync rate-limit (cknegrxn) → attesa 8 s, riprovo…");
-                    await Task.Delay(8_000, ct).ConfigureAwait(false);
-                    continue;
-                }
-
-                return (total, lastErr, zones);
-            }
-
-            var note = CloudKitResponseParser.TryGetCloudKitReason(payload)
-                ?? CloudKitResponseParser.DescribeCompactPayload(payload);
-            log?.Report(
-                $"  zone/sync → {payload.Length:N0} B" +
-                (note is null ? "" : $" — {note}"));
-
-            var strings = CloudKitResponseParser.ExtractDiagnosticStrings(payload);
-            foreach (var z in WhatsAppCloudKitProbeService.ExtractLikelyZoneNames(strings))
-                zones.Add(z);
-            return (total, null, zones);
-        }
-
-        return (total, lastErr, zones);
-    }
-
-    private delegate void ContainerProgressReport(
-        string detail, double frac, string phase, double? phasePct = null, bool phaseIndeterminate = false);
-
-    /// <summary>
-    /// <c>record/sync</c> sulla zona, poi <c>record/retrieve</c> batch sui name emersi.
-    /// </summary>
-    private async Task<long> SyncAndRetrieveZoneAsync(
-        ICloudSession session,
-        CloudKitContainerBinding binding,
-        string outDir,
-        string zone,
-        IProgress<string>? log,
-        SyncDataAnisetteRefresh anisetteRefresh,
-        CancellationToken ct,
-        IProgress<SyncDataProgressReport>? progress = null,
-        ContainerProgressReport? report = null,
-        double progressFrac = 0.5,
-        double zonePhasePct = 50)
-    {
-        report?.Invoke($"record/sync {zone}…", progressFrac, "record/sync", zonePhasePct, true);
-        await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
-        var (syncBytes, recordNames) = await RecordSyncAsync(
-            session, binding, outDir, zone, log, ct, report, progressFrac, zonePhasePct);
-
-        long total = syncBytes;
-        if (recordNames.Count > 0)
-        {
-            report?.Invoke(
-                $"record/retrieve {zone} ({recordNames.Count})…",
-                progressFrac + 0.08, "record/retrieve", zonePhasePct);
-            await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
-            total += await RecordRetrieveBatchesAsync(
-                session, binding, outDir, zone, recordNames, log, anisetteRefresh, ct,
-                report, progressFrac + 0.08, zonePhasePct);
-        }
-        else
-        {
-            log?.Report($"  record/retrieve skip {zone} — nessun record name da sync");
-        }
-
-        return total;
-    }
-
-    private async Task<(long Bytes, List<string> RecordNames)> RecordSyncAsync(
-        ICloudSession session,
-        CloudKitContainerBinding binding,
-        string outDir,
-        string zone,
-        IProgress<string>? log,
-        CancellationToken ct,
-        ContainerProgressReport? report = null,
-        double progressFrac = 0.5,
-        double zonePhasePct = 50)
     {
         log?.Report($"  record/sync → {zone}…");
         long total = 0;
         byte[]? token = null;
         var retryAfterLeft = 2;
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             for (var page = 1; page <= MaxRecordSyncPages; page++)
             {
                 ct.ThrowIfCancellationRequested();
-                report?.Invoke(
-                    $"record/sync {zone} p{page}…",
-                    progressFrac + 0.01 * Math.Min(page, 8),
-                    "record/sync",
-                    zonePhasePct);
                 var body = CloudKitDelimitedRequest.BuildRecordRetrieveChanges(
                     session.CloudKitUserId, zone, syncContinuationToken: token, binding);
                 var payload = await _gateway.RecordChangesAsync(session, body, ct, binding);
@@ -756,28 +520,21 @@ public sealed class ICloudSyncDataProbeService
                             : $" — {note}"));
                 if (isErr)
                 {
-                    // RetryAfter / cknegrxn: backoff, poi skip zona.
+                    // RetryAfter: al massimo 2 backoff brevi, poi skip zona.
                     if (IsRetryAfterNote(note) && retryAfterLeft > 0)
                     {
                         retryAfterLeft--;
-                        var delayMs = IsRateLimitReason(note)
-                            ? (retryAfterLeft == 1 ? 8_000 : 12_000)
-                            : (retryAfterLeft == 1 ? 2_000 : 4_000);
-                        log?.Report(
-                            $"    {(IsRateLimitReason(note) ? "rate-limit" : "RetryAfter")} " +
-                            $"→ attesa {delayMs} ms, riprovo…");
+                        var delayMs = retryAfterLeft == 1 ? 2_000 : 4_000;
+                        log?.Report($"    RetryAfter → wait {delayMs} ms, retrying…");
                         await Task.Delay(delayMs, ct);
                         page--;
                         continue;
                     }
 
                     if (IsRetryAfterNote(note))
-                        log?.Report($"    rate-limit/RetryAfter persistente — skip {zone}");
+                        log?.Report($"    RetryAfter persistente — skip {zone}");
                     break;
                 }
-
-                foreach (var n in ExtractRecordNamesFromSyncPayload(payload, zone))
-                    names.Add(n);
 
                 var cont = CloudKitResponseParser.TryExtractRecordSyncContinuation(payload);
                 var stringMore = CloudKitResponseParser.ExtractDiagnosticStrings(payload)
@@ -787,14 +544,14 @@ public sealed class ICloudSyncDataProbeService
                 if (!shouldContinue || cont.SyncContinuationToken is not { Length: > 0 })
                 {
                     if ((cont.MoreComing || stringMore) && cont.SyncContinuationToken is null)
-                        log?.Report("    moreComing senza token — stop");
+                        log?.Report("    moreComing without token — stop");
                     break;
                 }
 
                 if (token is not null
                     && token.AsSpan().SequenceEqual(cont.SyncContinuationToken))
                 {
-                    log?.Report("    syncToken invariato — stop");
+                    log?.Report("    syncToken unchanged — stop");
                     break;
                 }
 
@@ -807,142 +564,7 @@ public sealed class ICloudSyncDataProbeService
             log?.Report($"    record/sync {zone}: {ex.Message}");
         }
 
-        var ordered = names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
-        if (ordered.Count > 0)
-            log?.Report($"    record name da sync: {ordered.Count}");
-        return (total, ordered);
-    }
-
-    private async Task<long> RecordRetrieveBatchesAsync(
-        ICloudSession session,
-        CloudKitContainerBinding binding,
-        string outDir,
-        string zone,
-        IReadOnlyList<string> recordNames,
-        IProgress<string>? log,
-        SyncDataAnisetteRefresh anisetteRefresh,
-        CancellationToken ct,
-        ContainerProgressReport? report = null,
-        double progressFrac = 0.6,
-        double zonePhasePct = 50)
-    {
-        if (recordNames.Count == 0)
-            return 0;
-
-        var fetchDir = Path.Combine(outDir, $"record_retrieve_{Sanitize(zone)}");
-        Directory.CreateDirectory(fetchDir);
-        long total = 0;
-        var batchCount = (recordNames.Count + RecordRetrieveBatchSize - 1) / RecordRetrieveBatchSize;
-
-        log?.Report(
-            $"  record/retrieve → {zone} ({recordNames.Count} record, " +
-            $"batch={RecordRetrieveBatchSize})…");
-
-        for (var offset = 0; offset < recordNames.Count; offset += RecordRetrieveBatchSize)
-        {
-            ct.ThrowIfCancellationRequested();
-            var batch = recordNames.Skip(offset).Take(RecordRetrieveBatchSize).ToList();
-            var batchIndex = offset / RecordRetrieveBatchSize + 1;
-            var batchTag = $"batch{batchIndex:00}";
-            var batchPct = 100.0 * batchIndex / Math.Max(1, batchCount);
-            report?.Invoke(
-                $"record/retrieve {zone} {batchIndex}/{batchCount}…",
-                progressFrac + 0.05 * (batchIndex / (double)Math.Max(1, batchCount)),
-                "record/retrieve",
-                batchPct);
-
-            try
-            {
-                if (batchIndex == 1 || batchIndex % 4 == 0)
-                    await anisetteRefresh.EnsureFreshAsync(session, log, ct).ConfigureAwait(false);
-
-                var body = CloudKitDelimitedRequest.BuildRecordRetrieve(
-                    session.CloudKitUserId, zone, batch, container: binding);
-                var payload = await _gateway.RecordRetrieveAsync(
-                    session, body, ct, container: binding);
-                total += payload.Length;
-                await File.WriteAllBytesAsync(
-                    Path.Combine(fetchDir, $"{batchTag}.bin"), payload, ct);
-                await File.WriteAllLinesAsync(
-                    Path.Combine(fetchDir, $"{batchTag}_names.txt"), batch, ct);
-                var strings = CloudKitResponseParser.ExtractDiagnosticStrings(payload);
-                await File.WriteAllLinesAsync(
-                    Path.Combine(fetchDir, $"{batchTag}_strings.txt"), strings, ct);
-
-                var note = CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err)
-                    ? err
-                    : CloudKitResponseParser.DescribeCompactPayload(payload);
-                log?.Report(
-                    $"    {batchTag}: {batch.Count} record → {payload.Length:N0} B" +
-                    (note is null ? "" : $" — {note}"));
-            }
-            catch (Exception ex)
-            {
-                log?.Report($"    {batchTag}: ERRORE {ex.Message}");
-            }
-
-            await Task.Delay(100, ct);
-        }
-
         return total;
-    }
-
-    /// <summary>
-    /// Record name tipici da payload record/sync: Core Data / Voice Memos,
-    /// Notes, <c>metadata_device_*</c>, UUID standalone.
-    /// </summary>
-    private static IReadOnlyList<string> ExtractRecordNamesFromSyncPayload(
-        byte[] payload, string zone)
-    {
-        if (payload is not { Length: > 32 })
-            return [];
-
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var rec in VoiceMemosSyncRecordParser.ParseRecords(payload))
-        {
-            if (!string.IsNullOrWhiteSpace(rec.RecordName))
-                names.Add(rec.RecordName);
-        }
-
-        foreach (var dev in VoiceMemosSyncRecordParser.ParseMetadataDevices(payload))
-        {
-            if (!string.IsNullOrWhiteSpace(dev.RecordName))
-                names.Add(dev.RecordName);
-        }
-
-        foreach (var rec in NotesSyncRecordParser.ParseRecords(payload))
-        {
-            if (!string.IsNullOrWhiteSpace(rec.RecordName))
-                names.Add(rec.RecordName);
-        }
-
-        foreach (var s in CloudKitResponseParser.ExtractDiagnosticStrings(payload))
-        {
-            if (string.IsNullOrWhiteSpace(s) || s.Length > 200)
-                continue;
-            if (s.StartsWith('_') || s.StartsWith('$'))
-                continue;
-            if (s.StartsWith("metadata_device_", StringComparison.OrdinalIgnoreCase))
-            {
-                names.Add(s);
-                continue;
-            }
-
-            if (s.Length == 36 && Guid.TryParse(s, out _))
-                names.Add(s.ToUpperInvariant());
-        }
-
-        names.Remove(zone);
-        if (names.Count > 8_000)
-        {
-            return names
-                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-                .Take(8_000)
-                .ToList();
-        }
-
-        return names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static async Task SaveAsync(string outDir, string tag, byte[] payload, CancellationToken ct)
@@ -955,11 +577,6 @@ public sealed class ICloudSyncDataProbeService
     private static bool IsCallHistoryContainer(string containerId) =>
         containerId.Contains("CallHistory", StringComparison.OrdinalIgnoreCase)
         || containerId.Contains("callhistory", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsOptionalFeatureDisabled(string? note) =>
-        note is not null
-        && (note.Contains("Optional feature", StringComparison.OrdinalIgnoreCase)
-            || note.Contains("ckm4qn70", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsLikelyErrorNote(string note) =>
         note.Contains("disabled", StringComparison.OrdinalIgnoreCase)
@@ -979,25 +596,7 @@ public sealed class ICloudSyncDataProbeService
         && (note.Contains("RetryAfter", StringComparison.OrdinalIgnoreCase)
             || note.Contains("retry after", StringComparison.OrdinalIgnoreCase)
             || note.Contains("throttl", StringComparison.OrdinalIgnoreCase)
-            || note.Equals("retry", StringComparison.OrdinalIgnoreCase)
-            || IsRateLimitReason(note));
-
-    /// <summary>
-    /// Motivo CloudKit tipico di throttle (~102 B): <c>cknegrxn</c>, poi spesso HTTP 503.
-    /// </summary>
-    private static bool IsRateLimitReason(string? note) =>
-        note is not null
-        && (note.Contains("cknegrxn", StringComparison.OrdinalIgnoreCase)
-            || note.Contains("RequestRateLimited", StringComparison.OrdinalIgnoreCase)
-            || note.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
-            || note.Contains("ZoneBusy", StringComparison.OrdinalIgnoreCase)
-            || note.Contains("ServiceUnavailable", StringComparison.OrdinalIgnoreCase));
-
-    private static bool IsHttp503Message(string? message) =>
-        message is not null
-        && (message.Contains("HTTP 503", StringComparison.Ordinal)
-            || message.Contains("HTTP 429", StringComparison.Ordinal)
-            || message.Contains("HTTP 502", StringComparison.Ordinal));
+            || note.Equals("retry", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsDefaultZoneName(string zone) =>
         string.Equals(zone, "_defaultZone", StringComparison.OrdinalIgnoreCase)
@@ -1005,17 +604,15 @@ public sealed class ICloudSyncDataProbeService
         || string.Equals(zone, "defaultZone", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Zone sistema CloudKit da non passare a record/sync
-    /// (Messages <c>metadata_zone</c> → RetryAfter; metadata Core Data senza record app).
-    /// <c>com.apple.coredata.cloudkit.zone</c> NON è qui: contiene i record Voice Memos.
+    /// Zone sistema CloudKit: sync inutile / throttle (Messages metadata_zone → RetryAfter).
     /// </summary>
     private static bool IsCloudKitSystemZone(string zone) =>
         zone.Equals("metadata_zone", StringComparison.OrdinalIgnoreCase)
+        || zone.Equals("com.apple.coredata.cloudkit.zone", StringComparison.OrdinalIgnoreCase)
         || zone.Equals("com.apple.coredata.cloudkit.metadata", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Zone custom su cui ha senso record/sync (no hex fingerprint, no rumore binario).
-    /// Voice Memos può re-inserire <c>metadata_zone</c> dopo i filtri (seed dedicato).
     /// </summary>
     private static bool IsPlausibleCustomZone(string zone)
     {

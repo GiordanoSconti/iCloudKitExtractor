@@ -123,7 +123,7 @@ public static class EscrowPcsKeyUnwrap
         {
             return new EscrowPcsUnwrapResult(
                 false,
-                $"Manca {UnwrappedFileName} — esegui prima recover SRP (P=dsid).");
+                $"Missing {UnwrappedFileName} — run recover SRP (P=dsid) first.");
         }
 
         var plain = await File.ReadAllBytesAsync(path, ct);
@@ -142,7 +142,7 @@ public static class EscrowPcsKeyUnwrap
         {
             return new EscrowPcsUnwrapResult(
                 false,
-                "Plaintext recover non è KeyVault 0x0A (dsid|salt|…|sec3).");
+                "Plaintext recover is not KeyVault 0x0A (dsid|salt|…|sec3).");
         }
 
         await SaveSectionsAsync(outputDirectory, parsed, ct);
@@ -160,7 +160,7 @@ public static class EscrowPcsKeyUnwrap
         }
         catch (Exception ex)
         {
-            return new EscrowPcsUnwrapResult(false, $"AES/AesSiv sec3 fallito: {ex.Message}");
+            return new EscrowPcsUnwrapResult(false, $"AES/AesSiv sec3 failed: {ex.Message}");
         }
 
         await File.WriteAllBytesAsync(
@@ -172,13 +172,13 @@ public static class EscrowPcsKeyUnwrap
         {
             return new EscrowPcsUnwrapResult(
                 false,
-                $"sec3 decrypt OK ({sec3Plain.Length} B) ma non è bplist — schema inatteso.");
+                $"sec3 decrypt OK ({sec3Plain.Length} B) but not bplist — unexpected schema.");
         }
 
         if (!AppleBinaryPlist.TryParseDict(sec3Plain, out var dict, out var plistErr))
         {
             return new EscrowPcsUnwrapResult(
-                false, $"bplist sec3 non parsabile: {plistErr}");
+                false, $"bplist sec3 not parseable: {plistErr}");
         }
 
         byte[]? bagPassword = null;
@@ -196,12 +196,12 @@ public static class EscrowPcsKeyUnwrap
                 {
                     success = false,
                     keys = dict.Keys.ToList(),
-                    note = "bplist senza BackupBagPassword",
+                    note = "bplist without BackupBagPassword",
                 }, new JsonSerializerOptions { WriteIndented = true }),
                 ct);
             return new EscrowPcsUnwrapResult(
                 false,
-                "bplist sec3 senza BackupBagPassword.");
+                "bplist sec3 without BackupBagPassword.");
         }
 
         var outPath = Path.Combine(outputDirectory, BackupBagPasswordFileName);
@@ -227,7 +227,7 @@ public static class EscrowPcsKeyUnwrap
             backupBagPasswordBytes = bagPassword.Length,
             backupKeybagDigestHex = digest is null ? null : Convert.ToHexString(digest),
             note =
-                "PCS unwrap (post type3 AesSiv / K_SRP) completato. " +
+                "PCS unwrap (post type3 AesSiv / K_SRP) completed. " +
                 "Prossimo/auto: unlock kPCSMetadataEscrowedKeys (RFC6637+GCM) → escrowed_pcs_keys.bin.",
         }, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(
@@ -278,7 +278,7 @@ public static class EscrowPcsKeyUnwrap
 
         if (sec3Ciphertext.Length % 16 != 0)
             throw new CryptographicException(
-                "sec3: AesSiv fallito e lunghezza non valida per AES-CBC legacy.");
+                "sec3: AesSiv failed and length is not valid for legacy AES-CBC.");
 
         var iv = salt.AsSpan(0, 16).ToArray();
         using var aes = Aes.Create();

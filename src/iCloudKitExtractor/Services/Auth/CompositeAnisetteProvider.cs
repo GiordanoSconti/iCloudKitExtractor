@@ -32,7 +32,7 @@ public sealed class CompositeAnisetteProvider : IAnisetteProvider
             catch (Exception fallbackEx)
             {
                 throw new InvalidOperationException(
-                    $"Anisette CoreADI fallita ({primaryEx.Message}); fallback AOSKit fallito ({fallbackEx.Message}).",
+                    $"CoreADI Anisette failed ({primaryEx.Message}); AOSKit fallback failed ({fallbackEx.Message}).",
                     primaryEx);
             }
         }

@@ -25,7 +25,7 @@ public static class PcsFpFieldCrypto
         if (fieldKey16.Length < 16)
             throw new CryptographicException("PCSFP field key richiede 16 B");
         if (envelope.IsEmpty)
-            throw new CryptographicException("PCSFP envelope vuoto");
+            throw new CryptographicException("empty PCSFP envelope");
 
         var encType = envelope[0];
         var (tagLen, headerLen) = encType switch

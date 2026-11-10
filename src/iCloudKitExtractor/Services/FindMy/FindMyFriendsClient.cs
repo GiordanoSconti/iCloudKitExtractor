@@ -28,20 +28,20 @@ public sealed class FindMyFriendsClient
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Sessione senza DSID.");
+            throw new InvalidOperationException("Session has no DSID.");
 
         var token = session.MmeFmfAppToken;
         if (string.IsNullOrWhiteSpace(token))
         {
             throw new InvalidOperationException(
-                "Manca mmeFMFAppToken in sessione. Completa login + get_account_settings.");
+                "Missing mmeFMFAppToken in session. Complete login + get_account_settings.");
         }
 
         var apsToken = ApsSessionService.TryGetPushTokenHex();
         if (string.IsNullOrWhiteSpace(apsToken))
         {
             throw new InvalidOperationException(
-                "Manca push token APS (apsToken). In Dispositivi fidati: Attiva Albert → Connetti APS, poi riprova Find My People.");
+                "Missing APS push token (apsToken). On Trusted devices: run Albert activation → Connect APS, then retry Find My People.");
         }
 
         var deviceStore = new AnisetteDeviceStore(AdiDeviceProfile.Windows);
@@ -182,8 +182,8 @@ public sealed class FindMyFriendsClient
         if (status == 503 && body.Contains("itunes.apple.com", StringComparison.OrdinalIgnoreCase))
         {
             return body.Trim()
-                   + " — tipico quando manca apsToken / clientContext findmylocated "
-                   + "(servizio chiede l’app Find My Friends). Connetti APS e riprova.";
+                   + " — typical when apsToken is missing / clientContext findmylocated "
+                   + "(service expects l’app Find My Friends). Connect APS and retry.";
         }
 
         return Trim(body, 300);
@@ -280,7 +280,7 @@ public sealed class FindMyFriendsClient
                 }
 
                 if (i == 0)
-                    sb.AppendLine("(vuoto — nessuna share People, o serve IDS/distributeKeys)");
+                    sb.AppendLine("(empty — no People share, or IDS/distributeKeys required)");
             }
 
             sb.AppendLine();

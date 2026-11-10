@@ -100,7 +100,7 @@ public static class CkksKeys
             return plaintext.ToArray();
 
         throw new CryptographicException(
-            $"CKKSKey senza key 64 B in field 4 (pt={plaintext.Length} B)");
+            $"CKKSKey missing 64 B key in field 4 (pt={plaintext.Length} B)");
     }
 
     public static byte[] LeInt64(long v)

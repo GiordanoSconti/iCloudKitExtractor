@@ -34,12 +34,12 @@ public sealed class WhatsAppCloudKitProbeService
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Sessione senza dsid — effettua il login.");
+            throw new InvalidOperationException("Session has no dsid — sign in first.");
         if (string.IsNullOrWhiteSpace(session.CloudKitAuthToken)
             && string.IsNullOrWhiteSpace(session.MobileMeAuthToken)
             && string.IsNullOrWhiteSpace(session.CloudKitGsToken))
         {
-            throw new InvalidOperationException("Sessione senza token CloudKit/MME.");
+            throw new InvalidOperationException("Session has no CloudKit/MME token.");
         }
 
         Directory.CreateDirectory(outputDirectory);
@@ -62,9 +62,9 @@ public sealed class WhatsAppCloudKitProbeService
             log?.Report("ckAppInit (WhatsApp)…");
             await _orchestrator.CkAppInitAsync(session, binding.ContainerId, log, ct);
             if (string.IsNullOrWhiteSpace(session.CloudKitUserId))
-                throw new InvalidOperationException("ckAppInit WhatsApp senza cloudKitUserId.");
+                throw new InvalidOperationException("ckAppInit WhatsApp missing cloudKitUserId.");
             if (string.IsNullOrWhiteSpace(session.CloudKitAuthToken))
-                throw new InvalidOperationException("ckAppInit WhatsApp senza cloudKitToken.");
+                throw new InvalidOperationException("ckAppInit WhatsApp missing cloudKitToken.");
 
             log?.Report(
                 $"  ckUserId={session.CloudKitUserId} tokenLen={session.CloudKitAuthToken.Length}");
@@ -81,8 +81,8 @@ public sealed class WhatsAppCloudKitProbeService
             summaries.Add(await ProbeNamedZoneRetrieveAsync(
                 session, binding, outDir, "_defaultZone", log, ct));
             log?.Report(
-                "  nota: _defaultZone non supporta RecordRetrieveChanges (AppDefaultZone); " +
-                "zone sync vuoto ⇒ nessuna zona custom nel container WA nativo.");
+                "  note: _defaultZone does not support RecordRetrieveChanges (AppDefaultZone); " +
+                "empty sync zone ⇒ no custom zones in native WA container.");
 
             // 2) Database changes → elenco zone custom
             log?.Report("ZoneRetrieveChanges (database)…");
@@ -95,9 +95,9 @@ public sealed class WhatsAppCloudKitProbeService
             }
             catch (Exception ex)
             {
-                log?.Report($"  ERRORE ZoneRetrieveChanges: {ex.Message}");
+                log?.Report($"  ERROR ZoneRetrieveChanges: {ex.Message}");
                 summaries.Add(new WhatsAppZoneProbe("zone/changes", false, 0, ex.Message, []));
-                log?.Report("Probe WhatsApp completato (token backup ripristinati).");
+                log?.Report("WhatsApp probe completed (backup tokens restored).");
                 return new WhatsAppProbeResult(outDir, binding.ContainerId, summaries);
             }
 
@@ -121,8 +121,8 @@ public sealed class WhatsAppCloudKitProbeService
             if (zonesToScan.Count == 0)
             {
                 log?.Report(
-                    "  nessuna zona custom: i file WA stanno in CloudDocs " +
-                    "(zona 57T9237FN3.net.whatsapp.WhatsApp), non in questo container.");
+                    "  no custom zone: WA files live in CloudDocs " +
+                    "(zone 57T9237FN3.net.whatsapp.WhatsApp), not in this container.");
             }
             else
             {
@@ -135,7 +135,7 @@ public sealed class WhatsAppCloudKitProbeService
                 }
             }
 
-            log?.Report("Probe WhatsApp completato (token backup ripristinati).");
+            log?.Report("WhatsApp probe completed (backup tokens restored).");
             return new WhatsAppProbeResult(outDir, binding.ContainerId, summaries);
         }
         finally
@@ -172,7 +172,7 @@ public sealed class WhatsAppCloudKitProbeService
         }
         catch (Exception ex)
         {
-            log?.Report($"  ERRORE: {ex.Message}");
+            log?.Report($"  ERROR: {ex.Message}");
             return new WhatsAppZoneProbe(zone, false, 0, ex.Message, []);
         }
     }
@@ -222,13 +222,13 @@ public sealed class WhatsAppCloudKitProbeService
 
                 // Token grezzo: spesso compare come run binario; senza parser dedicato fermiamoci
                 // dopo moreComing se non abbiamo un token esplicito.
-                log?.Report($"  p{page} moreComing=true — stop (serve parser syncToken per continuare)");
+                log?.Report($"  p{page} moreComing=true — stop (syncToken parser required to continue)");
                 break;
             }
         }
         catch (Exception ex)
         {
-            log?.Report($"  ERRORE: {ex.Message}");
+            log?.Report($"  ERROR: {ex.Message}");
             lastNote = ex.Message;
             ok = false;
         }

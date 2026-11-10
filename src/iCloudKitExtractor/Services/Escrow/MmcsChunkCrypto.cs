@@ -59,7 +59,7 @@ public static class MmcsChunkCrypto
         ReadOnlySpan<byte> kek)
     {
         if (plan.Containers.Count == 0 || plan.References.Count == 0)
-            throw new InvalidOperationException("Decrypt plan vuoto");
+            throw new InvalidOperationException("Empty decrypt plan");
 
         if (plan.TotalCryptoBytes != compactCiphertext.Length)
             throw new InvalidOperationException(
@@ -89,7 +89,7 @@ public static class MmcsChunkCrypto
                 {
                     var aesKey = TryUnwrapChunkAesKey(ch.EncryptionKey, kek)
                                  ?? throw new CryptographicException(
-                                     $"chunk key unwrap fallito ({c}:{k})");
+                                     $"chunk key unwrap failed ({c}:{k})");
                     plain[c][k] = DecryptCfb(aesKey, compactCiphertext.Slice(offset, ch.Length));
                 }
 
@@ -117,7 +117,7 @@ public static class MmcsChunkCrypto
         {
             var part = plain[r.ContainerIndex][r.ChunkIndex]
                        ?? throw new CryptographicException(
-                           $"ref {r.ContainerIndex}:{r.ChunkIndex} non decifrato");
+                           $"ref {r.ContainerIndex}:{r.ChunkIndex} not decrypted");
             Buffer.BlockCopy(part, 0, result, o, part.Length);
             o += part.Length;
         }
@@ -135,7 +135,7 @@ public static class MmcsChunkCrypto
         AuthorizeGetDecryptPlan plan)
     {
         if (plan.Containers.Count == 0 || plan.References.Count == 0)
-            throw new InvalidOperationException("Decrypt plan vuoto");
+            throw new InvalidOperationException("Empty decrypt plan");
 
         if (plan.TotalCryptoBytes != compactCiphertext.Length)
             throw new InvalidOperationException(

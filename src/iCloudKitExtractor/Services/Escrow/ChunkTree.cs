@@ -329,7 +329,7 @@ public sealed class ChunkTree
     public void PhaseBInjectFordKeys(IReadOnlyList<FordMmcsDecryptor.FordChunkKey> keys)
     {
         if (_fillOrder.Count == 0)
-            throw new CryptographicException("FillChunks Phase B: tree vuoto (Phase A mancante)");
+            throw new CryptographicException("FillChunks Phase B: empty tree (Phase A missing)");
         if (keys.Count == 0)
             throw new CryptographicException("Cannot decrypt ford info from empty storages");
 
@@ -492,7 +492,7 @@ public sealed class ChunkTree
     {
         var nodes = NodesInFillOrder().ToList();
         if (nodes.Count == 0)
-            throw new CryptographicException("FillChunks decrypt: nessun nodo");
+            throw new CryptographicException("FillChunks decrypt: no nodo");
 
         var keys = new List<FordMmcsDecryptor.FordChunkKey>(nodes.Count);
         var data = new List<byte[]>(nodes.Count);
@@ -501,13 +501,13 @@ public sealed class ChunkTree
         {
             if (n.KeyAt38 is null)
                 throw new CryptographicException(
-                    $"FillChunks decrypt: nodo {n.Key} senza KEY@+0x38");
+                    $"FillChunks decrypt: node {n.Key} missing KEY@+0x38");
             if (n.DataSlice is null)
                 throw new CryptographicException(
-                    $"FillChunks decrypt: nodo {n.Key} senza data");
+                    $"FillChunks decrypt: node {n.Key} missing data");
             if (n.Mac20.Length < 20)
                 throw new CryptographicException(
-                    $"FillChunks decrypt: nodo {n.Key} senza MAC20");
+                    $"FillChunks decrypt: node {n.Key} missing MAC20");
 
             keys.Add(n.KeyAt38);
             data.Add(n.DataSlice);
@@ -530,7 +530,7 @@ public sealed class ChunkTree
     {
         var nodes = NodesInFillOrder().ToList();
         if (nodes.Count == 0)
-            throw new CryptographicException("MUT ChunkDecrypt: nessun nodo");
+            throw new CryptographicException("MUT ChunkDecrypt: no nodo");
 
         using var output = new MemoryStream();
         for (var i = 0; i < nodes.Count; i++)
@@ -538,7 +538,7 @@ public sealed class ChunkTree
             var n = nodes[i];
             if (n.DataSlice is null)
                 throw new CryptographicException(
-                    $"MUT ChunkDecrypt: nodo {n.Key} senza data");
+                    $"MUT ChunkDecrypt: node {n.Key} missing data");
 
             byte[] pt;
 
@@ -550,10 +550,10 @@ public sealed class ChunkTree
                 var needsKek = n.ChunkEncryptionKey[0] == 0x02;
                 if (needsKek && kek.IsEmpty)
                     throw new CryptographicException(
-                        $"MUT Pipe C: manca MMCS KEK per chunkEncryptionKey type02 ({n.Key})");
+                        $"MUT Pipe C: missing MMCS KEK for chunkEncryptionKey type02 ({n.Key})");
                 var aesKey = MmcsChunkCrypto.TryUnwrapChunkAesKey(n.ChunkEncryptionKey, kek)
                              ?? throw new CryptographicException(
-                                 $"MUT Pipe C: unwrap chunkEncryptionKey fallito ({n.Key})");
+                                 $"MUT Pipe C: unwrap chunkEncryptionKey failed ({n.Key})");
                 pt = MmcsChunkCrypto.DecryptCfb(aesKey, n.DataSlice);
                 output.Write(pt);
                 continue;
@@ -561,10 +561,10 @@ public sealed class ChunkTree
 
             if (n.KeyAt38 is null)
                 throw new CryptographicException(
-                    $"MUT ChunkDecrypt: nodo {n.Key} senza KEY@+0x38 (Pipe B miss)");
+                    $"MUT ChunkDecrypt: node {n.Key} missing KEY@+0x38 (Pipe B miss)");
             if (n.Mac20.Length < 20)
                 throw new CryptographicException(
-                    $"MUT ChunkDecrypt: nodo {n.Key} senza MAC20");
+                    $"MUT ChunkDecrypt: node {n.Key} missing MAC20");
 
             var hint = n.KeyAt38.ChunkLengthHint is int h && h > 0 ? h : n.LengthAt2c;
             try

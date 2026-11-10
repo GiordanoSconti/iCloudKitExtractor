@@ -85,7 +85,7 @@ public static class BackupEmptyFileMaterializer
         if (created > 0 || examined > 0)
             log?.Report(
                 $"Empty/no-MMCS: materializzati {created:N0} shard a 0 B " +
-                $"(catalogo size=0: {examined:N0}, già presenti={already:N0})");
+                $"(catalog size=0: {examined:N0}, already present={already:N0})");
 
         return new Result(examined, created, already, skipped);
     }

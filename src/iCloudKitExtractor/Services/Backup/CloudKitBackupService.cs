@@ -88,7 +88,7 @@ public sealed class CloudKitBackupService
                 var hint = CloudKitResponseParser.DescribeCompactPayload(accountPayload);
                 log?.Report(
                     $"  risposta BackupAccount troppo piccola (stub?{ (hint is null ? "" : $" {hint}") }) — " +
-                    "verifica ckAppInit token e header Foreground");
+                    "check ckAppInit token and Foreground header");
             }
 
             return [];
@@ -160,7 +160,7 @@ public sealed class CloudKitBackupService
                     var label = snapshot.ShortUuid;
                     var udid = snapshot.Udid is not null ? $" udid={snapshot.Udid}" : string.Empty;
                     var props = snapshot.BackupPropertiesCiphertext is { Length: > 0 }
-                        ? " props=cifrato"
+                        ? " props=encrypted"
                         : string.Empty;
                     var details = $"{snapshot.DateLabel} | {snapshot.IosLabel} | {snapshot.SizeLabel}";
                     log?.Report($"  snapshot {label}{udid}{props} {details}");
@@ -422,7 +422,7 @@ public sealed class MobileBackupService
         }
 
         if (best is null or { Length: <= MbsStubMaxBytes })
-            log?.Report("  mbs: nessun manifest completo (solo stub dsid)");
+            log?.Report("  mbs: no complete manifest (dsid stub only)");
 
         return best ?? [];
     }

@@ -116,7 +116,7 @@ public static class PcsSessionSeedKeys
             if (narrow.Count > 0)
             {
                 log?.Report(
-                    $"  PCS seed narrow: {narrow.Count}/{seeds.Count} (KeyId zone già noti)");
+                    $"  PCS seed narrow: {narrow.Count}/{seeds.Count} (KeyId zones already known)");
                 return narrow;
             }
         }

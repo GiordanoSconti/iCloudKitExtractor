@@ -93,7 +93,7 @@ public sealed class ImapMailClient : IAsyncDisposable
         username = username.Trim();
         password = password.Trim();
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
-            throw new InvalidOperationException("Utente e password per app sono obbligatori.");
+            throw new InvalidOperationException("App-specific username and password are required.");
 
         var client = new ImapClient();
         try
@@ -205,7 +205,7 @@ public sealed class ImapMailClient : IAsyncDisposable
         foreach (var s in summaries.OrderByDescending(static x => x.UniqueId.Id))
         {
             var env = s.Envelope;
-            var subject = env?.Subject?.Trim() ?? "(senza oggetto)";
+            var subject = env?.Subject?.Trim() ?? "(no subject)";
             var from = FormatAddresses(env?.From);
             var seen = s.Flags?.HasFlag(MessageFlags.Seen) == true;
             var attach = s.BodyParts?.Any(static p => p.IsAttachment) == true;
@@ -229,7 +229,7 @@ public sealed class ImapMailClient : IAsyncDisposable
         CancellationToken ct = default)
     {
         var message = await FetchMimeMessageAsync(folderFullName, uid, ct).ConfigureAwait(false);
-        var subject = message.Subject?.Trim() ?? "(senza oggetto)";
+        var subject = message.Subject?.Trim() ?? "(no subject)";
         var from = FormatAddresses(message.From);
         var to = FormatAddresses(message.To);
         var text = PreferTextBody(message, out var isHtml);
@@ -376,7 +376,7 @@ public sealed class ImapMailClient : IAsyncDisposable
     private ImapClient RequireClient() =>
         _client is { IsConnected: true, IsAuthenticated: true } c
             ? c
-            : throw new InvalidOperationException("Non connesso a IMAP. Premi Connetti.");
+            : throw new InvalidOperationException("Not connected to IMAP. Click Connect.");
 
     private static async Task WalkFoldersAsync(
         IMailFolder folder,
@@ -445,7 +445,7 @@ public sealed class ImapMailClient : IAsyncDisposable
             return StripHtmlRough(html);
         }
 
-        return "(nessun corpo testo)";
+        return "(no text body)";
     }
 
     /// <summary>
@@ -468,7 +468,7 @@ public sealed class ImapMailClient : IAsyncDisposable
         {
             var text = message.TextBody;
             if (string.IsNullOrWhiteSpace(text))
-                text = "(nessun corpo testo)";
+                text = "(no text body)";
             bodyHtml =
                 "<pre style=\"white-space:pre-wrap;font-family:Segoe UI,Calibri,sans-serif;" +
                 "font-size:14px;margin:0;color:#1a1a1a;\">" +

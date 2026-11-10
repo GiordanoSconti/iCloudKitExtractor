@@ -60,7 +60,7 @@ public sealed class WhatsAppDocumentsProbeService
         log?.Report($"  PCS keys dir (dinamico)={pcsDir}");
 
         await ProbeCloudDocsNativeAsync(session, outDir, pcsDir, log, ct);
-        log?.Report("Documents probe completato.");
+        log?.Report("Documents probe completed.");
     }
 
     private async Task ProbeCloudDocsNativeAsync(
@@ -84,7 +84,7 @@ public sealed class WhatsAppDocumentsProbeService
             if (string.IsNullOrWhiteSpace(session.CloudKitUserId)
                 || string.IsNullOrWhiteSpace(session.CloudKitAuthToken))
             {
-                log?.Report("  ckAppInit CloudDocs incompleto — skip native.");
+                log?.Report("  ckAppInit CloudDocs incomplete — skip native.");
                 return;
             }
 
@@ -206,8 +206,8 @@ public sealed class WhatsAppDocumentsProbeService
             if (zones.Count == 0)
             {
                 log?.Report(
-                    "  nessuna zona WhatsApp in zone/retrieve — " +
-                    "attesa 57T9237FN3.net.whatsapp.WhatsApp.");
+                    "  no WhatsApp zone in zone/retrieve — " +
+                    "expected 57T9237FN3.net.whatsapp.WhatsApp.");
                 return;
             }
 
@@ -375,7 +375,7 @@ public sealed class WhatsAppDocumentsProbeService
                             if (token is not null
                                 && token.AsSpan().SequenceEqual(cont.SyncContinuationToken!))
                             {
-                                log?.Report("    syncToken invariato — stop");
+                                log?.Report("    syncToken unchanged — stop");
                                 break;
                             }
 
@@ -464,7 +464,7 @@ public sealed class WhatsAppDocumentsProbeService
                         else
                         {
                             log?.Report(
-                                "  FetchRecords skip — nessun documentContent ASCII nello sync; " +
+                                "  FetchRecords skip — no ASCII documentContent in sync; " +
                                 " MMCS da record/sync embedded → crypto diretto");
                         }
 
@@ -487,12 +487,12 @@ public sealed class WhatsAppDocumentsProbeService
                     }
                     catch (Exception ex)
                     {
-                        log?.Report($"    ERRORE record/sync: {ex.Message}");
+                        log?.Report($"    ERROR record/sync: {ex.Message}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    log?.Report($"    ERRORE zone/retrieve: {ex.Message}");
+                    log?.Report($"    ERROR zone/retrieve: {ex.Message}");
                 }
             }
         }
@@ -664,7 +664,7 @@ public sealed class WhatsAppDocumentsProbeService
             catch (Exception ex)
             {
                 errorHits++;
-                log?.Report($"    {batchTag}: ERRORE {ex.Message}");
+                log?.Report($"    {batchTag}: ERROR {ex.Message}");
                 summary.Add($"{batchTag}\tERROR\t{ex.Message}");
             }
         }
@@ -1125,7 +1125,7 @@ public sealed class WhatsAppDocumentsProbeService
                 {
                     foreach (var n in sliceCanonical)
                         resolvedOrAttempted.Add(n);
-                    log?.Report($"    {batchTag}: ERRORE {ex.Message}");
+                    log?.Report($"    {batchTag}: ERROR {ex.Message}");
                 }
             }
         }

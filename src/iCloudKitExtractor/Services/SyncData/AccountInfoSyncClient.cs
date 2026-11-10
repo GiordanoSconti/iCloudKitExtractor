@@ -218,7 +218,7 @@ public sealed class AccountInfoSyncClient
     private static void EnsureAccountInfoAuth(ICloudSession session)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Account Info: sessione senza DSID.");
+            throw new InvalidOperationException("Account Info: session has no DSID.");
 
         var identity = ResolveIdentityToken(session);
         if (string.IsNullOrWhiteSpace(identity)
@@ -369,7 +369,7 @@ public sealed class AccountInfoSyncClient
                   ?? session.GsICloudAuthToken
                   ?? session.CloudKitGsToken;
         if (string.IsNullOrWhiteSpace(mme))
-            throw new InvalidOperationException("getPhoto: manca MobileMeAuthToken.");
+            throw new InvalidOperationException("getPhoto: missing MobileMeAuthToken.");
 
         using var request = new HttpRequestMessage(
             HttpMethod.Get, "https://setup.icloud.com/setup/account/getPhoto");
@@ -419,8 +419,8 @@ public sealed class AccountInfoSyncClient
         if (candidates.Count == 0)
         {
             throw new InvalidOperationException(
-                "GSA: nessun Identity SPD per Account Info (manca Adsid + appleid.auth). " +
-                "Rifai login GSA: serve spd t/com.apple.gs.appleid.auth.");
+                "GSA: no Identity SPD for Account Info (missing Adsid + appleid.auth). " +
+                "Sign in to GSA again: spd t/com.apple.gs.appleid.auth required.");
         }
 
         Exception? last = null;

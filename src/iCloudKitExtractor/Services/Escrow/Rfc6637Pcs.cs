@@ -76,7 +76,7 @@ public static class Rfc6637Pcs
     private static byte[] EcdhSharedX(ReadOnlySpan<byte> ephemeralPublic, ReadOnlySpan<byte> privateD)
     {
         var curve = ECNamedCurveTable.GetByName("secp256r1")
-                    ?? throw new CryptographicException("secp256r1 non disponibile");
+                    ?? throw new CryptographicException("secp256r1 not available");
         var domain = new ECDomainParameters(curve.Curve, curve.G, curve.N, curve.H, curve.GetSeed());
 
         Org.BouncyCastle.Math.EC.ECPoint q = DecodePoint(curve.Curve, ephemeralPublic);
@@ -99,7 +99,7 @@ public static class Rfc6637Pcs
             var X = curve.FromBigInteger(x);
             var rhs = X.Square().Add(curve.A).Multiply(X).Add(curve.B);
             var yTilde = rhs.Sqrt()
-                         ?? throw new CryptographicException("compact EC: non è un punto");
+                         ?? throw new CryptographicException("compact EC: not a point");
             var yT = yTilde.ToBigInteger();
             var yTn = yTilde.Negate().ToBigInteger();
             var y = yT.CompareTo(yTn) < 0 ? yT : yTn;

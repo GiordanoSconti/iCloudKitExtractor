@@ -31,11 +31,11 @@ public static class ImapMailExportService
     {
         ArgumentNullException.ThrowIfNull(client);
         if (string.IsNullOrWhiteSpace(parentDirectory))
-            throw new ArgumentException("Cartella destinazione obbligatoria.", nameof(parentDirectory));
+            throw new ArgumentException("Destination folder is required.", nameof(parentDirectory));
         if (string.IsNullOrWhiteSpace(folderFullName))
-            throw new ArgumentException("Cartella IMAP obbligatoria.", nameof(folderFullName));
+            throw new ArgumentException("IMAP folder is required.", nameof(folderFullName));
         if (uids is null || uids.Count == 0)
-            throw new ArgumentException("Nessun messaggio da esportare.", nameof(uids));
+            throw new ArgumentException("No messages to export.", nameof(uids));
 
         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
         var root = Path.Combine(parentDirectory, $"mail_export_{stamp}");
@@ -52,7 +52,7 @@ public static class ImapMailExportService
         {
             ct.ThrowIfCancellationRequested();
             var uid = uids[i];
-            progress?.Report($"Esporto {i + 1}/{total} ({folderFullName})…");
+            progress?.Report($"Exporting {i + 1}/{total} ({folderFullName})…");
             try
             {
                 var mime = await client.FetchMimeMessageAsync(folderFullName, uid, ct)
@@ -93,7 +93,7 @@ public static class ImapMailExportService
     {
         ArgumentNullException.ThrowIfNull(client);
         if (string.IsNullOrWhiteSpace(parentDirectory))
-            throw new ArgumentException("Cartella destinazione obbligatoria.", nameof(parentDirectory));
+            throw new ArgumentException("Destination folder is required.", nameof(parentDirectory));
 
         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
         var root = Path.Combine(parentDirectory, $"mail_export_{stamp}");
@@ -107,7 +107,7 @@ public static class ImapMailExportService
         foreach (var folder in folders)
         {
             ct.ThrowIfCancellationRequested();
-            progress?.Report($"Cartella {folder.DisplayName}…");
+            progress?.Report($"Folder {folder.DisplayName}…");
             IReadOnlyList<UniqueId> uids;
             try
             {
@@ -134,7 +134,7 @@ public static class ImapMailExportService
                 ct.ThrowIfCancellationRequested();
                 var uid = uids[i];
                 progress?.Report(
-                    $"Esporto {folder.DisplayName}: {i + 1}/{uids.Count} " +
+                    $"Exporting {folder.DisplayName}: {i + 1}/{uids.Count} " +
                     $"(tot ok={written} fail={failed})…");
                 try
                 {
@@ -171,7 +171,7 @@ public static class ImapMailExportService
     {
         try
         {
-            progress?.Report("Calcolo firme HASH (SHA-256)…");
+            progress?.Report("Computing HASH signatures (SHA-256)…");
             await OutputHashManifest
                 .WriteForDirectoryAsync(
                     root,

@@ -41,7 +41,7 @@ public static class BackupBlobDecryptor
             }
         }
 
-        log?.Report("  nessuna combinazione class key + AES ha prodotto dati plausibili");
+        log?.Report("  no class key + AES combination produced plausible data");
         return null;
     }
 

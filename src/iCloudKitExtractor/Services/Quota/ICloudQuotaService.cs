@@ -22,13 +22,13 @@ public sealed class ICloudQuotaService
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Sessione senza DSID.");
+            throw new InvalidOperationException("Session has no DSID.");
 
         var secret = SessionMmeAuth.ResolveSecret(session);
         if (string.IsNullOrWhiteSpace(secret))
         {
             throw new InvalidOperationException(
-                "Manca secret Quota (MobileMeAuthToken / AppleCloudKitContext / gs.icloud.auth).");
+                "Missing Quota secret (MobileMeAuthToken / AppleCloudKitContext / gs.icloud.auth).");
         }
 
         var baseUrl = ResolveQuotaBaseUrl(session);
@@ -231,7 +231,7 @@ public sealed class ICloudQuotaService
         sb.AppendLine("--- Dettaglio ---");
         if (string.IsNullOrWhiteSpace(json))
         {
-            sb.AppendLine("(vuoto)");
+            sb.AppendLine("(empty)");
             return;
         }
 
@@ -305,7 +305,7 @@ public sealed class ICloudQuotaService
         }
         catch (JsonException ex)
         {
-            sb.AppendLine($"(parse details fallito: {ex.Message})");
+            sb.AppendLine($"(parse details failed: {ex.Message})");
         }
     }
 

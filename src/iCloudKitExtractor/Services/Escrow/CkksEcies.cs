@@ -28,7 +28,7 @@ public static class CkksEcies
 
         var ephPubBytes = blob[..P384PointLen].ToArray();
         if (ephPubBytes[0] != 0x04)
-            throw new CryptographicException("ECIES ephemeral non uncompressed (atteso 0x04)");
+            throw new CryptographicException("ECIES ephemeral not uncompressed (expected 0x04)");
 
         using var eph = ECDiffieHellman.Create();
         eph.ImportParameters(new ECParameters

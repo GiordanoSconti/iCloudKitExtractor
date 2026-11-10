@@ -16,14 +16,14 @@ public sealed class TrustedDevicesService
         var fromDisk = TryLoadTrustTokenFile(session);
 
         var sb = new StringBuilder();
-        sb.AppendLine("=== Trust / GrandSlam (sessione corrente) ===");
+        sb.AppendLine("=== Trust / GrandSlam (current session) ===");
         sb.AppendLine($"Apple ID: {session.AppleId}");
         sb.AppendLine($"DSID: {session.Dsid}");
-        sb.AppendLine($"ADSID: {(string.IsNullOrWhiteSpace(session.Adsid) ? "(assente)" : "presente")}");
-        sb.AppendLine($"PET: {(string.IsNullOrWhiteSpace(session.PeToken) ? "(assente)" : "presente")}");
+        sb.AppendLine($"ADSID: {(string.IsNullOrWhiteSpace(session.Adsid) ? "(missing)" : "present")}");
+        sb.AppendLine($"PET: {(string.IsNullOrWhiteSpace(session.PeToken) ? "(missing)" : "present")}");
 
         if (string.IsNullOrWhiteSpace(session.IdmsaTrustToken))
-            sb.AppendLine("Idmsa TrustToken (cache/sessione): (assente)");
+            sb.AppendLine("Idmsa TrustToken (cache/session): (missing)");
         else
             sb.AppendLine(
                 $"Idmsa TrustToken (cache/sessione): presente{(fromDisk ? " — da file ~/.icloud" : "")}");
@@ -35,12 +35,12 @@ public sealed class TrustedDevicesService
             string completeHint;
             if (hasLiveTrust)
             {
-                completeHint = " — sessione trusted (TrustToken live)";
+                completeHint = " — trusted session (live TrustToken)";
                 if (complete == 409)
                     completeHint += " [signin/complete era 409, poi OTP]";
             }
             else if (complete is 200 or 204)
-                completeHint = " (signin/complete OK, TrustToken ancora assente)";
+                completeHint = " (signin/complete OK, TrustToken still missing)";
             else if (complete == 409)
                 completeHint = " (signin/complete 409 — flusso web idmsa non più esposto in UI)";
             else if (complete is null)
@@ -50,7 +50,7 @@ public sealed class TrustedDevicesService
 
             sb.AppendLine(
                 $"IdmsaMfa live: sessionId={(string.IsNullOrWhiteSpace(session.IdmsaMfa.SessionId) ? "?" : "ok")} " +
-                $"trustToken={(hasLiveTrust ? "sì" : "no")}" +
+                $"trustToken={(hasLiveTrust ? "yes" : "no")}" +
                 completeHint);
             if (hasLiveTrust)
                 sb.AppendLine($"  TrustToken live: {session.IdmsaMfa.TrustToken}");
@@ -88,16 +88,16 @@ public sealed class TrustedDevicesService
             $"Certificato: {(ApsStorage.HasCertificate() ? "OK (" + ApsStorage.DirectoryPath + ")" : "NO")}");
         var pushTok = ApsSessionService.TryGetPushTokenHex();
         if (string.IsNullOrEmpty(pushTok))
-            sb.AppendLine("Push token: (assente — Attiva Albert + Connetti APS)");
+            sb.AppendLine("Push token: (missing — run Albert activation + Connect APS)");
         else
             sb.AppendLine($"Push token: {pushTok}");
 
         sb.AppendLine();
-        sb.AppendLine("Nota:");
+        sb.AppendLine("Note:");
         sb.AppendLine(
-            "  · «Registra in lista 2FA» (HSA2/GSA) usa password + ptkn APS, poi OTP dal device già fidato.");
+            "  · \"Register on 2FA list\" (HSA2/GSA) uses password + APS ptkn, then OTP from an already trusted device.");
         sb.AppendLine(
-            "  · Il TrustToken web (idmsa) non è usato da questo flusso.");
+            "  · Web TrustToken (idmsa) is not used by this flow.");
         return sb.ToString();
     }
 

@@ -174,7 +174,7 @@ public static class DecryptFailureJournal
         if (!hasIkm)
             missing.Add("IKM");
         if (!hasAuth && !hasObj && hasEdgeCompact)
-            return "solo edge_compact in snapshot — dump ford_offline mancante, replay parziale";
+            return "edge_compact only in snapshot — ford_offline dump missing, partial replay";
         if (missing.Count == 0)
             return "artifact incompleti";
         return "mancano: " + string.Join(", ", missing);

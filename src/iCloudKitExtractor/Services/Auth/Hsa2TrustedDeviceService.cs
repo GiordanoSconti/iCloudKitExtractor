@@ -31,14 +31,14 @@ public sealed class Hsa2TrustedDeviceService
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(password))
-            throw new InvalidOperationException("Serve la password Apple ID (campo Accesso).");
+            throw new InvalidOperationException("Apple ID password required (Sign In field).");
 
         if (LooksLikePet(password))
             throw new InvalidOperationException(
-                "Serve la password, non il PET — altrimenti Apple salta il challenge HSA2.");
+                "Password required, not the PET — otherwise Apple skips the HSA2 challenge.");
 
         if (string.IsNullOrWhiteSpace(ApsSessionService.TryGetPushTokenHex()))
-            throw new InvalidOperationException("Connetti APS prima (serve ptkn nel CPD GSA).");
+            throw new InvalidOperationException("Connect APS first (GSA CPD needs ptkn).");
 
                 // Solo verifica OTP — NON soft-repair/wipe e NON newIdentity automatico:
         // wipe MidService su Android ADI → spesso 'ptm'/433 e rompe anche il login.
@@ -51,34 +51,34 @@ public sealed class Hsa2TrustedDeviceService
         if (result.Success && result.Session is not null)
         {
             log?.Invoke(
-                "Login GSA senza challenge 2FA (au=trustedDeviceSecondaryAuth assente). " +
-                "Questa ADI è già trusted per Apple. In UI: «Nuova identità ADI» poi riprova Registra. " +
-                "Verifica anche ptkn APS.");
+                "GSA login without 2FA challenge (au=trustedDeviceSecondaryAuth missing). " +
+                "This ADI is already trusted by Apple. In the UI: use New ADI identity, then retry Register. " +
+                "Also verify APS ptkn.");
             var list = await TryListDevicesAsync(result.Session, log, ct).ConfigureAwait(false);
             return new Hsa2BeginResult
             {
                 NeedsOtp = false,
                 CompletedSession = result.Session,
                 DeviceSummary = list,
-                LogText = "Nessun challenge 2FA",
+                LogText = "No 2FA challenge",
             };
         }
 
-        throw new InvalidOperationException(result.Error ?? "GSA SignIn fallito.");
+        throw new InvalidOperationException(result.Error ?? "GSA SignIn failed.");
 
     }
 
     private static Hsa2BeginResult NeedsOtp(AuthResult result, Action<string>? log)
     {
         log?.Invoke(
-            $"Challenge HSA2 OK — dispositivi noti≈{result.VerificationOptions?.TrustedDeviceCount ?? 0}. " +
-            "Inserisci il codice dal tuo iPhone/iPad e conferma.");
+            $"HSA2 challenge OK — known devices≈{result.VerificationOptions?.TrustedDeviceCount ?? 0}. " +
+            "Enter the code from your iPhone/iPad and confirm.");
         return new Hsa2BeginResult
         {
             NeedsOtp = true,
             PartialSession = result.Session,
             Verification = result.VerificationOptions,
-            LogText = result.Error ?? "2FA richiesto",
+            LogText = result.Error ?? "2FA required",
         };
     }
 
@@ -99,10 +99,10 @@ public sealed class Hsa2TrustedDeviceService
             // Non fare soft-repair distruttivo (wipe ADI + MidService): se OTP è morta
             // l'utente ripara a mano. Qui solo messaggio chiaro.
             throw new InvalidOperationException(
-                "Anisette :6971 non sana — " + TrimBody(ex.Message) +
-                " Non eseguo wipe/newIdentity automatico (rompe MidService). " +
-                "Se GET / fallisce con 'ptm', l'ADI locale è ok ma MidService riprovato: " +
-                "riavvia AnisetteServer/worker senza POST /provision.",
+                "Anisette :6971 unhealthy — " + TrimBody(ex.Message) +
+                " Not running automatic wipe/newIdentity (breaks MidService). " +
+                "If GET / fails with 'ptm', local ADI is OK but MidService needs retry: " +
+                "restart AnisetteServer/worker without POST /provision.",
                 ex);
         }
     }
@@ -152,7 +152,7 @@ public sealed class Hsa2TrustedDeviceService
         var gsa = new GsaGrandSlamAuthService(_http, _anisette, _useIphone);
         gsa.Progress += p => log?.Invoke($"[{p.Step}] {p.Message}");
 
-        log?.Invoke("GSA SignIn (password + ptkn) per entrare in lista 2FA HSA2…");
+        log?.Invoke("GSA SignIn (password + ptkn) to join HSA2 2FA device list…");
         return await gsa.SignInAsync(appleId, password, ct).ConfigureAwait(false);
     }
 
@@ -170,20 +170,20 @@ public sealed class Hsa2TrustedDeviceService
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(code) || code.Trim().Length < 4)
-            throw new InvalidOperationException("Codice OTP non valido.");
+            throw new InvalidOperationException("Invalid OTP code.");
 
         var gsa = new GsaGrandSlamAuthService(_http, _anisette, _useIphone);
         gsa.Progress += p => log?.Invoke($"[{p.Step}] {p.Message}");
 
-        log?.Invoke("GSA: invio OTP trusted device + validate + authenticate…");
+        log?.Invoke("GSA: submit trusted-device OTP + validate + authenticate…");
         var result = await gsa
             .SubmitTrustedDeviceCodeAsync(appleId, code.Trim(), partialSession, ct)
             .ConfigureAwait(false);
 
         if (!result.Success || result.Session is null)
-            throw new InvalidOperationException(result.Error ?? "OTP GSA rifiutato.");
+            throw new InvalidOperationException(result.Error ?? "GSA rejected OTP.");
 
-        log?.Invoke("Login GSA post-2FA OK — leggo security/devices…");
+        log?.Invoke("GSA post-2FA login OK — reading security/devices…");
         var summary = await TryListDevicesAsync(result.Session, log, ct).ConfigureAwait(false);
         return new Hsa2CompleteResult
         {
@@ -201,9 +201,9 @@ public sealed class Hsa2TrustedDeviceService
         if (identity is null)
         {
             log?.Invoke(
-                "security/devices: skip — manca com.apple.gs.appleid.auth " +
-                "(serve dopo challenge HSA2 / Account Info, non GsIdms/PET).");
-            return "(lista device non leggibile — manca appleid.auth)";
+                "security/devices: skip — missing com.apple.gs.appleid.auth " +
+                "(needed after HSA2 challenge / Account Info, not GsIdms/PET).");
+            return "(device list unreadable — missing appleid.auth)";
         }
 
         var (status, body) = await GetAppleIdJsonAsync(
@@ -241,7 +241,7 @@ public sealed class Hsa2TrustedDeviceService
         var identity = ResolveAppleIdIdentity(session);
         if (identity is null)
         {
-            log?.Invoke("associated phones: skip — manca appleid.auth");
+            log?.Invoke("associated phones: skip — missing appleid.auth");
             return [];
         }
 
@@ -282,7 +282,7 @@ public sealed class Hsa2TrustedDeviceService
         {
             log?.Invoke(
                 phones.Count == 0
-                    ? "associated phones: nessuno in security/devices"
+                    ? "associated phones: none in security/devices"
                     : $"associated phones: {phones.Count} — " +
                       string.Join(", ", phones.Select(p => p.Obfuscated ?? p.RawWithDialCode ?? "?")));
         }
@@ -494,9 +494,9 @@ public sealed class Hsa2TrustedDeviceService
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("devices", out var devices)
                 || devices.ValueKind != JsonValueKind.Array)
-                return "security/devices: nessun array devices";
+                return "security/devices: no devices array";
 
-            var lines = new List<string> { $"Dispositivi HSA2 in lista: {devices.GetArrayLength()}" };
+            var lines = new List<string> { $"HSA2 devices in list: {devices.GetArrayLength()}" };
             var n = 0;
             foreach (var d in devices.EnumerateArray())
             {
@@ -505,7 +505,7 @@ public sealed class Hsa2TrustedDeviceService
                 var model = d.TryGetProperty("modelName", out var me) ? me.GetString()
                     : d.TryGetProperty("deviceClass", out var dc) ? dc.GetString() : null;
                 var id = d.TryGetProperty("id", out var ie) ? ie.GetString() : null;
-                lines.Add($"  {n}. {name ?? "(senza nome)"} — {model ?? "?"} id={TrimId(id)}");
+                lines.Add($"  {n}. {name ?? "(no name)"} — {model ?? "?"} id={TrimId(id)}");
                 // Flag utili: Apple distingue "in lista" vs "può ricevere codici 2FA".
                 foreach (var key in new[]
                          {

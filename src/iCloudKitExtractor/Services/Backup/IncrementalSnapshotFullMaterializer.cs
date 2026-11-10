@@ -37,7 +37,7 @@ public static class IncrementalSnapshotFullMaterializer
             IkeBackupOutputPaths.ResolveSnapshotRoot(work));
         if (string.IsNullOrWhiteSpace(deviceDirectory) || !Directory.Exists(deviceDirectory))
         {
-            log?.Report("  Full-merge: device dir assente — skip");
+            log?.Report("  Full-merge: device dir missing — skip");
             return default;
         }
 
@@ -45,7 +45,7 @@ public static class IncrementalSnapshotFullMaterializer
         var priors = EnumerateOlderSiblings(deviceDirectory, work, currentDate);
         if (priors.Count == 0)
         {
-            log?.Report("  Full-merge: nessun snapshot più vecchio sul device — skip");
+            log?.Report("  Full-merge: no older snapshot on device — skip");
             return default;
         }
 
@@ -68,7 +68,7 @@ public static class IncrementalSnapshotFullMaterializer
                 $"file aggiunti da prior={added:N0}, " +
                 $"~{copiedBytes:N0} B copiati, skip={skipped:N0}");
         else
-            log?.Report("  Full-merge: niente da aggiungere (già coperto o prior senza shard)");
+            log?.Report("  Full-merge: nothing to add (already covered or prior without shard)");
 
         return new Result(priors.Count, filled, added, (int)Math.Min(copiedBytes, int.MaxValue), skipped);
     }

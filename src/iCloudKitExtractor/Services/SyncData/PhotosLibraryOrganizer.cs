@@ -81,9 +81,7 @@ public static class PhotosLibraryOrganizer
             entry => LocatePlainFile(photosDir, sfoglia, hiddenDir, deletedDir, favDir, entry, cache),
             log);
 
-        var db = await PhotosCatalogSqlite.OpenAsync(photosDir, ct);
-        try
-        {
+        await using var db = await PhotosCatalogSqlite.OpenAsync(photosDir, ct);
         await db.ClearAsync(ct);
 
         foreach (var album in albums)
@@ -114,7 +112,7 @@ public static class PhotosLibraryOrganizer
                     {
                         bindSkip++;
                         log?.Report(
-                            $"  organize bind-skip {entry.Token}: file già usato da altro record " +
+                            $"  organize bind-skip {entry.Token}: file already used by another record " +
                             $"({Path.GetFileName(plainPath)})");
                         continue;
                     }
@@ -229,11 +227,6 @@ public static class PhotosLibraryOrganizer
             (bindSkip > 0 ? $", bind-skip={bindSkip}" : "") +
             " → Photos.db");
         return renamed + specialRenamed;
-        }
-        finally
-        {
-            await db.CloseForHashingAsync(ct).ConfigureAwait(false);
-        }
     }
 
     private static string? TryComputeSha256Hex(string path)

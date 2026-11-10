@@ -49,7 +49,7 @@ public static class DomainPcsFieldDecryptor
         {
             return (wireDomains, new DecryptSummary(
                 wireDomains.Count, wireDomains.Count, 0, 0, 0, 0, 0,
-                "PCS KeySet assente — solo parse wire"));
+                "PCS KeySet missing — wire parse only"));
         }
 
         var manateeFast = PcsSessionSeedKeys.IsManateePrimary(session);
@@ -62,7 +62,7 @@ public static class DomainPcsFieldDecryptor
         {
             return (wireDomains, new DecryptSummary(
                 wireDomains.Count, wireDomains.Count, 0, 0, 0, 0, 0,
-                "KeySet senza chiavi private"));
+                "KeySet without private keys"));
         }
 
         // EN moderno: fileList/newAssets già in chiaro sul wire → skip brute GCM
@@ -71,7 +71,7 @@ public static class DomainPcsFieldDecryptor
         if (wireWithFl > 0 && wireWithFl >= wireDomains.Count)
         {
             log?.Report(
-                $"  EN PCS Domain skip: {wireWithFl}/{wireDomains.Count} fileList già sul wire " +
+                $"  EN PCS Domain skip: {wireWithFl}/{wireDomains.Count} fileList already on wire " +
                 "(niente brute type=20)");
             return (wireDomains, new DecryptSummary(
                 wireDomains.Count, wireDomains.Count, 0, 0, 0, 0, 0,
@@ -267,7 +267,7 @@ public static class DomainPcsFieldDecryptor
         var msg = fieldsOk > 0
             ? $"PCS Domain ok {fieldsOk}/{fieldsSeen} campi → +FL={fileListsFilled} +new={newAssetsFilled} (zoneKeys={zones.Count})"
             : fieldsSeen == 0
-                ? $"nessun type=20 Domain (zoneKeys={zones.Count}) — solo wire"
+                ? $"no type=20 Domain (zoneKeys={zones.Count}) — wire only"
                 : $"PCS Domain 0/{fieldsSeen} decrypt (zoneKeys={zones.Count})";
         log?.Report($"  {msg}");
 

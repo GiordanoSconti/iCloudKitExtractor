@@ -34,11 +34,11 @@ public sealed class KeyValueSyncClient
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(session.Dsid))
-            throw new InvalidOperationException("Sessione senza DSID.");
+            throw new InvalidOperationException("Session has no DSID.");
 
         var secrets = SessionMmeAuth.ResolveSecretCandidates(session);
         if (secrets.Count == 0)
-            throw new InvalidOperationException("Sessione senza MobileMeAuthToken / UAEA… (serve per KVS).");
+            throw new InvalidOperationException("Session has no MobileMeAuthToken / UAEA… (required for KVS).");
 
         var url = ResolveSyncUrl(session);
         var xml = BuildRequestPlist(apps);
@@ -61,7 +61,7 @@ public sealed class KeyValueSyncClient
         }
 
         throw new InvalidOperationException(
-            "KVS sync fallito.\n" + string.Join("\n", errors));
+            "KVS sync failed.\n" + string.Join("\n", errors));
     }
 
     /// <summary>Sync default apps e testo formattato per UI forense.</summary>

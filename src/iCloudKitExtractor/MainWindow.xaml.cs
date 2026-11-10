@@ -50,8 +50,6 @@ public partial class MainWindow : Window
 
     private ApsSessionService? _apsSession;
 
-    private IdsSession? _idsSession;
-
     /// <summary>Sessione GSA parziale in attesa OTP per registrazione HSA2 (lista 2FA).</summary>
     private ICloudSession? _hsa2PartialSession;
 
@@ -67,7 +65,7 @@ public partial class MainWindow : Window
     /// <summary>True mentre è in corso Scarica backup (HTTP GET/POST vanno nel log Backup).</summary>
     private bool _downloadBusy;
 
-    /// <summary>Sessione live del download in attesa di Accesso/2FA mid-download.</summary>
+    /// <summary>Sessione live del download in attesa di Sign In/2FA mid-download.</summary>
     private ICloudSession? _midDownloadLiveSession;
     private TaskCompletionSource<bool>? _midDownloadAuthTcs;
 
@@ -114,9 +112,6 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _imapCts;
     private ImapMessageFilter? _imapFilter;
 
-    /// <summary>Ultima cartella Sync Data completata (per Apri Messages).</summary>
-    private string? _lastSyncDataOutputDir;
-
     public MainWindow()
 
     {
@@ -140,7 +135,7 @@ public partial class MainWindow : Window
         _httpFactory.Capture = _capture;
 
         // BeginInvoke: Invoke sincrono durante authorizeGet/edge blocca UI e download.
-        // Durante elenco/download backup → scheda Backup (Informazioni/Avvisi/Errori); altrimenti Accesso.
+        // Durante elenco/download backup → scheda Backup (Informazioni/Avvisi/Errori); altrimenti Sign In.
         _httpFactory.HttpLogLine += line =>
         {
             var msg = $"[HTTP] {line}";
@@ -155,19 +150,18 @@ public partial class MainWindow : Window
         if (IkeLogOptions.FullHarCapture)
         {
             LogAuth(
-                "HAR completo: ON → session.har / session_redacted.har in " +
+                "Full HAR: ON → session.har / session_redacted.har in " +
                 "%AppData%\\iCloudKitExtractor\\logs\\run_*");
         }
         else if (IkeLogOptions.PersistRunLogs)
         {
-            LogAuth("Capture run: attiva (cartella creata al primo evento → %AppData%\\iCloudKitExtractor\\logs\\run_*)");
+            LogAuth("Capture run: enabled (folder created on first event → %AppData%\\iCloudKitExtractor\\logs\\run_*)");
         }
         else
         {
-            LogAuth("Capture run: disattivata (nessun log in %AppData%\\iCloudKitExtractor\\logs)");
+            LogAuth("Capture run: disabled (no logs in %AppData%\\iCloudKitExtractor\\logs)");
         }
         LoadAnisetteSettingsUi();
-        PopulateIdsLookupTopics();
         LogAuth($"Anisette: {AnisetteProviderFactory.ResolveServerUrl()} | mode: {AnisetteProviderFactory.ResolveAuthMode()}");
         LogAuth($"  config: {AnisetteProviderFactory.SettingsFilePath}");
         Loaded += MainWindow_Loaded;
@@ -185,7 +179,7 @@ public partial class MainWindow : Window
 
     private enum UiWizardStage
     {
-        /// <summary>Solo scheda Accesso.</summary>
+        /// <summary>Solo scheda Sign In.</summary>
         LoginOnly = 0,
         /// <summary>Login OK → Escrow abilitata e selezionata.</summary>
         AfterLogin = 1,
@@ -203,7 +197,7 @@ public partial class MainWindow : Window
         // SharedStreams / KeyValue / Contacts / Find My People: post-login.
         if (ExploratoryServicesTab is not null)
             ExploratoryServicesTab.IsEnabled = stage >= UiWizardStage.AfterLogin;
-        // Dispositivi fidati / IMAP Posta: sempre (credenziali dedicate, anche senza Escrow).
+        // Dispositivi fidati / IMAP Mail: sempre (credenziali dedicate, anche senza Escrow).
         if (TrustedDevicesTab is not null)
             TrustedDevicesTab.IsEnabled = true;
         if (ImapMailTab is not null)
@@ -239,12 +233,12 @@ public partial class MainWindow : Window
 
     private void ResetWizardToLoginAfterEscrowAuthFailure(string detail)
     {
-        AppendDecryptLog($"Auth Escrow fallita (401) — ritorno al login. {detail}");
+        AppendDecryptLog($"Escrow auth failed (401) — returning to login. {detail}");
         _session = null;
         _orchestrator = null;
         UpdateSessionUi(false);
         ApplyUiWizardStage(UiWizardStage.LoginOnly);
-        LogAuth("Sessione invalidata dopo 401 Escrow — ripetere Accesso.");
+        LogAuth("Session invalidated after 401 Escrow — repeat Sign In.");
     }
 
     private void QuietLogCheckBox_Changed(object sender, RoutedEventArgs e) =>
@@ -281,7 +275,7 @@ public partial class MainWindow : Window
         {
             LogAuth(
                 "HAR completo: ON → %AppData%\\iCloudKitExtractor\\logs\\run_*\\session.har " +
-                "(+ session_redacted.har). Cattura anche HTTP 2xx in Quiet.");
+                "(+ session_redacted.har). Also captures HTTP 2xx in Quiet.");
         }
     }
 
@@ -331,7 +325,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Pausa download: mostra Accesso/2FA; dopo login OK assorbe token nella sessione live e riprende.
+    /// Pausa download: mostra Sign In/2FA; dopo login OK assorbe token nella sessione live e riprende.
     /// </summary>
     private async Task<bool> RecoverSessionMidDownloadAsync(
         ICloudSession liveSession,
@@ -355,8 +349,8 @@ public partial class MainWindow : Window
             if (MainTabControl is not null && AccessTab is not null)
                 MainTabControl.SelectedItem = AccessTab;
 
-            LogAuth($"Download in pausa — recupero sessione ({ex.Kind}): {ex.Message}");
-            _lastDownloadProgressStatus = "In pausa — completa Accesso/2FA…";
+            LogAuth($"Download paused — session recovery ({ex.Kind}): {ex.Message}");
+            _lastDownloadProgressStatus = "Paused — complete Sign In/2FA…";
             if (DownloadStatusText is not null)
                 DownloadStatusText.Text = _lastDownloadProgressStatus;
 
@@ -367,8 +361,8 @@ public partial class MainWindow : Window
                 TwoFactorPanel.Visibility = Visibility.Visible;
                 MessageBox.Show(
                     this,
-                    "Sessione scaduta durante il download. Completa la verifica a due fattori per riprendere.",
-                    "2FA richiesto",
+                    "Session expired during download. Complete two-factor verification to resume.",
+                    "2FA required",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
             }
@@ -377,9 +371,9 @@ public partial class MainWindow : Window
                 TwoFactorPanel.Visibility = Visibility.Collapsed;
                 MessageBox.Show(
                     this,
-                    "Apple ha rifiutato la password in memoria o serve un nuovo accesso.\n" +
-                    "Reinserisci la password nella scheda Accesso e clicca Accedi per riprendere il download.",
-                    "Accesso richiesto",
+                    "Apple rejected the in-memory password or a new sign-in is required.\n" +
+                    "Re-enter the password on the Sign In tab and click Sign In to resume the download.",
+                    "Sign-in required",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 try { PasswordBox.Focus(); }
@@ -418,8 +412,8 @@ public partial class MainWindow : Window
         _midDownloadAuthTcs = null;
         tcs.TrySetResult(true);
 
-        LogAuth("Sessione mid-download ripristinata — ripresa download.");
-        _lastDownloadProgressStatus = "Sessione ripristinata — ripresa…";
+        LogAuth("Mid-download session restored — resuming download.");
+        _lastDownloadProgressStatus = "Session restored — resuming…";
         if (DownloadStatusText is not null)
             DownloadStatusText.Text = _lastDownloadProgressStatus;
     }
@@ -509,7 +503,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            LogAuth($"Probe anisette fallita: {ex.Message}");
+            LogAuth($"Anisette probe failed: {ex.Message}");
         }
     }
 
@@ -545,7 +539,7 @@ public partial class MainWindow : Window
         {
             AnisetteEnvOverrideText.Visibility = Visibility.Visible;
             AnisetteEnvOverrideText.Text =
-                "ANISETTE_SERVER_URL impostata: ha priorità sulla UI (" +
+                "ANISETTE_SERVER_URL set: overrides the UI (" +
                 AnisetteProviderFactory.ResolveServerUrl() + ").";
         }
         else
@@ -554,7 +548,7 @@ public partial class MainWindow : Window
         }
 
         AnisetteSettingsStatusText.Text =
-            "Attivo: " + AnisetteProviderFactory.ResolveServerUrl();
+            "Active: " + AnisetteProviderFactory.ResolveServerUrl();
     }
 
     private void UpdateAnisetteRemoteFieldsEnabled()
@@ -594,8 +588,8 @@ public partial class MainWindow : Window
         if (LicenseIssuedOverlay is not null)
             LicenseIssuedOverlay.Visibility = Visibility.Visible;
         _licenseOverlayShown = true;
-        LogAuth("Licenza Anisette (Package C) ricevuta alla prima connessione — salvata in anisette.json.");
-        AnisetteSettingsStatusText.Text = "Nuova licenza ricevuta — copiala e conservala.";
+        LogAuth("Anisette license (Package C) received on first connection — saved to anisette.json.");
+        AnisetteSettingsStatusText.Text = "New license received — copy and store it.";
     }
 
     private void LicenseOverlayCopy_Click(object sender, RoutedEventArgs e)
@@ -603,11 +597,11 @@ public partial class MainWindow : Window
         try
         {
             Clipboard.SetText(LicenseIssuedValueBox.Text ?? "");
-            AnisetteSettingsStatusText.Text = "Licenza copiata negli appunti.";
+            AnisetteSettingsStatusText.Text = "License copied to clipboard.";
         }
         catch (Exception ex)
         {
-            LogAuth("Copia licenza fallita: " + ex.Message);
+            LogAuth("Copy license failed: " + ex.Message);
         }
     }
 
@@ -647,14 +641,14 @@ public partial class MainWindow : Window
             {
                 if (string.IsNullOrWhiteSpace(settings.ServerUrl))
                 {
-                    AnisetteSettingsStatusText.Text = "URL remoto obbligatorio.";
+                    AnisetteSettingsStatusText.Text = "Remote URL required.";
                     return;
                 }
 
                 if (!Uri.TryCreate(settings.ServerUrl, UriKind.Absolute, out var uri)
                     || uri.Scheme is not ("http" or "https"))
                 {
-                    AnisetteSettingsStatusText.Text = "URL non valido (http/https).";
+                    AnisetteSettingsStatusText.Text = "Invalid URL (http/https).";
                     return;
                 }
             }
@@ -662,16 +656,16 @@ public partial class MainWindow : Window
             AnisetteUserSettings.Save(settings);
             InvalidateAnisetteSession();
             var resolved = AnisetteProviderFactory.ResolveServerUrl();
-            AnisetteSettingsStatusText.Text = "Salvato → " + resolved;
-            LogAuth($"Anisette salvata: {resolved} | mode: {AnisetteProviderFactory.ResolveAuthMode()}");
+            AnisetteSettingsStatusText.Text = "Saved → " + resolved;
+            LogAuth($"Anisette saved: {resolved} | mode: {AnisetteProviderFactory.ResolveAuthMode()}");
             LogAuth($"  config: {AnisetteProviderFactory.SettingsFilePath}");
 
             await EnsureAuthProfileAsync().ConfigureAwait(true);
         }
         catch (Exception ex)
         {
-            AnisetteSettingsStatusText.Text = "Errore salvataggio: " + ex.Message;
-            LogAuth($"Salvataggio Anisette fallito: {ex.Message}");
+            AnisetteSettingsStatusText.Text = "Save error: " + ex.Message;
+            LogAuth($"Saving Anisette failed: {ex.Message}");
         }
     }
 
@@ -680,7 +674,7 @@ public partial class MainWindow : Window
         try
         {
             AnisetteTestButton.IsEnabled = false;
-            AnisetteSettingsStatusText.Text = "Test in corso…";
+            AnisetteSettingsStatusText.Text = "Test in progress…";
 
             // Prova l'URL selezionato in UI senza obbligatoriamente salvare.
             var draft = ReadAnisetteSettingsFromUi();
@@ -693,7 +687,7 @@ public partial class MainWindow : Window
 
             if (!Uri.TryCreate(url, UriKind.Absolute, out _))
             {
-                AnisetteSettingsStatusText.Text = "URL non valido.";
+                AnisetteSettingsStatusText.Text = "Invalid URL.";
                 return;
             }
 
@@ -714,8 +708,8 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AnisetteSettingsStatusText.Text = "Test fallito: " + ex.Message;
-            LogAuth($"Test Anisette fallito: {ex.Message}");
+            AnisetteSettingsStatusText.Text = "Test failed: " + ex.Message;
+            LogAuth($"Anisette test failed: {ex.Message}");
         }
         finally
         {
@@ -727,19 +721,19 @@ public partial class MainWindow : Window
     {
         LogAuth(AnisetteCapability.DescribeForLogin(
             profile.ServerUrl, profile.LocalCoreAdiSpoof, profile.RemoteAnisette, profile.Backend));
-        LogAuth($"  MD-M remoto:  {AnisetteCapability.SummarizeMdM(profile.RemoteAnisette.MdM)}");
+        LogAuth($"  remote MD-M:  {AnisetteCapability.SummarizeMdM(profile.RemoteAnisette.MdM)}");
         if (AnisetteCapability.IsFridaIphoneBackend(profile.Backend))
-            LogAuth("Flow iPhone: Frida → AuthKit/akd sul device + SRP GSA.");
+            LogAuth("Flow iPhone: Frida → AuthKit/akd on device + SRP GSA.");
         else if (profile.UseFullIphoneAuth)
-            LogAuth("Flow iPhone: Anisette remota (RAD/emulato/Frida) + SRP GSA.");
+            LogAuth("Flow iPhone: remote Anisette (RAD/emulated/Frida) + SRP GSA.");
         else if (profile.Mode == "iphone" && profile.DockerMacAnisette)
-            LogAuth("authMode=iphone ma anisette = Mac/Xcode (docker). Usa --backend frida o setup-emulated-akd.");
+            LogAuth("authMode=iphone but anisette = Mac/Xcode (docker). Use --backend frida or setup-emulated-akd.");
         else if (profile.Mode == "iphone" && profile.LocalCoreAdiSpoof)
-            LogAuth("authMode=iphone ma anisette = CoreADI Windows (:6969). Usa --backend frida (:6971).");
+            LogAuth("authMode=iphone but anisette = CoreADI Windows (:6969). Use --backend frida (:6971).");
         else if (profile.Mode == "hybrid")
             LogAuth("Flow hybrid (legacy): SRP AuthKitWin → ckAppInit iPhone.");
         else
-            LogAuth("authMode=iphone non attivo — verifica AnisetteServer su :6971 (backend=frida).");
+            LogAuth("authMode=iphone not active — check AnisetteServer on :6971 (backend=frida).");
     }
 
 
@@ -786,7 +780,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Traffico HTTP condiviso: in operazioni Backup → log Informazioni/Avvisi/Errori;
-    /// durante login/2FA/altro → log Accesso.
+    /// durante login/2FA/altro → log Sign In.
     /// </summary>
     private void AppendHttpTrafficLog(string line)
     {
@@ -808,7 +802,7 @@ public partial class MainWindow : Window
         if (_session is null)
             return;
         _capture.SaveSessionSnapshot(_session, phase, note);
-        LogAuth($"Snapshot sessione salvato ({phase})");
+        LogAuth($"Session snapshot saved ({phase})");
     }
 
     /// <summary>
@@ -860,17 +854,24 @@ public partial class MainWindow : Window
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var kind = ClassifyDownloadLog(line);
+        var isFgProbe = IsForegroundMmcsProbeLog(line);
+        if (isFgProbe)
+            UpdateForegroundMmcsUiFromLog(line);
+
         if (IkeLogOptions.Quiet
-            && kind is not DownloadLogKind.Error)
+            && kind is not DownloadLogKind.Error
+            && !isFgProbe)
             return;
 
         // Quiet off: senza cap il FlowDocument + ScrollToEnd congela il dispatcher
         // (diagnostica: ~36k ui_append_log_stall Info, non File.Copy).
-        if (kind == DownloadLogKind.Info && !TryAdmitInfoLogLine())
+        // FG probe: sempre ammessi (pochi) anche se Quiet off + info throttle.
+        if (kind == DownloadLogKind.Info && !isFgProbe && !TryAdmitInfoLogLine())
             return;
 
         // #region agent log
         if (kind == DownloadLogKind.Error
+            || line.Contains("decrypt failed", StringComparison.OrdinalIgnoreCase)
             || line.Contains("decrypt fallito", StringComparison.OrdinalIgnoreCase)
             || line.Contains("MmcsAuth", StringComparison.OrdinalIgnoreCase))
         {
@@ -941,10 +942,11 @@ public partial class MainWindow : Window
         if (IkeLogOptions.Quiet && !IkeLogOptions.ShouldEmitUi(msg))
             return;
 
-        // Errori: sempre in coda. Info/avvisi: drop se già troppi post pendenti.
-        // In Quiet qui arrivano solo errori (ShouldEmitUi); niente cap.
-        var likelyError = IkeLogOptions.Quiet || IkeLogOptions.IsErrorLine(msg);
-        if (!likelyError)
+        // Errori + probe FG: sempre in coda. Info/warnings: drop se già troppi post pendenti.
+        // In Quiet ShouldEmitUi lascia passare errors e linee FG observe/seed.
+        var bypassInfoCap = IkeLogOptions.IsErrorLine(msg)
+                            || IkeLogOptions.IsForegroundMmcsProbeLine(msg);
+        if (!bypassInfoCap)
         {
             var pending = Interlocked.Increment(ref _pendingInfoLogPosts);
             if (pending > MaxPendingInfoLogPosts)
@@ -963,7 +965,7 @@ public partial class MainWindow : Window
             }
             finally
             {
-                if (!likelyError)
+                if (!bypassInfoCap)
                     Interlocked.Decrement(ref _pendingInfoLogPosts);
             }
         });
@@ -1013,6 +1015,86 @@ public partial class MainWindow : Window
 
     private static int _classifySelfTestDone;
 
+    private static bool IsForegroundMmcsProbeLog(string line) =>
+        IkeLogOptions.IsForegroundMmcsProbeLine(line);
+
+    private void ResetForegroundMmcsUi()
+    {
+        if (ForegroundMmcsText is null)
+            return;
+        ForegroundMmcsText.Text = "FG MMCS: in probe… (wait for zones / D: / S: / mbs)";
+    }
+
+    private void UpdateForegroundMmcsUiFromLog(string line)
+    {
+        if (ForegroundMmcsText is null)
+            return;
+
+        var text = line.Trim();
+        if (text.StartsWith("FG observe summary:", StringComparison.Ordinal))
+        {
+            ForegroundMmcsText.Text = text;
+            return;
+        }
+
+        // FG observe [source]: HIT|MISS …
+        var hitIdx = text.IndexOf("FG observe [", StringComparison.Ordinal);
+        if (hitIdx >= 0)
+        {
+            var after = text[hitIdx..];
+            var srcStart = after.IndexOf('[') + 1;
+            var srcEnd = after.IndexOf(']');
+            var src = srcStart > 0 && srcEnd > srcStart
+                ? after[srcStart..srcEnd]
+                : "?";
+
+            if (after.Contains(": HIT ", StringComparison.Ordinal))
+            {
+                var hw = ExtractFgToken(after, "hw=");
+                var sha = ExtractFgToken(after, "sha=");
+                var matchHw = after.Contains("matchStaticHw=True", StringComparison.OrdinalIgnoreCase);
+                var matchSha = after.Contains("matchStaticSha=True", StringComparison.OrdinalIgnoreCase);
+                ForegroundMmcsText.Text =
+                    $"FG MMCS HIT [{src}]: hw={hw ?? "?"}  sha={sha ?? "?"}  " +
+                    $"static={(matchHw && matchSha ? "match" : "DIFF")}";
+                return;
+            }
+
+            if (after.Contains(": MISS", StringComparison.Ordinal))
+            {
+                ForegroundMmcsText.Text =
+                    $"FG MMCS: MISS [{src}] — no hw/sha in this response";
+                return;
+            }
+        }
+
+        if (text.Contains("FG seed", StringComparison.Ordinal))
+        {
+            var hw = ExtractFgToken(text, "hw=");
+            var sha = ExtractFgToken(text, "sha=");
+            ForegroundMmcsText.Text =
+                $"FG MMCS seed (request): hw={hw ?? "?"}  sha={sha ?? "?"} — listening for responses…";
+        }
+    }
+
+    private static string? ExtractFgToken(string text, string key)
+    {
+        var i = text.IndexOf(key, StringComparison.Ordinal);
+        if (i < 0)
+            return null;
+        var start = i + key.Length;
+        var end = start;
+        while (end < text.Length)
+        {
+            var c = text[end];
+            if (char.IsWhiteSpace(c))
+                break;
+            end++;
+        }
+
+        return end > start ? text[start..end] : null;
+    }
+
     private static DownloadLogKind ClassifyDownloadLog(string line)
     {
         if (string.IsNullOrWhiteSpace(line))
@@ -1026,16 +1108,16 @@ public partial class MainWindow : Window
                 var samples = new (string id, string text, string expect)[]
                 {
                     ("H-path-critical",
-                        "  PENDING Library/Preferences/com.apple.messages.critical-messaging.storage.plist: mancano 1 chunk in cache (data:H-x9VSABnTfvZeEKqSge:816-1215(400B)) — download continua",
+                        "  PENDING Library/Preferences/com.apple.messages.critical-messaging.storage.plist: missing 1 chunk in cache (data:H-x9VSABnTfvZeEKqSge:816-1215(400B)) — download continues",
                         "Warning"),
                     ("H-path-exception",
-                        "  piano SysSharedContainerDomain-systemgroup.com.apple.ReportMemoryException: 0 file da scaricare (FileMetadata=2 incl. dir/link=2, Assets=0, empty=0, noSig=0, size0=0, dup=0)",
+                        "  plan SysSharedContainerDomain-systemgroup.com.apple.ReportMemoryException: 0 files to download (FileMetadata=2 incl. dir/link=2, Assets=0, empty=0, noSig=0, size0=0, dup=0)",
                         "Info"),
                     ("H-path-errorview",
                         "  Library/FLXViewRepository/44-39238115d66481635db86ab4746ca9c65d27a6fc-p-D6223F352E5B0396/pom/views/carrier-error-view.tml → ..\\Backup\\6e\\6e2b80faefaab5ec9049fe30f74646534d570d3b edge=8 storages=2 fordN=1 fill pipeA=1 pipeB=1 fordOpen=1 fordSkip=0 keyed=1 nodes=1 ford=[gate-mirror ctLen=112] pipes=[A,B] MMCS (+27.520 B)",
                         "Info"),
                     ("H-real-error",
-                        "  decrypt fallito: Invalid nonce",
+                        "  decrypt failed: Invalid nonce",
                         "Error"),
                 };
                 var logPath = @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log";
@@ -1070,7 +1152,7 @@ public partial class MainWindow : Window
 
     private static DownloadLogKind ClassifyDownloadLogCore(string line)
     {
-        // Progress file N/total — mai errori (anche se N è 401/403/404).
+        // Progress file N/total — mai errors (anche se N è 401/403/404).
         if (System.Text.RegularExpressions.Regex.IsMatch(
                 line,
                 @"^\s*File\s+\d+\s*/\s*\d+\s*:",
@@ -1079,23 +1161,26 @@ public partial class MainWindow : Window
             return DownloadLogKind.Info;
 
         // PrivilegedBatch progresso … abort=0 — campo contatore, non token ABORT.
-        if (line.Contains("PrivilegedBatch progresso", StringComparison.OrdinalIgnoreCase))
+        if (line.Contains("PrivilegedBatch progress", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("PrivilegedBatch progresso", StringComparison.OrdinalIgnoreCase))
             return DownloadLogKind.Info;
 
-        // Successi / traffico normale (path tipo ApiErrors.bundle NON sono errori).
+        // Successi / traffico normale (path tipo ApiErrors.bundle NON sono errors).
         if (ContainsAny(line,
                 "verifyDigest=ok",
                 "chunk OK",
                 "decryptFord",
-                "decrypt in coda",
+                "decrypt in coda", "decrypt queued",
                 "mmcs_cache: rilasciati",
                 "fordOpen=",
                 "fill pipeA="))
             return DownloadLogKind.Info;
 
         // Piano dominio (anche ReportMemoryException nel nome) = info, non errore.
-        if (line.Contains("piano ", StringComparison.OrdinalIgnoreCase)
-            && line.Contains("file da scaricare", StringComparison.OrdinalIgnoreCase))
+        if ((line.Contains("plan ", StringComparison.OrdinalIgnoreCase)
+                 || line.Contains("piano ", StringComparison.OrdinalIgnoreCase))
+            && (line.Contains("files to download", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("file da scaricare", StringComparison.OrdinalIgnoreCase)))
             return DownloadLogKind.Info;
 
         // Log tracer HTTP: REQUEST senza status di risposta → Informazioni (non Errori).
@@ -1125,17 +1210,17 @@ public partial class MainWindow : Window
             || HasLogClrExceptionToken(scan)
             || ContainsAny(scan,
                 "NullReference", "Unauthorized",
-                "decrypt fail", "decrypt fallito", "crypto abort", "Invalid nonce",
+                "decrypt fail", "decrypt failed", "decrypt fallito", "crypto abort", "Invalid nonce",
                 "≠ assetSize", "size_mismatch", "no-ikm", "no-resolve",
-                "decrypt_failures", "MmcsAuth assente"))
+                "decrypt_failures", "MmcsAuth missing", "MmcsAuth assente"))
             return DownloadLogKind.Error;
 
         // Avvisi
         if (ContainsAny(scan,
                 "WARN", "avvis", "PENDING", "pending", "skip", "SKIP",
-                "assente", "mancano", "manca ", "fallback", "degrad",
-                "prosegue", "warning", "attenzion", "stub", "orfan",
-                "non ancora", "senza auth", "debole"))
+                "assente", "absent", "missing", "mancano", "manca ", "fallback", "degrad",
+                "prosegue", "continues", "warning", "attenzion", "notice", "stub", "orfan",
+                "non ancora", "not yet", "senza auth", "without auth", "debole", "weak"))
             return DownloadLogKind.Warning;
 
         return DownloadLogKind.Info;
@@ -1147,7 +1232,7 @@ public partial class MainWindow : Window
     private static bool HasLogErrorToken(string line) =>
         System.Text.RegularExpressions.Regex.IsMatch(
             line,
-            @"(?<![\w.-])(?:ERROR|FAIL|FATAL|CRITICAL|CRITIC|ABORT|Errore|abortito|interrotto)(?![\w-])",
+            @"(?<![\w.-])(?:ERROR|FAIL|FATAL|CRITICAL|CRITIC|ABORT|Errore|Error|abortito|aborted|interrotto|interrupted)(?![\w-])",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase
             | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
@@ -1284,7 +1369,7 @@ public partial class MainWindow : Window
         var start = idx <= 0 ? 0 : idx + 1;
         if (start > text.Length)
             start = 0;
-        box.Text = $"[{DateTime.Now:HH:mm:ss}] … log ridotto (ultime {keepLines} righe){Environment.NewLine}"
+        box.Text = $"[{DateTime.Now:HH:mm:ss}] … log trimmed (last {keepLines} lines){Environment.NewLine}"
                    + text[start..];
     }
 
@@ -1305,8 +1390,8 @@ public partial class MainWindow : Window
         EscrowRequestSmsCheckBox.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         EscrowSecretLabel.Text = "iCSC:";
         EscrowSecretHint.Text = on
-            ? "(SMS — vuoto = DSID; SRP usa dsid)"
-            : "(vuoto = DSID)";
+            ? "(SMS — empty = DSID; SRP uses dsid)"
+            : "(empty = DSID)";
     }
 
     /// <summary>iCSC dal campo Escrow; se vuoto → DSID (default).</summary>
@@ -1336,7 +1421,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendDecryptLog($"  remint Anisette fallito: {ex.Message}");
+            AppendDecryptLog($"  remint Anisette failed: {ex.Message}");
         }
     }
 
@@ -1344,14 +1429,14 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "Unlock EscrowedKeys",
+            MessageBox.Show(this, "Sign in to iCloud first.", "Unlock EscrowedKeys",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(_session.Dsid))
         {
-            MessageBox.Show(this, "Sessione senza dsid.", "Unlock EscrowedKeys",
+            MessageBox.Show(this, "Session without dsid.", "Unlock EscrowedKeys",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1365,7 +1450,7 @@ public partial class MainWindow : Window
             outputDir = OutputFolderTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output.", "Unlock EscrowedKeys",
+            MessageBox.Show(this, "Select an output folder.", "Unlock EscrowedKeys",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1382,11 +1467,11 @@ public partial class MainWindow : Window
                 $"SRP: inner=SHA256(\"{_session.Dsid}:\" + dsid), x=SHA256(salt||inner)");
             AppendDecryptLog("Post-K: PBKDF2(dsid)+AES(sec3) → BackupBagPassword → RFC6637+GCM");
             if (useSms)
-                AppendDecryptLog("Variante SMS (securebackup) attiva");
+                AppendDecryptLog("SMS variant (securebackup) active");
             AppendDecryptLog(
                 iCscFromField
-                    ? $"iCSC dal campo ({iCsc.Length} char)"
-                    : $"iCSC vuoto → default DSID ({iCsc})");
+                    ? $"iCSC from field ({iCsc.Length} char)"
+                    : $"iCSC empty → default DSID ({iCsc})");
 
             var log = new Progress<string>(msg => Dispatcher.Invoke(() => AppendDecryptLog(msg)));
             var recovery = new EscrowRecoveryService(Http);
@@ -1412,8 +1497,8 @@ public partial class MainWindow : Window
                     _session, Http, outputDir, iCsc, sms, log);
                 AppendDecryptLog(
                     ensure.Success
-                        ? $"PCS KeySet in sessione: {ensure.KeySet?.Length ?? 0} B ← {ensure.Source}"
-                        : $"PCS KeySet NON in sessione: {ensure.Message}");
+                        ? $"PCS KeySet in session: {ensure.KeySet?.Length ?? 0} B ← {ensure.Source}"
+                        : $"PCS KeySet NOT in session: {ensure.Message}");
                 AppendDecryptLog($"OK unlock: {result.Message}");
                 // Abilita Backup/Drive/… senza lasciare la scheda Escrow.
                 ApplyUiWizardStage(UiWizardStage.AfterEscrow, selectTab: false);
@@ -1433,7 +1518,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendDecryptLog($"Errore unlock: {ex.Message}");
+            AppendDecryptLog($"Unlock error: {ex.Message}");
             MessageBox.Show(this, ex.Message, "Unlock EscrowedKeys",
                 MessageBoxButton.OK, MessageBoxImage.Error);
             if (LooksLikeHttp401(ex.Message))
@@ -1455,7 +1540,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "Lista bottle iCDP",
+            MessageBox.Show(this, "Sign in to iCloud first.", "Lista bottle iCDP",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1465,7 +1550,7 @@ public partial class MainWindow : Window
             outputDir = OutputFolderTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output.", "Lista bottle iCDP",
+            MessageBox.Show(this, "Select an output folder.", "Lista bottle iCDP",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1474,7 +1559,7 @@ public partial class MainWindow : Window
         try
         {
             EscrowOctagonListButton.IsEnabled = false;
-            AppendDecryptLog($"Lista bottle iCDP (get_records, non distruttivo) → {outputDir}");
+            AppendDecryptLog($"List iCDP bottles (get_records, non-destructive) → {outputDir}");
             var log = new Progress<string>(msg => Dispatcher.Invoke(() => AppendDecryptLog(msg)));
             var svc = new OctagonBottleRecoveryService(Http);
             var (bottles, error) = await svc.ListBottlesLiveAsync(_session, outputDir, log);
@@ -1493,7 +1578,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendDecryptLog($"Errore lista iCDP: {ex.Message}");
+            AppendDecryptLog($"iCDP list error: {ex.Message}");
             MessageBox.Show(this, ex.Message, "Lista bottle iCDP",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -1507,7 +1592,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "Unlock Octagon",
+            MessageBox.Show(this, "Sign in to iCloud first.", "Unlock Octagon",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1515,7 +1600,7 @@ public partial class MainWindow : Window
         if (EscrowOctagonBottleCombo.SelectedItem is not OctagonBottleListItem bottle)
         {
             MessageBox.Show(this,
-                "Seleziona una bottle iCDP (prima «Lista bottle iCDP»).",
+                "Select an iCDP bottle (run \"List iCDP bottles\" first).",
                 "Unlock Octagon", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1524,9 +1609,9 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(passcode))
         {
             MessageBox.Show(this,
-                "Inserisci il passcode del dispositivo che ha creato la bottle\n" +
+                "Enter the passcode of the device that created the bottle\n" +
                 $"(serial={bottle.Serial}, build={bottle.Build}).\n" +
-                "Non usare il DSID: per Octagon serve il passcode device / iCSC.",
+                "Do not use DSID: Octagon requires the device passcode / iCSC.",
                 "Unlock Octagon", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1536,17 +1621,17 @@ public partial class MainWindow : Window
             outputDir = OutputFolderTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output.", "Unlock Octagon",
+            MessageBox.Show(this, "Select an output folder.", "Unlock Octagon",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         var confirm = MessageBox.Show(this,
-            "ATTENZIONE: unlock Octagon consuma 1 tentativo irreversibile su questa bottle\n" +
-            $"(tentativi rimasti ≈ {bottle.RemainingAttempts?.ToString() ?? "?"}/10).\n" +
-            "Al 10° fallimento HSM distrugge il record.\n\n" +
-            $"{bottle.Display}\n\nProcedere?",
-            "Unlock Octagon — conferma",
+            "WARNING: Octagon unlock consumes one irreversible attempt on this bottle\n" +
+            $"(attempts remaining ≈ {bottle.RemainingAttempts?.ToString() ?? "?"}/10).\n" +
+            "On the 10th failure the HSM destroys the record.\n\n" +
+            $"{bottle.Display}\n\nContinue?",
+            "Unlock Octagon — confirm",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)
@@ -1572,7 +1657,7 @@ public partial class MainWindow : Window
                 if (!string.IsNullOrWhiteSpace(bottle.Serial))
                     _session.OctagonBottleSerial = bottle.Serial;
                 AppendDecryptLog(
-                    $"Octagon entropy in sessione: {_session.OctagonBottledPeerEntropy?.Length ?? 0} B" +
+                    $"Octagon entropy in session: {_session.OctagonBottledPeerEntropy?.Length ?? 0} B" +
                     (string.IsNullOrWhiteSpace(bottle.Serial) ? "" : $" (serial={bottle.Serial})"));
                 await RunOctagonPeerRecoveryAsync(outputDir).ConfigureAwait(true);
                 // Stesso gate di Unlock EscrowProxy: Backup / Drive / Sync / …
@@ -1586,7 +1671,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendDecryptLog($"Errore Octagon unlock: {ex.Message}");
+            AppendDecryptLog($"Octagon unlock error: {ex.Message}");
             MessageBox.Show(this, ex.Message, "Unlock Octagon",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -1602,7 +1687,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "Octagon RK",
+            MessageBox.Show(this, "Sign in to iCloud first.", "Octagon RK",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -1611,7 +1696,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(rk))
         {
             MessageBox.Show(this,
-                "Inserisci la iCloud Recovery Key (XXXX-XXXX-…).",
+                "Enter the iCloud Recovery Key (XXXX-XXXX-…).",
                 "Octagon RK", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1621,7 +1706,7 @@ public partial class MainWindow : Window
             outputDir = OutputFolderTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output.", "Octagon RK",
+            MessageBox.Show(this, "Select an output folder.", "Octagon RK",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1639,7 +1724,7 @@ public partial class MainWindow : Window
             AppendDecryptLog($"Unlock Octagon via Recovery Key → {rkDir}");
             AppendDecryptLog(
                 "Path: HKDF(RK,altDSID) → peer RK → fetchRecoverableTLKShares → CKKS Manatee/PCS " +
-                "(nessun RECOVER HSM / tentativo bottle).");
+                "(no RECOVER HSM / bottle attempt).");
             var log = new Progress<string>(msg => Dispatcher.Invoke(() => AppendDecryptLog(msg)));
             var svc = new OctagonRecoveryKeyUnlockService(
                 new OctagonCuttlefishService(Http, Orchestrator),
@@ -1653,7 +1738,7 @@ public partial class MainWindow : Window
             if (result.PcsKeys > 0)
             {
                 AppendDecryptLog(
-                    $"PCS ManateeCompact in sessione: {_session.PcsManateeCompactKeys?.Count ?? 0}");
+                    $"PCS ManateeCompact in session: {_session.PcsManateeCompactKeys?.Count ?? 0}");
             }
 
             if (result.Success)
@@ -1673,7 +1758,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendDecryptLog($"Errore Octagon RK: {ex.Message}");
+            AppendDecryptLog($"Octagon RK error: {ex.Message}");
             MessageBox.Show(this, ex.Message, "Octagon RK",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -1689,7 +1774,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "OTBottle / Peer",
+            MessageBox.Show(this, "Sign in to iCloud first.", "OTBottle / Peer",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -1711,12 +1796,12 @@ public partial class MainWindow : Window
             {
                 _session.OctagonBottledPeerEntropy = await File.ReadAllBytesAsync(entropyPath);
                 _session.OctagonKeysDirectory ??= outputDir;
-                AppendDecryptLog($"Entropy ricaricata da disco ({_session.OctagonBottledPeerEntropy.Length} B)");
+                AppendDecryptLog($"Entropy reloaded from disk ({_session.OctagonBottledPeerEntropy.Length} B)");
             }
             else
             {
                 MessageBox.Show(this,
-                    "Serve BottledPeerEntropy: esegui prima Unlock Octagon bottle.",
+                    "BottledPeerEntropy required: run Unlock Octagon bottle first.",
                     "OTBottle / Peer", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -1724,7 +1809,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output.", "OTBottle / Peer",
+            MessageBox.Show(this, "Select an output folder.", "OTBottle / Peer",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1760,13 +1845,13 @@ public partial class MainWindow : Window
         if (peer.Success)
         {
             AppendDecryptLog(
-                "Avvio automatico CKKS OpenVault (Manatee + PCS + Passwords)…");
+                "Auto-start CKKS OpenVault (Manatee + PCS + Passwords)…");
             var ckks = new CkksVaultService(Http, Orchestrator);
             var vault = await ckks.OpenViewsAsync(_session, outputDir, log: log)
                 .ConfigureAwait(true);
             AppendDecryptLog(vault.Success ? $"CKKS: {vault.Message}" : $"CKKS FAIL: {vault.Message}");
             if (vault.PcsKeysFound > 0)
-                AppendDecryptLog($"Manatee PCS keys in sessione: {vault.PcsKeysFound}");
+                AppendDecryptLog($"Manatee PCS keys in session: {vault.PcsKeysFound}");
             AppendDecryptLog("Export password (se view Passwords OK): ckks_passwords.csv");
             if (OctagonAuthzProbeRunner.IsEnabled)
             {
@@ -1805,7 +1890,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "CKKS OpenVault",
+            MessageBox.Show(this, "Sign in to iCloud first.", "CKKS OpenVault",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1820,7 +1905,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output (Escrow).", "CKKS OpenVault",
+            MessageBox.Show(this, "Select an output folder (Escrow).", "CKKS OpenVault",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1833,7 +1918,7 @@ public partial class MainWindow : Window
             if (File.Exists(encPath))
             {
                 _session.OctagonPeerEncryptionPkcs8 = await File.ReadAllBytesAsync(encPath);
-                AppendDecryptLog($"Peer enc ricaricata da disco ({_session.OctagonPeerEncryptionPkcs8.Length} B)");
+                AppendDecryptLog($"Peer enc reloaded from disk ({_session.OctagonPeerEncryptionPkcs8.Length} B)");
             }
         }
 
@@ -1860,7 +1945,7 @@ public partial class MainWindow : Window
             || string.IsNullOrWhiteSpace(_session.OctagonPeerId))
         {
             MessageBox.Show(this,
-                "Serve peer encryption + peerId: esegui prima OTBottle / Peer keys.",
+                "Peer encryption + peerId required: run OTBottle / Peer keys first.",
                 "CKKS OpenVault", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1875,7 +1960,7 @@ public partial class MainWindow : Window
                 .ConfigureAwait(true);
             AppendDecryptLog(result.Success ? $"OK: {result.Message}" : $"FAIL: {result.Message}");
             if (result.PcsKeysFound > 0)
-                AppendDecryptLog($"Manatee PCS keys in sessione: {result.PcsKeysFound}");
+                AppendDecryptLog($"Manatee PCS keys in session: {result.PcsKeysFound}");
             if (result.ItemsJsonPath is not null)
                 AppendDecryptLog($"Items: {result.ItemsJsonPath}");
             var pwdCsv = Path.Combine(outputDir, "ckks_passwords.csv");
@@ -1897,7 +1982,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendDecryptLog($"Errore CKKS OpenVault: {ex.Message}");
+            AppendDecryptLog($"CKKS OpenVault error: {ex.Message}");
             MessageBox.Show(this, ex.Message, "CKKS OpenVault",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -1915,7 +2000,7 @@ public partial class MainWindow : Window
             _session.PcsEscrowedKeySet = keySet;
         _session.PcsKeysDirectory = directory;
         AppendDecryptLog(
-            $"PCS KeySet in sessione: {_session.PcsEscrowedKeySet?.Length ?? 0} B ← {directory}");
+            $"PCS KeySet in session: {_session.PcsEscrowedKeySet?.Length ?? 0} B ← {directory}");
     }
 
     private async Task AttachPcsKeysFromDirectoryAsync(string directory)
@@ -1942,7 +2027,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        AppendDecryptLog("PCS KeySet non ancora in sessione — usa Unlock EscrowedKeys.");
+        AppendDecryptLog("PCS KeySet not yet in session — use Unlock EscrowedKeys.");
     }
 
     private void AppendWhatsAppLog(string line) =>
@@ -1959,7 +2044,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "WhatsApp CloudKit",
+            MessageBox.Show(this, "Sign in to iCloud first.", "WhatsApp CloudKit",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1969,7 +2054,7 @@ public partial class MainWindow : Window
             outputDir = OutputFolderTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output.", "WhatsApp CloudKit",
+            MessageBox.Show(this, "Select an output folder.", "WhatsApp CloudKit",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -1992,7 +2077,7 @@ public partial class MainWindow : Window
             // Seed PCS (Escrow KeySet o Manatee) obbligatorio per basename + MMCS decrypt.
             var iCsc = ResolveEscrowIcsc();
             if (string.IsNullOrEmpty(EscrowPasswordBox.Password.Trim()) && !string.IsNullOrEmpty(iCsc))
-                AppendWhatsAppLog($"iCSC vuoto → default DSID ({iCsc})");
+                AppendWhatsAppLog($"iCSC empty → default DSID ({iCsc})");
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
                     Enabled: true,
@@ -2007,7 +2092,7 @@ public partial class MainWindow : Window
                 AppendWhatsAppLog($"FAIL PCS: {ensure.Message}");
                 MessageBox.Show(this,
                     ensure.Message
-                    ?? "PCS assente — Unlock EscrowedKeys oppure Octagon/CKKS OpenVault (Manatee).",
+                    ?? "PCS missing — Unlock EscrowedKeys or Octagon/CKKS OpenVault (Manatee).",
                     "WhatsApp CloudKit",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
@@ -2030,19 +2115,19 @@ public partial class MainWindow : Window
             }).ConfigureAwait(true);
 
             AppendWhatsAppLog($"CK probe OK: {ckResult.OutputDirectory}");
-            AppendWhatsAppLog("Documents probe finito.");
+            AppendWhatsAppLog("Documents probe finished.");
             MessageBox.Show(this,
-                $"Probe completato (solo valori live di questa run).\n" +
+                $"Probe completed (live values from this run only).\n" +
                 $"CK: {ckResult.OutputDirectory}\n" +
-                "Documents: cartella whatsapp_docs_* (artifact, non input).\n" +
-                "Crypto: zone/retrieve + FetchRecords + KeySet PCS in sessione.",
+                "Documents: whatsapp_docs_* folder (artifact, not input).\n" +
+                "Crypto: zone/retrieve + FetchRecords + PCS KeySet in session.",
                 "WhatsApp CloudKit",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
-            AppendWhatsAppLog($"Errore: {ex.Message}");
+            AppendWhatsAppLog($"Error: {ex.Message}");
             MessageBox.Show(this, ex.Message, "WhatsApp CloudKit",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -2066,7 +2151,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "iCloud Drive",
+            MessageBox.Show(this, "Sign in to iCloud first.", "iCloud Drive",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -2076,7 +2161,7 @@ public partial class MainWindow : Window
             outputDir = OutputFolderTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output.", "iCloud Drive",
+            MessageBox.Show(this, "Select an output folder.", "iCloud Drive",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -2087,7 +2172,7 @@ public partial class MainWindow : Window
         {
             ICloudDriveProbeButton.IsEnabled = false;
             ICloudDriveProgressBar.Value = 0;
-            ICloudDriveStatusText.Text = "Avvio…";
+            ICloudDriveStatusText.Text = "Starting…";
             AppendICloudDriveLog($"iCloud Drive → {outputDir}");
 
             var pcsDir = EscrowPcsSession.ResolvePcsKeysDirectory(
@@ -2111,10 +2196,10 @@ public partial class MainWindow : Window
             if (!ensure.Success || !PcsSessionSeedKeys.HasAny(_session))
             {
                 AppendICloudDriveLog($"FAIL PCS: {ensure.Message}");
-                ICloudDriveStatusText.Text = "PCS assente";
+                ICloudDriveStatusText.Text = "PCS missing";
                 MessageBox.Show(this,
                     ensure.Message
-                    ?? "PCS assente — Unlock EscrowedKeys oppure Octagon/CKKS OpenVault (Manatee).",
+                    ?? "PCS missing — Unlock EscrowedKeys or Octagon/CKKS OpenVault (Manatee).",
                     "iCloud Drive",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
@@ -2145,24 +2230,24 @@ public partial class MainWindow : Window
                 .ConfigureAwait(true);
 
             ICloudDriveProgressBar.Value = 100;
-            ICloudDriveStatusText.Text = result.Success ? "Completato" : "Errore";
+            ICloudDriveStatusText.Text = result.Success ? "Completed" : "Error";
             AppendICloudDriveLog(
                 $"Fine: zone={result.ZonesProcessed} record={result.RecordsFetched} → {result.OutputDirectory}");
 
             MessageBox.Show(this,
                 result.Success
-                    ? $"Download iCloud Drive completato.\n{result.OutputDirectory}\n" +
+                    ? $"iCloud Drive download completed.\n{result.OutputDirectory}\n" +
                       $"Zone: {result.ZonesProcessed}, record: {result.RecordsFetched}\n" +
-                      "File decifrati in clouddocs_ck/fetch_*/crypto/plaintext/"
-                    : result.Error ?? "Probe fallito.",
+                      "Decrypted files in clouddocs_ck/fetch_*/crypto/plaintext/"
+                    : result.Error ?? "Probe failed.",
                 "iCloud Drive",
                 MessageBoxButton.OK,
                 result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {
-            AppendICloudDriveLog($"Errore: {ex.Message}");
-            ICloudDriveStatusText.Text = "Errore";
+            AppendICloudDriveLog($"Error: {ex.Message}");
+            ICloudDriveStatusText.Text = "Error";
             MessageBox.Show(this, ex.Message, "iCloud Drive",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -2186,7 +2271,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "iCloud Files",
+            MessageBox.Show(this, "Sign in to iCloud first.", "iCloud Files",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -2196,7 +2281,7 @@ public partial class MainWindow : Window
             outputDir = OutputFolderTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output.", "iCloud Files",
+            MessageBox.Show(this, "Select an output folder.", "iCloud Files",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -2207,7 +2292,7 @@ public partial class MainWindow : Window
         {
             ICloudFilesProbeButton.IsEnabled = false;
             ICloudFilesProgressBar.Value = 0;
-            ICloudFilesStatusText.Text = "Avvio…";
+            ICloudFilesStatusText.Text = "Starting…";
             AppendICloudFilesLog($"iCloud Files  → {outputDir}");
 
             var pcsDir = EscrowPcsSession.ResolvePcsKeysDirectory(
@@ -2231,10 +2316,10 @@ public partial class MainWindow : Window
             if (!ensure.Success || !PcsSessionSeedKeys.HasAny(_session))
             {
                 AppendICloudFilesLog($"FAIL PCS: {ensure.Message}");
-                ICloudFilesStatusText.Text = "PCS assente";
+                ICloudFilesStatusText.Text = "PCS missing";
                 MessageBox.Show(this,
                     ensure.Message
-                    ?? "PCS assente — Unlock EscrowedKeys oppure Octagon/CKKS OpenVault (Manatee).",
+                    ?? "PCS missing — Unlock EscrowedKeys or Octagon/CKKS OpenVault (Manatee).",
                     "iCloud Files",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
@@ -2264,25 +2349,25 @@ public partial class MainWindow : Window
                 .ConfigureAwait(true);
 
             ICloudFilesProgressBar.Value = 100;
-            ICloudFilesStatusText.Text = result.Success ? "Completato" : "Errore";
+            ICloudFilesStatusText.Text = result.Success ? "Completed" : "Error";
             AppendICloudFilesLog(
                 $"Fine: zone={result.ZonesProcessed} record={result.RecordsFetched} → {result.OutputDirectory}");
 
             MessageBox.Show(this,
                 result.Success
-                    ? $"Download iCloud Files completato.\n{result.OutputDirectory}\n" +
+                    ? $"iCloud Files download completed.\n{result.OutputDirectory}\n" +
                       $"Zone: {result.ZonesProcessed}, record: {result.RecordsFetched}\n" +
                       "Manifest: icloud_files_manifest.json\n" +
                       "Plaintext: clouddocs_ck/fetch_*/crypto/plaintext/"
-                    : result.Error ?? "Probe fallito.",
+                    : result.Error ?? "Probe failed.",
                 "iCloud Files",
                 MessageBoxButton.OK,
                 result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {
-            AppendICloudFilesLog($"Errore: {ex.Message}");
-            ICloudFilesStatusText.Text = "Errore";
+            AppendICloudFilesLog($"Error: {ex.Message}");
+            ICloudFilesStatusText.Text = "Error";
             MessageBox.Show(this, ex.Message, "iCloud Files",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -2329,7 +2414,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendSyncDataLog($"Copia log fallita: {ex.Message}");
+            AppendSyncDataLog($"Copy log failed: {ex.Message}");
         }
     }
 
@@ -2338,7 +2423,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "iCloud Sync Data",
+            MessageBox.Show(this, "Sign in to iCloud first.", "iCloud Sync Data",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -2348,7 +2433,7 @@ public partial class MainWindow : Window
             outputDir = OutputFolderTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
         {
-            MessageBox.Show(this, "Seleziona una cartella output.", "iCloud Sync Data",
+            MessageBox.Show(this, "Select an output folder.", "iCloud Sync Data",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -2364,7 +2449,7 @@ public partial class MainWindow : Window
             SyncDataPhaseProgressBar.IsIndeterminate = false;
             SyncDataPhaseProgressBar.Value = 0;
             SyncDataPhaseStatusText.Text = "";
-            SyncDataStatusText.Text = "Avvio…";
+            SyncDataStatusText.Text = "Starting…";
             AppendSyncDataLog($"Sync Data → {outputDir}");
 
 
@@ -2375,7 +2460,7 @@ public partial class MainWindow : Window
 
             var iCsc = ResolveEscrowIcsc();
             if (string.IsNullOrEmpty(EscrowPasswordBox.Password.Trim()) && !string.IsNullOrEmpty(iCsc))
-                AppendSyncDataLog($"iCSC vuoto → default DSID ({iCsc})");
+                AppendSyncDataLog($"iCSC empty → default DSID ({iCsc})");
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
                     Enabled: true,
@@ -2393,14 +2478,14 @@ public partial class MainWindow : Window
             if (selected.Count == 0)
             {
                 MessageBox.Show(this,
-                    "Seleziona almeno una categoria Sync Data (Photos / Account Info).",
+                    "Select at least one Sync Data category (Photos / Account Info).",
                     "iCloud Sync Data",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 return;
             }
 
-            AppendSyncDataLog($"Categorie selezionate: {string.Join(", ", selected)}");
+            AppendSyncDataLog($"Selected categories: {string.Join(", ", selected)}");
             var buildPhotosRecordMetadata = IsPhotosBuildRecordMetadataEnabled();
             if (selected.Any(static id =>
                     string.Equals(id, SyncDataCategoryCatalog.PhotosId, StringComparison.OrdinalIgnoreCase)))
@@ -2408,7 +2493,7 @@ public partial class MainWindow : Window
                 AppendSyncDataLog(
                     buildPhotosRecordMetadata
                         ? "Photos: BuildRecordMetadata ON (nomi file PCS)"
-                        : "Photos: BuildRecordMetadata OFF (solo crypto/Album/MMCS)");
+                        : "Photos: BuildRecordMetadata OFF (crypto/Album/MMCS only)");
             }
 
             var needsPcs = SyncDataCategoryCatalog.SelectionRequiresPcs(selected);
@@ -2444,7 +2529,7 @@ public partial class MainWindow : Window
                             AppendSyncDataLog($"FAIL PCS: {ensure.Message}");
                             MessageBox.Show(this,
                                 ensure.Message
-                                ?? "PCS assente — Unlock EscrowedKeys oppure Octagon/CKKS OpenVault (Manatee).",
+                                ?? "PCS missing — Unlock EscrowedKeys or Octagon/CKKS OpenVault (Manatee).",
                                 "iCloud Sync Data",
                                 MessageBoxButton.OK,
                                 MessageBoxImage.Warning);
@@ -2473,7 +2558,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                AppendSyncDataLog("PCS — skip (categoria senza KeySet/Manatee)");
+                AppendSyncDataLog("PCS — skip (category without KeySet/Manatee)");
             }
 
             var probe = new ICloudSyncDataProbeService(Http, Orchestrator);
@@ -2488,53 +2573,36 @@ public partial class MainWindow : Window
 
 
             var ok = result.Containers.Count(static c => c.Ok);
-            var messagesOk = result.Containers.Any(static c =>
-                c.Ok && c.ContainerId.Contains("messages", StringComparison.OrdinalIgnoreCase));
-            var inventoryPath = MessagesChatCatalog.FindInventoryPath(result.OutputDirectory);
-            var hasMessagesInventory = inventoryPath is not null
-                && File.Exists(inventoryPath)
-                && new FileInfo(inventoryPath).Length > 4;
-
             await Dispatcher.InvokeAsync(() =>
             {
-                _lastSyncDataOutputDir = result.OutputDirectory;
-                AppendSyncDataLog($"Fatto: {ok}/{result.Containers.Count} container → {result.OutputDirectory}");
+                AppendSyncDataLog($"Done: {ok}/{result.Containers.Count} containers → {result.OutputDirectory}");
                 if (!string.IsNullOrEmpty(result.RunLogPath))
                     AppendSyncDataLog($"Log run: {result.RunLogPath}");
                 SyncDataProgressBar.Value = 100;
                 SyncDataPhasePanel.Visibility = Visibility.Collapsed;
                 SyncDataPhaseProgressBar.Value = 100;
                 SyncDataStatusText.Text = result.Containers.Count == 0
-                    ? $"Completato → {Path.GetFileName(result.OutputDirectory)}"
-                    : $"Completato: {ok}/{result.Containers.Count} OK";
-
-                if (messagesOk && hasMessagesInventory)
-                {
-                    AppendSyncDataLog("Messages inventory pronto — apro visualizzatore chat.");
-                    OpenMessagesChatViewer(result.OutputDirectory);
-                }
-                else
-                {
-                    MessageBox.Show(this,
-                        $"Sync Data completato.\n{result.OutputDirectory}\n" +
-                        (result.Containers.Count == 0
-                            ? "accountinfo/ senza container CloudKit.\n"
-                            : $"Container OK: {ok}/{result.Containers.Count}\n") +
-                        (string.IsNullOrEmpty(result.RunLogPath) ? "" : $"Log: {result.RunLogPath}\n") +
-                        "accountinfo/ + ck/<container>/.",
-                        "iCloud Sync Data",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                }
+                    ? $"Completed → {Path.GetFileName(result.OutputDirectory)}"
+                    : $"Completed: {ok}/{result.Containers.Count} OK";
+                MessageBox.Show(this,
+                    $"Sync Data completed.\n{result.OutputDirectory}\n" +
+                    (result.Containers.Count == 0
+                        ? "accountinfo/ senza container CloudKit.\n"
+                        : $"Container OK: {ok}/{result.Containers.Count}\n") +
+                    (string.IsNullOrEmpty(result.RunLogPath) ? "" : $"Log: {result.RunLogPath}\n") +
+                    "accountinfo/ + ck/<container>/.",
+                    "iCloud Sync Data",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             });
         }
         catch (Exception ex)
         {
             await Dispatcher.InvokeAsync(() =>
             {
-                AppendSyncDataLog($"Errore: {ex.Message}");
+                AppendSyncDataLog($"Error: {ex.Message}");
                 SyncDataProgressBar.IsIndeterminate = false;
-                SyncDataStatusText.Text = $"Errore: {ex.Message}";
+                SyncDataStatusText.Text = $"Error: {ex.Message}";
                 MessageBox.Show(this, ex.Message, "iCloud Sync Data",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             });
@@ -2546,53 +2614,6 @@ public partial class MainWindow : Window
                 SyncDataProbeButton.IsEnabled = true;
                 SyncDataProgressBar.IsIndeterminate = false;
             });
-        }
-    }
-
-    private void SyncDataOpenMessagesButton_Click(object sender, RoutedEventArgs e)
-    {
-        var root = _lastSyncDataOutputDir;
-        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-            root = SyncDataOutputTextBox.Text.Trim();
-
-        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-        {
-            MessageBox.Show(this,
-                "Nessuna cartella Sync Data. Esegui prima «Recupera Sync Data» con Messages.",
-                "Messages",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        if (MessagesChatCatalog.FindInventoryPath(root) is null)
-        {
-            MessageBox.Show(this,
-                "messages_inventory.json non trovato.\n" +
-                "Recupera Sync Data con Messages selezionato (serve anche PCS/decrypt).",
-                "Messages",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-            return;
-        }
-
-        OpenMessagesChatViewer(root);
-    }
-
-    private void OpenMessagesChatViewer(string syncDataRoot)
-    {
-        var own = new List<string>();
-        if (_session is not null && !string.IsNullOrWhiteSpace(_session.AppleId))
-            own.Add(_session.AppleId);
-
-        var win = MessagesChatViewerWindow.TryOpen(this, syncDataRoot, own);
-        if (win is null)
-        {
-            MessageBox.Show(this,
-                "Impossibile aprire Messages: inventory assente o vuoto.",
-                "Messages",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
         }
     }
 
@@ -2652,8 +2673,8 @@ public partial class MainWindow : Window
     private void UpdateSessionUi(bool connected)
     {
         SessionStatusText.Text = connected
-            ? $"Connesso — DSID {_session?.Dsid}"
-            : "Non autenticato";
+            ? $"Connected — DSID {_session?.Dsid}"
+            : "Not authenticated";
 
         SessionIndicator.Fill = new SolidColorBrush(connected
             ? Color.FromRgb(0x1E, 0x8E, 0x3E)
@@ -2693,10 +2714,10 @@ public partial class MainWindow : Window
 
         if (_session is null)
         {
-            SessionTokensTextBox.Text = "Effettua il login per vedere i token recuperati.";
-            SessionServicesTextBox.Text = "Effettua il login per vedere i servizi disponibili.";
+            SessionTokensTextBox.Text = "Sign in to see recovered tokens.";
+            SessionServicesTextBox.Text = "Sign in to see available services.";
             if (CloudQuotaTextBox is not null)
-                CloudQuotaTextBox.Text = "Effettua il login per caricare lo spazio iCloud.";
+                CloudQuotaTextBox.Text = "Sign in to load iCloud storage.";
             return;
         }
 
@@ -2727,7 +2748,7 @@ public partial class MainWindow : Window
         services.AppendLine($"=== GsServiceTokens (spd.t) — {gs.Count} ===");
         if (gs.Count == 0)
         {
-            services.AppendLine("(vuoto — SPD non ha popolato t, oppure login incompleto)");
+            services.AppendLine("(empty — SPD did not populate t, or login incomplete)");
         }
         else
         {
@@ -2740,7 +2761,7 @@ public partial class MainWindow : Window
         services.AppendLine($"=== Endpoint servizi (get_account_settings) — {urls.Count} ===");
         if (urls.Count == 0)
         {
-            services.AppendLine("(nessun url — dataclass senza campo url/escrowProxyUrl)");
+            services.AppendLine("(no urls — dataclass without url/escrowProxyUrl field)");
         }
         else
         {
@@ -2759,7 +2780,7 @@ public partial class MainWindow : Window
         services.AppendLine($"=== Dataclass abilitate — {dc.Count} ===");
         if (dc.Count == 0)
         {
-            services.AppendLine("(nessuna — get_account_settings non ha restituito com.apple.Dataclass.*)");
+            services.AppendLine("(none — get_account_settings did not return com.apple.Dataclass.*)");
         }
         else
         {
@@ -2778,19 +2799,19 @@ public partial class MainWindow : Window
     }
 
     private void CopySessionTokensButton_Click(object sender, RoutedEventArgs e) =>
-        CopyTextBoxToClipboard(SessionTokensTextBox, "Token sessione");
+        CopyTextBoxToClipboard(SessionTokensTextBox, "Session tokens");
 
     private void CopySessionServicesButton_Click(object sender, RoutedEventArgs e) =>
-        CopyTextBoxToClipboard(SessionServicesTextBox, "Servizi / dataclass");
+        CopyTextBoxToClipboard(SessionServicesTextBox, "Services / dataclass");
 
     private void CopyCloudQuotaButton_Click(object sender, RoutedEventArgs e) =>
-        CopyTextBoxToClipboard(CloudQuotaTextBox, "Dettagli Spazio Cloud");
+        CopyTextBoxToClipboard(CloudQuotaTextBox, "Cloud storage details");
 
     private void RefreshCloudQuotaButton_Click(object sender, RoutedEventArgs e) =>
         _ = RefreshCloudQuotaPanelAsync();
 
     private void CopyExploratoryServicesResult_Click(object sender, RoutedEventArgs e) =>
-        CopyTextBoxToClipboard(ExploratoryServicesResultTextBox, "Risposta servizi");
+        CopyTextBoxToClipboard(ExploratoryServicesResultTextBox, "Services response");
 
     private void TrustedDevicesRefreshButton_Click(object sender, RoutedEventArgs e)
     {
@@ -2800,13 +2821,13 @@ public partial class MainWindow : Window
             if (TrustedDevicesResultTextBox is not null)
             {
                 TrustedDevicesResultTextBox.Text =
-                    "Login non effettuato.\n\n" +
+                    "Not signed in.\n\n" +
                     $"APS cert: {(ApsStorage.HasCertificate() ? "OK" : "NO")}\n" +
-                    $"Push token: {ApsSessionService.TryGetPushTokenHex() ?? "(assente)"}";
+                    $"Push token: {ApsSessionService.TryGetPushTokenHex() ?? "(missing)"}";
             }
 
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "Stato APS (senza sessione iCloud).";
+                TrustedDevicesStatusText.Text = "APS status (no iCloud session).";
             return;
         }
 
@@ -2815,7 +2836,7 @@ public partial class MainWindow : Window
         if (TrustedDevicesResultTextBox is not null)
             TrustedDevicesResultTextBox.Text = text;
         if (TrustedDevicesStatusText is not null)
-            TrustedDevicesStatusText.Text = "Stato aggiornato dalla sessione corrente.";
+            TrustedDevicesStatusText.Text = "Status updated from current session.";
         LogAuth("TrustedDevices: refresh stato OK.");
     }
 
@@ -2843,8 +2864,8 @@ public partial class MainWindow : Window
 
             if (TrustedDevicesStatusText is not null)
                 TrustedDevicesStatusText.Text = e.ExtractedOtp is not null
-                    ? $"APS: OTP ricevuto ({e.ExtractedOtp})"
-                    : "APS: notifica ricevuta";
+                    ? $"APS: OTP received ({e.ExtractedOtp})"
+                    : "APS: notification received";
         });
         return _apsSession;
     }
@@ -2871,7 +2892,7 @@ public partial class MainWindow : Window
         };
         var tok = snap.TokenHex;
         ApsTokenText.Text = string.IsNullOrEmpty(tok)
-            ? $"Push token APS: (assente) cert={(snap.HasCertificate ? "OK" : "NO")} connected={snap.IsConnected}"
+            ? $"Push token APS: (missing) cert={(snap.HasCertificate ? "OK" : "NO")} connected={snap.IsConnected}"
             : $"Push token APS: {tok}"
               + (snap.IsConnected ? $" | connected {snap.CourierHost}" : " | offline");
     }
@@ -2896,9 +2917,9 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendApsLog("Albert errore: " + ex.Message);
+            AppendApsLog("Albert error: " + ex.Message);
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "Albert: errore";
+                TrustedDevicesStatusText.Text = "Albert: error";
             LogAuth("APS Albert: " + ex.Message);
         }
         finally
@@ -2913,7 +2934,7 @@ public partial class MainWindow : Window
         if (ApsConnectButton is not null)
             ApsConnectButton.IsEnabled = false;
         if (TrustedDevicesStatusText is not null)
-            TrustedDevicesStatusText.Text = "Connessione APS…";
+            TrustedDevicesStatusText.Text = "Connecting APS…";
         try
         {
             var aps = GetApsSession();
@@ -2921,9 +2942,9 @@ public partial class MainWindow : Window
                 .ConfigureAwait(true);
             RefreshApsTokenLabel();
             var snap = aps.Snapshot();
-            AppendApsLog("APS connesso. Token=" + (snap.TokenHex.Length > 0 ? snap.TokenHex : "?"));
+            AppendApsLog("APS connected. Token=" + (snap.TokenHex.Length > 0 ? snap.TokenHex : "?"));
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "APS: connesso";
+                TrustedDevicesStatusText.Text = "APS: connected";
             if (_session is not null)
             {
                 var text = CreateTrustedDevicesService().FormatSessionTrustStatus(_session);
@@ -2934,9 +2955,9 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendApsLog("APS connect errore: " + ex.Message);
+            AppendApsLog("APS connect error: " + ex.Message);
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "APS: errore connect";
+                TrustedDevicesStatusText.Text = "APS: connect error";
             LogAuth("APS connect: " + ex.Message);
             RefreshApsTokenLabel();
         }
@@ -2955,8 +2976,8 @@ public partial class MainWindow : Window
                 await _apsSession.DisconnectAsync().ConfigureAwait(true);
             RefreshApsTokenLabel();
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "APS: disconnesso";
-            AppendApsLog("APS disconnesso.");
+                TrustedDevicesStatusText.Text = "APS: disconnected";
+            AppendApsLog("APS disconnected.");
         }
         catch (Exception ex)
         {
@@ -2967,12 +2988,12 @@ public partial class MainWindow : Window
     private async void Hsa2NewAdiButton_Click(object sender, RoutedEventArgs e)
     {
         var confirm = MessageBox.Show(this,
-            "Cancella l’identità ADI attuale (device-iphone-coherent.json + sessione worker) " +
-            "e ne crea una nuova via MidService.\n\n" +
-            "Serve quando GSA non chiede più 2FA (ADI già trusted).\n" +
-            "Non abusare: Apple può rispondere HTTP 433 / 'ptm'.\n\n" +
-            "Continuo?",
-            "Nuova identità ADI",
+            "Delete the current ADI identity (device-iphone-coherent.json + worker session) " +
+            "and create a new one via MidService.\n\n" +
+            "Use when GSA no longer prompts for 2FA (ADI already trusted).\n" +
+            "Do not abuse: Apple may respond HTTP 433 / 'ptm'.\n\n" +
+            "Continue?",
+            "New ADI identity",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)
@@ -3007,25 +3028,25 @@ public partial class MainWindow : Window
             if (!probe.IsSuccessStatusCode)
             {
                 throw new InvalidOperationException(
-                    $"Nuova ADI creata ma GET / fallisce HTTP {(int)probe.StatusCode}: {TrimUiBody(probeBody)}");
+                    $"New ADI created but GET / failed HTTP {(int)probe.StatusCode}: {TrimUiBody(probeBody)}");
             }
 
-            AppendApsLog("HSA2: nuova ADI OK — " + TrimUiBody(body));
+            AppendApsLog("HSA2: new ADI OK — " + TrimUiBody(body));
             if (TrustedDevicesResultTextBox is not null)
                 TrustedDevicesResultTextBox.Text = body + Environment.NewLine + Environment.NewLine + probeBody;
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "ADI: nuova identità OK — ora Registra in lista 2FA";
+                TrustedDevicesStatusText.Text = "ADI: new identity OK — now Register for 2FA list";
             LogAuth("HSA2: newIdentity ADI OK.");
         }
         catch (Exception ex)
         {
-            AppendApsLog("HSA2 newIdentity errore: " + ex.Message);
+            AppendApsLog("HSA2 newIdentity error: " + ex.Message);
             if (TrustedDevicesResultTextBox is not null)
                 TrustedDevicesResultTextBox.Text = ex.Message;
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "ADI: newIdentity fallita";
+                TrustedDevicesStatusText.Text = "ADI: newIdentity failed";
             LogAuth("HSA2 newIdentity: " + ex.Message);
-            MessageBox.Show(this, ex.Message, "Nuova identità ADI",
+            MessageBox.Show(this, ex.Message, "New ADI identity",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -3048,8 +3069,8 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(appleId) || string.IsNullOrWhiteSpace(password))
         {
             MessageBox.Show(this,
-                "Inserisci e-mail e password nei campi HSA2 di questa scheda.\n" +
-                "Non vengono usati Apple ID/password della scheda Accesso (né PET di sessione).",
+                "Enter email and password in the HSA2 fields on this tab.\n" +
+                "The Sign In tab Apple ID/password (and session PET) are not used.",
                 "Lista 2FA", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -3058,7 +3079,7 @@ public partial class MainWindow : Window
         if (!aps.Snapshot().IsConnected)
         {
             MessageBox.Show(this,
-                "Connetti APS e lascia la sessione attiva (ptkn nel CPD GSA).",
+                "Connect APS and keep the session active (ptkn in GSA CPD).",
                 "Lista 2FA", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -3099,15 +3120,15 @@ public partial class MainWindow : Window
                 _hsa2PartialSession = begin.PartialSession;
                 ConfigureIdmsaOtpUi(begin.Verification);
                 if (IdmsaOtpTitleText is not null)
-                    IdmsaOtpTitleText.Text = "OTP HSA2 — codice dal dispositivo Apple già fidato";
+                    IdmsaOtpTitleText.Text = "HSA2 OTP — code from your trusted Apple device";
                 if (IdmsaOtpPanel is not null)
                     IdmsaOtpPanel.Visibility = Visibility.Visible;
                 if (IdmsaOtpDeviceRadio is not null)
                     IdmsaOtpDeviceRadio.IsChecked = true;
                 if (TrustedDevicesStatusText is not null)
                     TrustedDevicesStatusText.Text =
-                        "HSA2: inserisci OTP dal tuo iPhone, poi Invia OTP";
-                LogAuth("HSA2: in attesa OTP per lista 2FA.");
+                        "HSA2: enter OTP from your iPhone, then Submit OTP";
+                LogAuth("HSA2: waiting for OTP for 2FA list.");
                 return;
             }
 
@@ -3115,11 +3136,11 @@ public partial class MainWindow : Window
             if (begin.CompletedSession is not null)
                 _session = begin.CompletedSession;
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "HSA2: nessun challenge (vedi log)";
+                TrustedDevicesStatusText.Text = "HSA2: no challenge (see log)";
         }
         catch (Exception ex)
         {
-            AppendApsLog("HSA2 errore: " + ex.Message);
+            AppendApsLog("HSA2 error: " + ex.Message);
             if (TrustedDevicesResultTextBox is not null)
             {
                 string logText;
@@ -3128,7 +3149,7 @@ public partial class MainWindow : Window
                 TrustedDevicesResultTextBox.Text = logText + Environment.NewLine + ex.Message;
             }
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "HSA2: errore";
+                TrustedDevicesStatusText.Text = "HSA2: error";
             LogAuth("HSA2: " + ex.Message);
         }
         finally
@@ -3142,7 +3163,7 @@ public partial class MainWindow : Window
     {
         if (_session is null || string.IsNullOrWhiteSpace(_session.AppleId))
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud (serve PET).", "Enroll IDS",
+            MessageBox.Show(this, "Sign in to iCloud first (PET required).", "Enroll IDS",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -3150,7 +3171,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(ApsSessionService.TryGetPushTokenHex()))
         {
             MessageBox.Show(this,
-                "Serve un push token APS.\nAttiva Albert → Connetti APS, poi riprova Enroll IDS.",
+                "An APS push token is required.\nEnable Albert → Connect APS, then retry Enroll IDS.",
                 "Enroll IDS", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -3181,11 +3202,11 @@ public partial class MainWindow : Window
 
             if (TrustedDevicesStatusText is not null)
                 TrustedDevicesStatusText.Text = "IDS: enroll OK";
-            LogAuth("IDS enroll completato.");
+            LogAuth("IDS enroll completed.");
         }
         catch (Exception ex)
         {
-            AppendApsLog("IDS enroll errore: " + ex.Message);
+            AppendApsLog("IDS enroll error: " + ex.Message);
             if (TrustedDevicesResultTextBox is not null)
             {
                 TrustedDevicesResultTextBox.Text =
@@ -3196,7 +3217,7 @@ public partial class MainWindow : Window
             }
 
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "IDS: errore";
+                TrustedDevicesStatusText.Text = "IDS: error";
             LogAuth("IDS enroll: " + ex.Message);
         }
         finally
@@ -3204,153 +3225,6 @@ public partial class MainWindow : Window
             if (IdsEnrollButton is not null)
                 IdsEnrollButton.IsEnabled = true;
         }
-    }
-
-    private void PopulateIdsLookupTopics()
-    {
-        if (IdsLookupTopicCombo is null)
-            return;
-        IdsLookupTopicCombo.Items.Clear();
-        foreach (var t in IdsServiceCatalog.MultiplexTopics)
-            IdsLookupTopicCombo.Items.Add(t);
-        if (IdsLookupTopicCombo.Items.Count > 0)
-            IdsLookupTopicCombo.SelectedIndex = 0;
-    }
-
-    private void UpdateIdsSessionStatusUi(string? extra = null)
-    {
-        if (IdsSessionStatusText is null)
-            return;
-        var open = _idsSession?.IsOpen == true;
-        var handles = open && _idsSession!.Handles.Count > 0
-            ? string.Join(", ", _idsSession.Handles)
-            : "(n/d)";
-        IdsSessionStatusText.Text =
-            $"Sessione IDS: {(open ? "aperta" : "chiusa")} | handles={handles}"
-            + (extra is null ? "" : " | " + extra);
-    }
-
-    private async void IdsOpenSessionButton_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            if (!IdsStorage.HasRegistration())
-            {
-                MessageBox.Show(this, "Esegui prima Enroll IDS.", "Sessione IDS",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            var aps = GetApsSession();
-            if (!aps.IsConnected)
-                await aps.ConnectAsync().ConfigureAwait(true);
-
-            _idsSession?.Dispose();
-            _idsSession = new IdsSession(Http, aps, msg => Dispatcher.BeginInvoke(() =>
-            {
-                AppendApsLog("IDS: " + msg);
-                LogAuth("IDS: " + msg);
-            }));
-            _idsSession.MessageReceived += (_, ev) => Dispatcher.BeginInvoke(() =>
-            {
-                var m = ev.Message;
-                AppendApsLog(
-                    $"[IDS MSG] topic={m.Topic} cmd={m.Command} from={m.Sender} " +
-                    $"decrypted={m.Decrypted} plain={(m.Plaintext?.Length ?? 0)} B");
-            });
-
-            await _idsSession.OpenAsync(_session).ConfigureAwait(true);
-            if (IdsLookupUriTextBox is not null
-                && string.IsNullOrWhiteSpace(IdsLookupUriTextBox.Text)
-                && _idsSession.SelfHandle is not null)
-            {
-                IdsLookupUriTextBox.Text = _idsSession.SelfHandle;
-            }
-
-            UpdateIdsSessionStatusUi("open OK");
-            if (TrustedDevicesResultTextBox is not null)
-            {
-                TrustedDevicesResultTextBox.Text =
-                    _idsSession.FormatStatus()
-                    + Environment.NewLine + Environment.NewLine
-                    + TrustedDevicesResultTextBox.Text;
-            }
-        }
-        catch (Exception ex)
-        {
-            AppendApsLog("IDS session open errore: " + ex.Message);
-            UpdateIdsSessionStatusUi("errore");
-            MessageBox.Show(this, ex.Message, "Sessione IDS", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private void IdsCloseSessionButton_Click(object sender, RoutedEventArgs e)
-    {
-        _idsSession?.Dispose();
-        _idsSession = null;
-        UpdateIdsSessionStatusUi();
-        AppendApsLog("IDS session closed.");
-    }
-
-    private async void IdsLookupButton_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            if (_idsSession is not { IsOpen: true })
-            {
-                MessageBox.Show(this, "Apri prima la sessione IDS.", "IDS Lookup",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            var topic = IdsLookupTopicCombo?.SelectedItem as string
-                        ?? IdsConstants.MultiplexService;
-            var uri = IdsLookupUriTextBox?.Text?.Trim();
-            if (string.IsNullOrWhiteSpace(uri))
-            {
-                MessageBox.Show(this, "Inserisci un URI (mailto:/tel:/urn:ds:).", "IDS Lookup");
-                return;
-            }
-
-            if (IdsLookupButton is not null)
-                IdsLookupButton.IsEnabled = false;
-            UpdateIdsSessionStatusUi("lookup…");
-            var result = await _idsSession.LookupAsync(topic, [uri]).ConfigureAwait(true);
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"=== IDS Lookup {DateTime.Now:HH:mm:ss} ===");
-            sb.AppendLine(result.RawSummary);
-            foreach (var id in result.Identities)
-            {
-                sb.AppendLine(
-                    $"  {id.Uri} push={(id.PushTokenHex.Length == 0 ? "?" : id.PushTokenHex[..Math.Min(16, id.PushTokenHex.Length)] + "…")} " +
-                    $"session={(id.SessionTokenHex.Length == 0 ? "?" : id.SessionTokenHex[..Math.Min(12, id.SessionTokenHex.Length)] + "…")} " +
-                    $"exp={id.SessionTokenExpiresSeconds?.ToString() ?? "?"}");
-            }
-
-            AppendApsLog(sb.ToString().TrimEnd());
-            UpdateIdsSessionStatusUi($"lookup identities={result.Identities.Count}");
-        }
-        catch (Exception ex)
-        {
-            AppendApsLog("IDS lookup errore: " + ex.Message);
-            UpdateIdsSessionStatusUi("lookup errore");
-            MessageBox.Show(this, ex.Message, "IDS Lookup", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            if (IdsLookupButton is not null)
-                IdsLookupButton.IsEnabled = true;
-        }
-    }
-
-    private void IdsStatusButton_Click(object sender, RoutedEventArgs e)
-    {
-        var text = _idsSession?.FormatStatus() ?? IdsStorage.FormatStatusSummary()
-            + Environment.NewLine + "Session open: False";
-        if (TrustedDevicesResultTextBox is not null)
-            TrustedDevicesResultTextBox.Text = text;
-        UpdateIdsSessionStatusUi();
-        LogAuth("IDS status refresh.");
     }
 
     private void ConfigureIdmsaOtpUi(PhoneVerificationOptions? options)
@@ -3384,8 +3258,8 @@ public partial class MainWindow : Window
     private void IdmsaOtpRequestSmsButton_Click(object sender, RoutedEventArgs e)
     {
         MessageBox.Show(this,
-            "Per la lista 2FA usa il codice sul dispositivo Apple già fidato.\n" +
-            "Avvia «Registra in lista 2FA», poi Invia OTP.",
+            "For the 2FA list use the code on your already-trusted Apple device.\n" +
+            "Start \"Register for 2FA list\", then Submit OTP.",
             "Lista 2FA", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
@@ -3400,7 +3274,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(appleId))
         {
             MessageBox.Show(this,
-                "Manca l’Apple ID nei campi HSA2 di questa scheda.",
+                "Apple ID missing in the HSA2 fields on this tab.",
                 "Lista 2FA", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -3408,7 +3282,7 @@ public partial class MainWindow : Window
         if (IdmsaOtpSubmitButton is not null)
             IdmsaOtpSubmitButton.IsEnabled = false;
         if (TrustedDevicesStatusText is not null)
-            TrustedDevicesStatusText.Text = "HSA2: verifica OTP GSA…";
+            TrustedDevicesStatusText.Text = "HSA2: verifying GSA OTP…";
 
         var log = new System.Text.StringBuilder();
         void Log(string m)
@@ -3435,7 +3309,7 @@ public partial class MainWindow : Window
             if (IdmsaOtpPanel is not null)
                 IdmsaOtpPanel.Visibility = Visibility.Collapsed;
             if (IdmsaOtpTitleText is not null)
-                IdmsaOtpTitleText.Text = "OTP HSA2 — codice dal dispositivo Apple già fidato";
+                IdmsaOtpTitleText.Text = "HSA2 OTP — code from your trusted Apple device";
 
             if (TrustedDevicesResultTextBox is not null)
             {
@@ -3450,11 +3324,11 @@ public partial class MainWindow : Window
 
             if (TrustedDevicesStatusText is not null)
                 TrustedDevicesStatusText.Text = "HSA2: OTP OK — controlla conteggio device sopra";
-            LogAuth("HSA2: registrazione lista 2FA completata.");
+            LogAuth("HSA2: 2FA list registration completed.");
         }
         catch (Exception ex)
         {
-            AppendApsLog("HSA2 OTP errore: " + ex.Message);
+            AppendApsLog("HSA2 OTP error: " + ex.Message);
             if (TrustedDevicesResultTextBox is not null)
             {
                 string logText;
@@ -3463,7 +3337,7 @@ public partial class MainWindow : Window
                 TrustedDevicesResultTextBox.Text = logText + Environment.NewLine + ex.Message;
             }
             if (TrustedDevicesStatusText is not null)
-                TrustedDevicesStatusText.Text = "HSA2 OTP: errore";
+                TrustedDevicesStatusText.Text = "HSA2 OTP: error";
             LogAuth("HSA2 OTP: " + ex.Message);
         }
         finally
@@ -3478,7 +3352,7 @@ public partial class MainWindow : Window
         var code = IdmsaOtpCodeTextBox?.Text?.Trim() ?? "";
         if (code.Length < 4)
         {
-            MessageBox.Show(this, "Inserisci il codice OTP.", "Lista 2FA",
+            MessageBox.Show(this, "Enter the OTP code.", "Lista 2FA",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -3490,8 +3364,8 @@ public partial class MainWindow : Window
         }
 
         MessageBox.Show(this,
-            "Nessuna sessione HSA2 in attesa di OTP.\n" +
-            "Avvia «Registra in lista 2FA» e attendi il challenge prima di Invia OTP.",
+            "No HSA2 session waiting for OTP.\n" +
+            "Start \"Register for 2FA list\" and wait for the challenge before Submit OTP.",
             "Lista 2FA", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
@@ -3524,7 +3398,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "Apertura link", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, ex.Message, "Open link", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         e.Handled = true;
@@ -3554,12 +3428,12 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(pass))
         {
             MessageBox.Show(this,
-                "Inserisci utente iCloud e password per le app.",
-                "IMAP Posta", MessageBoxButton.OK, MessageBoxImage.Information);
+                "Enter iCloud user and app-specific password.",
+                "IMAP Mail", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        SetImapBusy(true, "Connessione IMAP…");
+        SetImapBusy(true, "Connecting IMAP…");
         _imapCts?.Cancel();
         _imapCts = new CancellationTokenSource();
         var ct = _imapCts.Token;
@@ -3581,15 +3455,15 @@ public partial class MainWindow : Window
             SetImapFilterControlsEnabled(true);
 
             await ReloadImapFoldersAsync(ct).ConfigureAwait(true);
-            SetImapBusy(false, $"Connesso a {host} come {user}");
-            LogAuth($"IMAP: connesso {host} user={user}");
+            SetImapBusy(false, $"Connected to {host} as {user}");
+            LogAuth($"IMAP: connected {host} user={user}");
         }
         catch (Exception ex)
         {
             await ClearImapUiAsync().ConfigureAwait(true);
-            SetImapBusy(false, "Errore connessione");
-            ShowImapPreviewStatus($"Errore IMAP: {ex.Message}");
-            MessageBox.Show(this, ex.Message, "IMAP Posta", MessageBoxButton.OK, MessageBoxImage.Warning);
+            SetImapBusy(false, "Connection error");
+            ShowImapPreviewStatus($"Error IMAP: {ex.Message}");
+            MessageBox.Show(this, ex.Message, "IMAP Mail", MessageBoxButton.OK, MessageBoxImage.Warning);
             LogAuth($"IMAP: {ex.Message}");
         }
         finally
@@ -3603,25 +3477,25 @@ public partial class MainWindow : Window
     {
         _imapCts?.Cancel();
         await ClearImapUiAsync().ConfigureAwait(true);
-        SetImapBusy(false, "Disconnesso.");
+        SetImapBusy(false, "Disconnected.");
     }
 
     private async void ImapRefreshFoldersButton_Click(object sender, RoutedEventArgs e)
     {
         if (_imapMail is not { IsConnected: true })
             return;
-        SetImapBusy(true, "Aggiornamento cartelle…");
+        SetImapBusy(true, "Refreshing folders…");
         try
         {
             _imapCts?.Cancel();
             _imapCts = new CancellationTokenSource();
             await ReloadImapFoldersAsync(_imapCts.Token).ConfigureAwait(true);
-            SetImapBusy(false, "Cartelle aggiornate.");
+            SetImapBusy(false, "Folders updated.");
         }
         catch (Exception ex)
         {
-            SetImapBusy(false, "Errore cartelle");
-            MessageBox.Show(this, ex.Message, "IMAP Posta", MessageBoxButton.OK, MessageBoxImage.Warning);
+            SetImapBusy(false, "Folder error");
+            MessageBox.Show(this, ex.Message, "IMAP Mail", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -3639,7 +3513,7 @@ public partial class MainWindow : Window
             ImapFoldersListBox.ItemsSource = rows;
         if (ImapMessagesGrid is not null)
             ImapMessagesGrid.ItemsSource = null;
-        ShowImapPreviewStatus("Seleziona una cartella.");
+        ShowImapPreviewStatus("Select a folder.");
         _imapSelectedFolder = null;
 
         var inbox = rows.FirstOrDefault(r =>
@@ -3696,9 +3570,9 @@ public partial class MainWindow : Window
         if (ImapMessagesHeaderText is null)
             return;
         if (_imapFilter is { IsEmpty: false } f)
-            ImapMessagesHeaderText.Text = $"Messaggi (filtro: {f.Describe()})";
+            ImapMessagesHeaderText.Text = $"Messages (filter: {f.Describe()})";
         else
-            ImapMessagesHeaderText.Text = "Messaggi (ultimi 100)";
+            ImapMessagesHeaderText.Text = "Messages (last 100)";
     }
 
     private async Task ReloadImapMessagesAsync()
@@ -3711,8 +3585,8 @@ public partial class MainWindow : Window
         var folder = _imapSelectedFolder;
         var filter = _imapFilter is { IsEmpty: false } ? _imapFilter : null;
         var busy = filter is null
-            ? $"Carico {folder}…"
-            : $"Cerco in {folder}…";
+            ? $"Loading {folder}…"
+            : $"Searching {folder}…";
         SetImapBusy(true, busy);
         _imapCts?.Cancel();
         _imapCts = new CancellationTokenSource();
@@ -3734,22 +3608,22 @@ public partial class MainWindow : Window
                 ImapMessagesGrid.ItemsSource = rows;
             ShowImapPreviewStatus(
                 rows.Count == 0
-                    ? (filter is null ? "(cartella vuota)" : "(nessun messaggio con questi filtri)")
-                    : "Seleziona un messaggio.");
+                    ? (filter is null ? "(empty folder)" : "(no messages matching these filters)")
+                    : "Select a message.");
 
             UpdateImapMessagesHeader();
             var status = filter is null
-                ? $"{folder}: {rows.Count} messaggi"
-                : $"{folder}: {rows.Count} risultati ({filter.Describe()})";
+                ? $"{folder}: {rows.Count} messages"
+                : $"{folder}: {rows.Count} results ({filter.Describe()})";
             SetImapBusy(false, status);
         }
         catch (OperationCanceledException)
         {
-            SetImapBusy(false, "Annullato.");
+            SetImapBusy(false, "Canceled.");
         }
         catch (Exception ex)
         {
-            SetImapBusy(false, "Errore elenco");
+            SetImapBusy(false, "List error");
             ShowImapPreviewStatus(ex.Message);
         }
     }
@@ -3763,7 +3637,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(_imapSelectedFolder))
             return;
 
-        SetImapBusy(true, "Scarico messaggio…");
+        SetImapBusy(true, "Downloading message…");
         _imapCts?.Cancel();
         _imapCts = new CancellationTokenSource();
         try
@@ -3772,15 +3646,15 @@ public partial class MainWindow : Window
                 .ConfigureAwait(true);
             ShowImapHtmlDocument(body.HtmlDocument);
             SetImapBusy(false,
-                body.IsHtml ? "Messaggio HTML (sola lettura)." : "Messaggio testo (sola lettura).");
+                body.IsHtml ? "HTML message (read-only)." : "Plain-text message (read-only).");
         }
         catch (OperationCanceledException)
         {
-            SetImapBusy(false, "Annullato.");
+            SetImapBusy(false, "Canceled.");
         }
         catch (Exception ex)
         {
-            SetImapBusy(false, "Errore messaggio");
+            SetImapBusy(false, "Message error");
             ShowImapPreviewStatus(ex.Message);
         }
     }
@@ -3802,7 +3676,7 @@ public partial class MainWindow : Window
             try
             {
                 ImapMessageBrowser.NavigateToString(
-                    ImapMailClient.BuildStatusHtmlDocument("Anteprima non disponibile: " + ex.Message));
+                    ImapMailClient.BuildStatusHtmlDocument("Preview unavailable: " + ex.Message));
             }
             catch
             {
@@ -3879,7 +3753,7 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFolderDialog
         {
-            Title = "Cartella di destinazione per l’export posta (.eml)",
+            Title = "Destination folder for mail export (.eml)",
         };
         var hint = OutputFolderTextBox?.Text?.Trim();
         if (!string.IsNullOrWhiteSpace(hint) && Directory.Exists(hint))
@@ -3900,14 +3774,14 @@ public partial class MainWindow : Window
             return;
         if (string.IsNullOrWhiteSpace(_imapSelectedFolder))
         {
-            MessageBox.Show(this, "Seleziona prima una cartella IMAP.", "IMAP Posta",
+            MessageBox.Show(this, "Select an IMAP folder first.", "IMAP Mail",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
         if (ImapMessagesGrid?.SelectedItem is not ImapMessageRowVm row)
         {
-            MessageBox.Show(this, "Seleziona un messaggio da esportare.", "IMAP Posta",
+            MessageBox.Show(this, "Select a message to export.", "IMAP Mail",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -3917,7 +3791,7 @@ public partial class MainWindow : Window
             return;
 
         await RunImapExportAsync(
-            "Esporto messaggio…",
+            "Exporting message…",
             async (client, progress, ct) =>
                 await ImapMailExportService.ExportAsync(
                     client, parent, _imapSelectedFolder!, [row.Uid], progress, ct)
@@ -3930,7 +3804,7 @@ public partial class MainWindow : Window
             return;
         if (string.IsNullOrWhiteSpace(_imapSelectedFolder))
         {
-            MessageBox.Show(this, "Seleziona prima una cartella IMAP.", "IMAP Posta",
+            MessageBox.Show(this, "Select an IMAP folder first.", "IMAP Mail",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -3942,20 +3816,20 @@ public partial class MainWindow : Window
         var folder = _imapSelectedFolder!;
         var filter = _imapFilter is { IsEmpty: false } ? _imapFilter : null;
         var label = filter is null
-            ? $"Esporto cartella {folder}…"
-            : $"Esporto cartella {folder} (filtro)…";
+            ? $"Exporting folder {folder}…"
+            : $"Exporting folder {folder} (filter)…";
         await RunImapExportAsync(
             label,
             async (client, progress, ct) =>
             {
-                progress.Report($"Elenco UID {folder}…");
+                progress.Report($"Listing UIDs {folder}…");
                 var uids = await client.ListAllUidsAsync(folder, filter, ct).ConfigureAwait(true);
                 if (uids.Count == 0)
                 {
                     throw new InvalidOperationException(
                         filter is null
-                            ? $"La cartella «{folder}» non contiene messaggi."
-                            : $"Nessun messaggio in «{folder}» con i filtri attivi.");
+                            ? $"Folder «{folder}» has no messages."
+                            : $"No messages in «{folder}» matching active filters.");
                 }
 
                 return await ImapMailExportService.ExportAsync(
@@ -3971,11 +3845,11 @@ public partial class MainWindow : Window
 
         var filter = _imapFilter is { IsEmpty: false } ? _imapFilter : null;
         var confirmMsg = filter is null
-            ? "Esportare tutti i messaggi di tutte le cartelle IMAP?\n" +
-              "Può richiedere molto tempo su caselle grandi."
-            : "Esportare da tutte le cartelle solo i messaggi che rispettano i filtri attivi?\n" +
+            ? "Export all messages from all IMAP folders?\n" +
+              "This can take a long time on large mailboxes."
+            : "Export from all folders only messages matching the active filters?\n" +
               $"Filtro: {filter.Describe()}";
-        var confirm = MessageBox.Show(this, confirmMsg, "IMAP Posta",
+        var confirm = MessageBox.Show(this, confirmMsg, "IMAP Mail",
             MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (confirm != MessageBoxResult.Yes)
             return;
@@ -3985,7 +3859,7 @@ public partial class MainWindow : Window
             return;
 
         await RunImapExportAsync(
-            filter is null ? "Esporto tutte le cartelle…" : "Esporto tutte le cartelle (filtro)…",
+            filter is null ? "Exporting all folders…" : "Exporting all folders (filter)…",
             async (client, progress, ct) =>
                 await ImapMailExportService.ExportAllFoldersAsync(
                         client, parent, filter, progress, ct)
@@ -4017,21 +3891,21 @@ public partial class MainWindow : Window
                 (result.Failed > 0 ? $", fail={result.Failed}" : ""));
             LogAuth($"IMAP export: ok={result.Written} fail={result.Failed} → {result.RootDirectory}");
             MessageBox.Show(this,
-                $"Esportati {result.Written} messaggi (.eml)" +
-                (result.Failed > 0 ? $"\nFalliti: {result.Failed}" : "") +
+                $"Exported {result.Written} messages (.eml)" +
+                (result.Failed > 0 ? $"\nFailed: {result.Failed}" : "") +
                 $"\n\n{result.RootDirectory}",
-                "IMAP Posta",
+                "IMAP Mail",
                 MessageBoxButton.OK,
                 result.Failed > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (OperationCanceledException)
         {
-            SetImapBusy(false, "Export annullato.");
+            SetImapBusy(false, "Export canceled.");
         }
         catch (Exception ex)
         {
-            SetImapBusy(false, "Errore export");
-            MessageBox.Show(this, ex.Message, "IMAP Posta", MessageBoxButton.OK, MessageBoxImage.Warning);
+            SetImapBusy(false, "Error export");
+            MessageBox.Show(this, ex.Message, "IMAP Mail", MessageBoxButton.OK, MessageBoxImage.Warning);
             LogAuth($"IMAP export: {ex.Message}");
         }
     }
@@ -4050,7 +3924,7 @@ public partial class MainWindow : Window
             ImapFoldersListBox.ItemsSource = null;
         if (ImapMessagesGrid is not null)
             ImapMessagesGrid.ItemsSource = null;
-        ShowImapPreviewStatus("Seleziona un messaggio per leggere il corpo (sola lettura).");
+        ShowImapPreviewStatus("Select a message to read the body (read-only).");
         if (ImapFilterFromDate is not null)
             ImapFilterFromDate.SelectedDate = null;
         if (ImapFilterToDate is not null)
@@ -4088,7 +3962,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "Find My Items",
+            MessageBox.Show(this, "Sign in to iCloud first.", "Find My Items",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -4098,8 +3972,8 @@ public partial class MainWindow : Window
         if (!hasEscrow && !hasManatee)
         {
             MessageBox.Show(this,
-                "Serve PCS Manatee/Escrow: «Unlock EscrowedKeys» e/o «CKKS OpenVault».\n" +
-                "Poi riprova Find My Items.",
+                "PCS Manatee/Escrow required: \"Unlock EscrowedKeys\" and/or \"CKKS OpenVault\".\n" +
+                "Then retry Find My Items.",
                 "Find My Items", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -4111,9 +3985,9 @@ public partial class MainWindow : Window
         if (FindMyItemsQueryButton is not null)
             FindMyItemsQueryButton.IsEnabled = false;
         if (ExploratoryServicesStatusText is not null)
-            ExploratoryServicesStatusText.Text = "FindMyItems: richiesta in corso…";
+            ExploratoryServicesStatusText.Text = "FindMyItems: request in progress…";
         if (ExploratoryServicesResultTextBox is not null)
-            ExploratoryServicesResultTextBox.Text = "Caricamento FindMyItems…";
+            ExploratoryServicesResultTextBox.Text = "Loading FindMyItems…";
 
         var progress = new Progress<string>(msg =>
         {
@@ -4138,8 +4012,8 @@ public partial class MainWindow : Window
             if (ExploratoryServicesStatusText is not null)
             {
                 ExploratoryServicesStatusText.Text =
-                    $"FindMyItems: OK — {result.Devices.Count} dispositivi " +
-                    $"({result.LogText.Length:N0} car. log)";
+                    $"FindMyItems: OK — {result.Devices.Count} devices " +
+                    $"({result.LogText.Length:N0} log chars)";
             }
 
             LogAuth($"FindMyItems: OK, devices={result.Devices.Count}, out={result.OutputDirectory}");
@@ -4148,9 +4022,9 @@ public partial class MainWindow : Window
         {
             ClearFindMyDevicesGrid();
             if (ExploratoryServicesResultTextBox is not null)
-                ExploratoryServicesResultTextBox.Text = $"Errore FindMyItems: {ex.Message}";
+                ExploratoryServicesResultTextBox.Text = $"Error FindMyItems: {ex.Message}";
             if (ExploratoryServicesStatusText is not null)
-                ExploratoryServicesStatusText.Text = "FindMyItems: errore";
+                ExploratoryServicesStatusText.Text = "FindMyItems: error";
             LogAuth($"FindMyItems: {ex.Message}");
         }
         finally
@@ -4234,7 +4108,7 @@ public partial class MainWindow : Window
             async session =>
             {
                 await TryRefreshAnisetteForExploratoryAsync(session).ConfigureAwait(false);
-                var candidates = BuildCloudKitProbeCandidates(extrasRaw, session);
+                var candidates = BuildCloudKitProbeCandidates(extrasRaw);
                 var progress = new Progress<string>(msg =>
                     Dispatcher.BeginInvoke(() =>
                     {
@@ -4242,41 +4116,26 @@ public partial class MainWindow : Window
                             ExploratoryServicesStatusText.Text =
                                 "CloudKitContainers: " + TrimUiStatus(msg, 120);
                     }));
-                return await new CloudKitContainerProbeService(Orchestrator, Http)
+                return await new CloudKitContainerProbeService(Orchestrator)
                     .ProbeAsync(session, candidates, progress)
                     .ConfigureAwait(false);
             });
     }
 
     private static List<CloudKitContainerProbeService.Candidate> BuildCloudKitProbeCandidates(
-        string? extrasRaw,
-        ICloudSession session)
+        string? extrasRaw)
     {
         var list = new List<CloudKitContainerProbeService.Candidate>(
             CloudKitContainerProbeService.DefaultCandidates);
+        if (string.IsNullOrWhiteSpace(extrasRaw))
+            return list;
 
-        // Priorità: container legati alle dataclass dell'account (catalogo + entitlement candidates).
-        if (session.AvailableDataclasses.Count > 0)
+        foreach (var line in extrasRaw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
-            foreach (var c in SyncDataCategoryCatalog.DiscoveryCandidatesForDataclasses(
-                         session.AvailableDataclasses))
-            {
-                list.Add(new CloudKitContainerProbeService.Candidate(
-                    c.ContainerId,
-                    $"dataclass → {c.BundleId}",
-                    InCatalog: true));
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(extrasRaw))
-        {
-            foreach (var line in extrasRaw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
-            {
-                var id = line.Trim();
-                if (id.Length == 0 || id.StartsWith('#'))
-                    continue;
-                list.Add(new CloudKitContainerProbeService.Candidate(id, "custom", InCatalog: false));
-            }
+            var id = line.Trim();
+            if (id.Length == 0 || id.StartsWith('#'))
+                continue;
+            list.Add(new CloudKitContainerProbeService.Candidate(id, "custom", InCatalog: false));
         }
 
         return list;
@@ -4330,7 +4189,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "Servizi iCloud",
+            MessageBox.Show(this, "Sign in to iCloud first.", "iCloud services",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -4338,9 +4197,9 @@ public partial class MainWindow : Window
         if (ContactsQueryButton is not null)
             ContactsQueryButton.IsEnabled = false;
         if (ExploratoryServicesStatusText is not null)
-            ExploratoryServicesStatusText.Text = "Contacts: richiesta in corso…";
+            ExploratoryServicesStatusText.Text = "Contacts: request in progress…";
         if (ExploratoryServicesResultTextBox is not null)
-            ExploratoryServicesResultTextBox.Text = "Caricamento Contacts…";
+            ExploratoryServicesResultTextBox.Text = "Loading Contacts…";
         ClearFindMyDevicesGrid();
         ClearContactsExplorer(keepPanelVisible: true);
 
@@ -4357,7 +4216,7 @@ public partial class MainWindow : Window
                 ExploratoryServicesResultTextBox.Text = text;
             if (ExploratoryServicesStatusText is not null)
                 ExploratoryServicesStatusText.Text =
-                    $"Contacts: OK — {snap.Contacts.Count} contatto/i";
+                    $"Contacts: OK — {snap.Contacts.Count} contact(s)";
             PopulateContactsExplorer(snap);
             LogAuth($"Contacts: query OK ({snap.Contacts.Count}).");
         }
@@ -4366,9 +4225,9 @@ public partial class MainWindow : Window
             _contactsSnapshot = null;
             HideContactsExplorer();
             if (ExploratoryServicesResultTextBox is not null)
-                ExploratoryServicesResultTextBox.Text = $"Errore Contacts: {ex.Message}";
+                ExploratoryServicesResultTextBox.Text = $"Error Contacts: {ex.Message}";
             if (ExploratoryServicesStatusText is not null)
-                ExploratoryServicesStatusText.Text = "Contacts: errore";
+                ExploratoryServicesStatusText.Text = "Contacts: error";
             LogAuth($"Contacts: {ex.Message}");
         }
         finally
@@ -4405,7 +4264,7 @@ public partial class MainWindow : Window
         if (ContactsListBox is not null && !keepPanelVisible)
             ContactsListBox.ItemsSource = null;
         if (ContactsVcardTextBox is not null)
-            ContactsVcardTextBox.Text = "vCard del contatto selezionato…";
+            ContactsVcardTextBox.Text = "vCard for selected contact…";
         if (ContactsPhotoImage is not null)
             ContactsPhotoImage.Source = null;
         if (ContactsLoadVcardButton is not null)
@@ -4420,7 +4279,7 @@ public partial class MainWindow : Window
     private void ContactsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ContactsVcardTextBox is not null)
-            ContactsVcardTextBox.Text = "vCard del contatto selezionato…";
+            ContactsVcardTextBox.Text = "vCard for selected contact…";
         if (ContactsPhotoImage is not null)
             ContactsPhotoImage.Source = null;
         UpdateContactsDetailButtons();
@@ -4461,15 +4320,15 @@ public partial class MainWindow : Window
                 ContactsVcardTextBox.Text = vcard;
             if (ExploratoryServicesStatusText is not null)
                 ExploratoryServicesStatusText.Text =
-                    $"Contacts: vCard OK ({vcard.Length:N0} caratteri)";
+                    $"Contacts: vCard OK ({vcard.Length:N0} characters)";
             LogAuth($"Contacts: vCard OK {contact.Href}");
         }
         catch (Exception ex)
         {
             if (ContactsVcardTextBox is not null)
-                ContactsVcardTextBox.Text = $"Errore vCard: {ex.Message}";
+                ContactsVcardTextBox.Text = $"vCard error: {ex.Message}";
             if (ExploratoryServicesStatusText is not null)
-                ExploratoryServicesStatusText.Text = "Contacts: errore vCard";
+                ExploratoryServicesStatusText.Text = "Contacts: error vCard";
             LogAuth($"Contacts vCard: {ex.Message}");
         }
         finally
@@ -4489,7 +4348,7 @@ public partial class MainWindow : Window
         if (ContactsLoadPhotoButton is not null)
             ContactsLoadPhotoButton.IsEnabled = false;
         if (ExploratoryServicesStatusText is not null)
-            ExploratoryServicesStatusText.Text = $"Contacts: GET foto «{contact}»…";
+            ExploratoryServicesStatusText.Text = $"Contacts: GET photo «{contact}»…";
 
         try
         {
@@ -4514,7 +4373,7 @@ public partial class MainWindow : Window
                 ContactsPhotoImage.Source = bitmap;
             if (ExploratoryServicesStatusText is not null)
                 ExploratoryServicesStatusText.Text =
-                    $"Contacts: foto OK ({bytes.Length:N0} byte, {contentType})";
+                    $"Contacts: photo OK ({bytes.Length:N0} bytes, {contentType})";
             LogAuth($"Contacts: foto OK {bytes.Length} byte");
         }
         catch (Exception ex)
@@ -4522,7 +4381,7 @@ public partial class MainWindow : Window
             if (ContactsPhotoImage is not null)
                 ContactsPhotoImage.Source = null;
             if (ExploratoryServicesStatusText is not null)
-                ExploratoryServicesStatusText.Text = $"Contacts: errore foto — {ex.Message}";
+                ExploratoryServicesStatusText.Text = $"Contacts: error foto — {ex.Message}";
             LogAuth($"Contacts foto: {ex.Message}");
         }
         finally
@@ -4538,7 +4397,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Effettua prima il login iCloud.", "Servizi iCloud",
+            MessageBox.Show(this, "Sign in to iCloud first.", "iCloud services",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -4551,9 +4410,9 @@ public partial class MainWindow : Window
         if (button is not null)
             button.IsEnabled = false;
         if (ExploratoryServicesStatusText is not null)
-            ExploratoryServicesStatusText.Text = $"{serviceName}: richiesta in corso…";
+            ExploratoryServicesStatusText.Text = $"{serviceName}: request in progress…";
         if (ExploratoryServicesResultTextBox is not null)
-            ExploratoryServicesResultTextBox.Text = $"Caricamento {serviceName}…";
+            ExploratoryServicesResultTextBox.Text = $"Loading {serviceName}…";
 
         try
         {
@@ -4563,15 +4422,15 @@ public partial class MainWindow : Window
             if (ExploratoryServicesResultTextBox is not null)
                 ExploratoryServicesResultTextBox.Text = text;
             if (ExploratoryServicesStatusText is not null)
-                ExploratoryServicesStatusText.Text = $"{serviceName}: OK ({text.Length:N0} caratteri)";
+                ExploratoryServicesStatusText.Text = $"{serviceName}: OK ({text.Length:N0} characters)";
             LogAuth($"{serviceName}: query OK.");
         }
         catch (Exception ex)
         {
             if (ExploratoryServicesResultTextBox is not null)
-                ExploratoryServicesResultTextBox.Text = $"Errore {serviceName}: {ex.Message}";
+                ExploratoryServicesResultTextBox.Text = $"Error {serviceName}: {ex.Message}";
             if (ExploratoryServicesStatusText is not null)
-                ExploratoryServicesStatusText.Text = $"{serviceName}: errore";
+                ExploratoryServicesStatusText.Text = $"{serviceName}: error";
             LogAuth($"{serviceName}: {ex.Message}");
         }
         finally
@@ -4590,12 +4449,12 @@ public partial class MainWindow : Window
 
         if (_session is null)
         {
-            CloudQuotaTextBox.Text = "Effettua il login per caricare lo spazio iCloud.";
+            CloudQuotaTextBox.Text = "Sign in to load iCloud storage.";
             return;
         }
 
         var gen = Interlocked.Increment(ref _cloudQuotaFetchGen);
-        CloudQuotaTextBox.Text = "Caricamento spazio iCloud…";
+        CloudQuotaTextBox.Text = "Loading iCloud storage…";
         try
         {
             // Anisette aggiornata dalla sessione corrente (token dinamici già in _session).
@@ -4609,13 +4468,13 @@ public partial class MainWindow : Window
             if (gen != Volatile.Read(ref _cloudQuotaFetchGen))
                 return;
             CloudQuotaTextBox.Text = text;
-            LogAuth("Quota iCloud: dettagli spazio aggiornati.");
+            LogAuth("iCloud quota: storage details updated.");
         }
         catch (Exception ex)
         {
             if (gen != Volatile.Read(ref _cloudQuotaFetchGen))
                 return;
-            CloudQuotaTextBox.Text = $"Errore Quota: {ex.Message}";
+            CloudQuotaTextBox.Text = $"Error Quota: {ex.Message}";
             LogAuth($"Quota iCloud: {ex.Message}");
         }
     }
@@ -4630,11 +4489,11 @@ public partial class MainWindow : Window
         try
         {
             Clipboard.SetText(text);
-            LogAuth($"{label}: copiati negli appunti ({text.Length} caratteri).");
+            LogAuth($"{label}: copied to clipboard ({text.Length} characters).");
         }
         catch (Exception ex)
         {
-            LogAuth($"{label}: copia fallita — {ex.Message}");
+            LogAuth($"{label}: copy failed — {ex.Message}");
         }
     }
 
@@ -4660,23 +4519,20 @@ public partial class MainWindow : Window
         if (_session is null)
         {
             SyncDataServicesHintText.Text =
-                "Servizi Sync Data — effettua il login per caricare le dataclass disponibili.";
+                "Sync Data services — sign in to load available dataclasses.";
             SyncDataPhotosOptionsPanel.Visibility = Visibility.Collapsed;
             return;
         }
 
-        // Elenco: candidati CK (dataclass/entitlement) selezionabili; FileVault → KVS.
+        // Elenco: recuperabili vs «(presto)».
         SyncDataServicesHintText.Text =
-            "Test: zone/retrieve → zone/sync → record/sync (dump zona; record/retrieve solo con record name noti). " +
-            "Attivi: Photos, Account Info, Messages, Voice Memos, Notes. " +
-            "FileVault2: tipicamente KeyValue/sbd o Keychain, non CloudKit.";
+            "Enabled: Photos, Account Info, Voice Memos, Calls, Messages; others coming soon. " +
+            "Calls: Phone & FaceTime in iCloud + Escrow/Octagon. " +
+            "Messages: CloudKit sync + MMCS attempt on content.icloud.com (like Voice Memos) when ckAsset present.";
 
         foreach (var cat in SyncDataCategoryCatalog.All)
         {
             var canRecover = SyncDataCategoryCatalog.IsRecoverable(cat);
-            var needsDiscovery = SyncDataCategoryCatalog.NeedsContainerDiscovery(cat);
-            var isFileVault = string.Equals(cat.Id, "filevault", StringComparison.OrdinalIgnoreCase);
-            var isCalls = string.Equals(cat.Id, SyncDataCategoryCatalog.CallsId, StringComparison.OrdinalIgnoreCase);
             var cb = new CheckBox
             {
                 Content = cat.DisplayName + (canRecover ? "" : " (presto)"),
@@ -4688,13 +4544,8 @@ public partial class MainWindow : Window
                 ToolTip = canRecover
                     ? (cat.IncludeAccountInfo
                         ? "GSA Account Info (profilo, payment, security, devices)"
-                        : $"{cat.Containers.Count} container candidato — " +
-                          (cat.RequiredDataclass ?? "CloudKit (CKDatabaseService)"))
-                    : isCalls
-                        ? "Calls disabilitato — CallHistory spesso ckm4qn70 (optional feature disabled)"
-                        : isFileVault || needsDiscovery
-                            ? "Nessun container CK: FileVault→KVS/Keychain; altri→probe Containers"
-                            : "Recupero non ancora implementato (presto)"
+                        : (cat.RequiredDataclass ?? "CloudKit (CKDatabaseService)"))
+                    : "Recovery not yet implemented (coming soon)"
             };
             if (string.Equals(cat.Id, SyncDataCategoryCatalog.PhotosId, StringComparison.OrdinalIgnoreCase))
             {
@@ -4776,7 +4627,7 @@ public partial class MainWindow : Window
 
             {
 
-                MessageBox.Show(this, "Inserisci Apple ID e password.", "Accesso", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, "Enter Apple ID and password.", "Sign In", MessageBoxButton.OK, MessageBoxImage.Warning);
 
                 return;
 
@@ -4863,7 +4714,7 @@ public partial class MainWindow : Window
 
                 LogAuth(ex.Message);
 
-                MessageBox.Show(this, ex.Message, "Verifica a due fattori", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, ex.Message, "Two-factor verification", MessageBoxButton.OK, MessageBoxImage.Information);
 
             }
 
@@ -4873,9 +4724,9 @@ public partial class MainWindow : Window
 
         {
 
-            LogAuth($"Errore: {ex.Message}");
+            LogAuth($"Error: {ex.Message}");
 
-            MessageBox.Show(this, ex.Message, "Accesso", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, ex.Message, "Sign In", MessageBoxButton.OK, MessageBoxImage.Error);
 
         }
 
@@ -4899,7 +4750,7 @@ public partial class MainWindow : Window
 
         {
 
-            MessageBox.Show(this, "Esegui prima il login.", "2FA", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Sign in first.", "2FA", MessageBoxButton.OK, MessageBoxImage.Warning);
 
             return;
 
@@ -4913,7 +4764,7 @@ public partial class MainWindow : Window
 
         {
 
-            MessageBox.Show(this, "Inserisci il codice a 6 cifre.", "2FA", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Enter the 6-digit code.", "2FA", MessageBoxButton.OK, MessageBoxImage.Warning);
 
             return;
 
@@ -4961,7 +4812,7 @@ public partial class MainWindow : Window
 
             SaveSessionSnapshot("2fa_ok");
 
-            LogAuth("2FA completata.");
+            LogAuth("2FA completed.");
             ApplyUiWizardStage(UiWizardStage.AfterLogin);
 
         }
@@ -4988,7 +4839,7 @@ public partial class MainWindow : Window
 
             MessageBox.Show(this,
 
-                $"Autenticazione riuscita, ma l'inizializzazione CloudKit è fallita:\n{ex.Message}",
+                $"Authentication succeeded, but CloudKit initialization failed:\n{ex.Message}",
 
                 "CloudKit",
 
@@ -5003,7 +4854,7 @@ public partial class MainWindow : Window
 
         {
 
-            LogAuth($"2FA fallita: {ex.Message}");
+            LogAuth($"2FA failed: {ex.Message}");
 
             MessageBox.Show(this, ex.Message, "2FA", MessageBoxButton.OK, MessageBoxImage.Error);
 
@@ -5025,7 +4876,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Autenticati prima di elencare i backup.", "Backup", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Sign in before listing backups.", "Backup", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -5036,7 +4887,7 @@ public partial class MainWindow : Window
 
         // Tempo: parte subito su Aggiorna (lista + backupProperties), non al download.
         StartDownloadTiming();
-        _lastDownloadProgressStatus = "Recupero elenco snapshot…";
+        _lastDownloadProgressStatus = "Fetching snapshot list…";
         DownloadStatusText.Text = _lastDownloadProgressStatus;
         DownloadProgressBar.IsIndeterminate = true;
         // #region agent log
@@ -5081,17 +4932,17 @@ public partial class MainWindow : Window
                 UpdateDownloadButtonState();
             }
 
-            SaveSessionSnapshot("backup_list_ok", $"{_devices.Count} dispositivi");
-            AppendDownloadLog($"Trovati {_devices.Count} dispositivi con backup.");
+            SaveSessionSnapshot("backup_list_ok", $"{_devices.Count} devices");
+            AppendDownloadLog($"Found {_devices.Count} devices with backups.");
 
             // Decrypt PCS di backupProperties: attende il fine e solo dopo riabilita Scarica.
             var needsProps = _devices.SelectMany(d => d.Snapshots)
                 .Any(s => s.BackupPropertiesCiphertext is { Length: > 16 });
             if (needsProps)
             {
-                _lastDownloadProgressStatus = "Decifratura campi snapshot in corso…";
+                _lastDownloadProgressStatus = "Decrypting snapshot fields…";
                 DownloadStatusText.Text = _lastDownloadProgressStatus;
-                AppendDownloadLog("Decrypt backupProperties in corso…");
+                AppendDownloadLog("Decrypting backupProperties…");
                 // #region agent log
                 AgentListLog("H-REFRESH-UI", "refresh_decrypt_status", new
                 {
@@ -5112,21 +4963,21 @@ public partial class MainWindow : Window
 
             _backupPropertiesReady = true;
             var snapCount = _devices.Sum(d => d.Snapshots.Count);
-            var deviceWord = _devices.Count == 1 ? "dispositivo" : "dispositivi";
+            var deviceWord = _devices.Count == 1 ? "device" : "devices";
             _lastDownloadProgressStatus =
-                $"Elenco pronto ({_devices.Count} {deviceWord}, {snapCount} snapshot)";
+                $"List ready ({_devices.Count} {deviceWord}, {snapCount} snapshots)";
             DownloadStatusText.Text = _lastDownloadProgressStatus;
         }
         catch (Exception ex)
         {
             SaveSessionSnapshot("backup_list_failed", ex.Message);
-            AppendDownloadLog($"Errore elenco backup: {ex.Message}");
+            AppendDownloadLog($"Backup list error: {ex.Message}");
             // #region agent log
             AgentListLog("H-HANG3", "refresh_backups_exception", new { err = ex.GetType().Name, msg = ex.Message });
             // #endregion
             MessageBox.Show(this, ex.Message, "Backup", MessageBoxButton.OK, MessageBoxImage.Error);
             _backupPropertiesReady = false;
-            _lastDownloadProgressStatus = "Elenco fallito";
+            _lastDownloadProgressStatus = "List failed";
             DownloadStatusText.Text = _lastDownloadProgressStatus;
         }
         finally
@@ -5218,8 +5069,8 @@ public partial class MainWindow : Window
         if (DownloadButton is null || ChainSnapshotsCheckBox is null)
             return;
         DownloadButton.Content = ChainSnapshotsCheckBox.IsChecked == true
-            ? "Scarica backup (catena)"
-            : "Scarica snapshot selezionato";
+            ? "Download backup (chain)"
+            : "Download selected snapshot";
     }
 
     private void BindSnapshotsForSelectedDevice()
@@ -5455,11 +5306,11 @@ public partial class MainWindow : Window
             }
 
             // Coda: applica SEMPRE il valore del report (anche 0) — non restare su picco stale.
-            DecryptQueueText.Text = $"Coda decrypt: {r.DecryptQueued:N0}";
+            DecryptQueueText.Text = $"Decrypt queue: {r.DecryptQueued:N0}";
             PendingChunksText.Text = $"Pending: {r.FilesPendingChunks:N0}";
-            DuplicatedFilesText.Text = $"Duplicati: {duplicated:N0}";
-            CiphertextFilesText.Text = $"Cifrati: {ciphertextSaved:N0}";
-            DecryptFailedText.Text = $"Falliti decrypt: {decryptFailed:N0}";
+            DuplicatedFilesText.Text = $"Duplicates: {duplicated:N0}";
+            CiphertextFilesText.Text = $"Ciphertext: {ciphertextSaved:N0}";
+            DecryptFailedText.Text = $"Decrypt failed: {decryptFailed:N0}";
 
             _timingFilesDone = decrypted + decryptFailed;
             if (filesTotal > 0)
@@ -5488,7 +5339,7 @@ public partial class MainWindow : Window
                 ? ""
                 : $"[{r.SnapshotLabel}] ";
             var progressStatus =
-                $"{snapPrefix}{successDone:N0} / {filesTotal:N0} file decifrati";
+                $"{snapPrefix}{successDone:N0} / {filesTotal:N0} files decrypted";
             _lastDownloadProgressStatus = progressStatus;
             DownloadStatusText.Text = progressStatus;
 
@@ -5558,7 +5409,8 @@ public partial class MainWindow : Window
     }
 
     private static bool IsBackupFieldDecryptStatus(string status) =>
-        status.Contains("Decifratura campi", StringComparison.OrdinalIgnoreCase)
+        status.Contains("Decrypting fields", StringComparison.OrdinalIgnoreCase)
+        || status.Contains("Decifratura campi", StringComparison.OrdinalIgnoreCase)
         || status.Contains("backupProperties", StringComparison.OrdinalIgnoreCase)
         || status.Contains("Decrypt backupProperties", StringComparison.OrdinalIgnoreCase);
 
@@ -5572,10 +5424,10 @@ public partial class MainWindow : Window
         _timingWireBytes = 0;
         _uiBytesProgressLogCount = 0;
         _uiLastBytesSnapshotLabel = null;
-        DownloadElapsedText.Text = "Tempo: 0:00";
+        DownloadElapsedText.Text = "Time: 0:00";
         DownloadBytesText.Text = "Backup: — / —";
         if (DownloadWireBytesText is not null)
-            DownloadWireBytesText.Text = "Rete: —";
+            DownloadWireBytesText.Text = "Network: —";
 
         _downloadTimingTimer?.Stop();
         _downloadTimingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -5611,7 +5463,7 @@ public partial class MainWindow : Window
         var elapsed = DateTime.UtcNow - started;
         if (elapsed < TimeSpan.Zero)
             elapsed = TimeSpan.Zero;
-        DownloadElapsedText.Text = $"Tempo: {FormatDownloadDuration(elapsed)}";
+        DownloadElapsedText.Text = $"Time: {FormatDownloadDuration(elapsed)}";
 
         var bytesDone = Math.Max(0L, _timingBytesDone);
         var bytesTotal = Math.Max(0L, _timingBytesTotal);
@@ -5684,13 +5536,13 @@ public partial class MainWindow : Window
     private static string FormatWireBytesProgress(long wireBytes, int scaleIdx)
     {
         if (wireBytes <= 0)
-            return "Rete: —";
+            return "Network: —";
 
         var unit = ResolveBytesUnit(scaleIdx, wireBytes);
         var div = Math.Pow(1024, unit.Index);
         if (unit.Index == 0)
-            return $"Rete: {wireBytes:N0} {unit.Name}";
-        return $"Rete: {(wireBytes / div):0.##} {unit.Name}";
+            return $"Network: {wireBytes:N0} {unit.Name}";
+        return $"Network: {(wireBytes / div):0.##} {unit.Name}";
     }
 
     private static (int Index, string Name) ResolveBytesUnit(int scaleIdx, long referenceBytes)
@@ -5736,25 +5588,25 @@ public partial class MainWindow : Window
     {
         var (active, label) = DownloadLogTabs.SelectedIndex switch
         {
-            1 => (DownloadWarningLogBox, "avvisi"),
-            2 => (DownloadErrorLogBox, "errori"),
-            _ => (DownloadInfoLogBox, "informazioni"),
+            1 => (DownloadWarningLogBox, "warnings"),
+            2 => (DownloadErrorLogBox, "errors"),
+            _ => (DownloadInfoLogBox, "information"),
         };
         var text = GetRichTextPlain(active);
         if (string.IsNullOrEmpty(text))
         {
-            FlashDownloadStatusThenRestore("Log vuoto");
+            FlashDownloadStatusThenRestore("Log empty");
             return;
         }
 
         try
         {
             Clipboard.SetText(text);
-            FlashDownloadStatusThenRestore($"Log {label} copiato negli appunti");
+            FlashDownloadStatusThenRestore($"Log {label} copied to clipboard");
         }
         catch (Exception ex)
         {
-            FlashDownloadStatusThenRestore($"Copia log fallita: {ex.Message}");
+            FlashDownloadStatusThenRestore($"Copy log failed: {ex.Message}");
         }
     }
 
@@ -5785,7 +5637,7 @@ public partial class MainWindow : Window
 
         {
 
-            MessageBox.Show(this, "Sessione non attiva.", "Download", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Session not active.", "Download", MessageBoxButton.OK, MessageBoxImage.Warning);
 
             return;
 
@@ -5795,13 +5647,13 @@ public partial class MainWindow : Window
 
         if (DevicesGrid.SelectedItem is not BackupDevice device || device.Snapshots.Count == 0)
         {
-            MessageBox.Show(this, "Seleziona un dispositivo con almeno uno snapshot.", "Download", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Select a device with at least one snapshot.", "Download", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         if (SnapshotsGrid.SelectedItem is not BackupSnapshot selectedSnapshot)
         {
-            MessageBox.Show(this, "Seleziona uno snapshot da scaricare.", "Download", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Select a snapshot to download.", "Download", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -5815,15 +5667,15 @@ public partial class MainWindow : Window
 
         if (snapshotsToDownload.Count == 0)
         {
-            MessageBox.Show(this, "Nessuno snapshot da scaricare.", "Download", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "No snapshot to download.", "Download", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         var outputRoot = OutputFolderTextBox.Text.Trim();
         AppendDownloadLog(
             chainAll
-                ? $"Catena snapshot: {snapshotsToDownload.Count} (dal più vecchio al più recente)"
-                : $"Snapshot singolo: {selectedSnapshot.DateLabel} ({selectedSnapshot.ShortUuid})");
+                ? $"Snapshot chain: {snapshotsToDownload.Count} (oldest to newest)"
+                : $"Single snapshot: {selectedSnapshot.DateLabel} ({selectedSnapshot.ShortUuid})");
 
         try
         {
@@ -5834,12 +5686,13 @@ public partial class MainWindow : Window
             DecryptFilesProgressBar.Value = 0;
             DownloadFilesCountText.Text = "0 / 0";
             DecryptFilesCountText.Text = "0 / 0";
-            DecryptQueueText.Text = "Coda decrypt: 0";
+            DecryptQueueText.Text = "Decrypt queue: 0";
             PendingChunksText.Text = "Pending: 0";
-            DuplicatedFilesText.Text = "Duplicati: 0";
-            CiphertextFilesText.Text = "Cifrati: 0";
-            DecryptFailedText.Text = "Falliti decrypt: 0";
+            DuplicatedFilesText.Text = "Duplicates: 0";
+            CiphertextFilesText.Text = "Ciphertext: 0";
+            DecryptFailedText.Text = "Decrypt failed: 0";
             StartDownloadTiming();
+            ResetForegroundMmcsUi();
             _lastDownloadProgressStatus = "Escrow / PCS KeySet…";
             DownloadStatusText.Text = _lastDownloadProgressStatus;
             DownloadProgressBar.IsIndeterminate = true;
@@ -5877,7 +5730,7 @@ public partial class MainWindow : Window
             Directory.CreateDirectory(pcsDir);
             var iCsc = ResolveEscrowIcsc();
             if (string.IsNullOrEmpty(EscrowPasswordBox.Password.Trim()) && !string.IsNullOrEmpty(iCsc))
-                AppendDownloadLog($"iCSC vuoto → default DSID ({iCsc})");
+                AppendDownloadLog($"iCSC empty → default DSID ({iCsc})");
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
                     Enabled: true,
@@ -5900,7 +5753,7 @@ public partial class MainWindow : Window
                     else
                     {
                         downloadLogProgress.Report(
-                            $"PCS KeySet: assente — {ensure.Message} (download prosegue; MMCS decrypt skip)");
+                            $"PCS KeySet: missing — {ensure.Message} (download continues; MMCS decrypt skip)");
                     }
 
                     // #region agent log
@@ -5994,13 +5847,13 @@ public partial class MainWindow : Window
                                 DownloadWireBytesText.Text = FormatWireBytesProgress(0, scaleIdx);
                             DownloadFilesCountText.Text = "0 / 0";
                             DecryptFilesCountText.Text = "0 / 0";
-                            DecryptQueueText.Text = "Coda decrypt: 0";
+                            DecryptQueueText.Text = "Decrypt queue: 0";
                             PendingChunksText.Text = "Pending: 0";
-                            DuplicatedFilesText.Text = "Duplicati: 0";
-                            CiphertextFilesText.Text = "Cifrati: 0";
-                            DecryptFailedText.Text = "Falliti decrypt: 0";
+                            DuplicatedFilesText.Text = "Duplicates: 0";
+                            CiphertextFilesText.Text = "Ciphertext: 0";
+                            DecryptFailedText.Text = "Decrypt failed: 0";
                             _lastDownloadProgressStatus =
-                                $"Snapshot {i + 1}/{snapshotsToDownload.Count}: preparazione…";
+                                $"Snapshot {i + 1}/{snapshotsToDownload.Count}: preparing…";
                             DownloadStatusText.Text = _lastDownloadProgressStatus;
                         });
 
@@ -6022,13 +5875,13 @@ public partial class MainWindow : Window
 
                         completedDirs.Add(outputDir);
                         downloadLogProgress.Report(
-                            $"── Completato {i + 1}/{snapshotsToDownload.Count}: {snap.ShortUuid}");
+                            $"── Completed {i + 1}/{snapshotsToDownload.Count}: {snap.ShortUuid}");
                     }
                 }).ConfigureAwait(false);
 
             var summary = completedDirs.Count == 1
-                ? $"Download salvato in {completedDirs[0]}"
-                : $"Catena completata: {completedDirs.Count} snapshot sotto {outputRoot}";
+                ? $"Download saved to {completedDirs[0]}"
+                : $"Chain completed: {completedDirs.Count} snapshots under {outputRoot}";
             await Dispatcher.InvokeAsync(() =>
                 MessageBox.Show(this, summary, "Download", MessageBoxButton.OK, MessageBoxImage.Information));
 
@@ -6070,7 +5923,7 @@ public partial class MainWindow : Window
 
             await Dispatcher.InvokeAsync(() =>
             {
-                AppendDownloadLog($"Errore: {shown.GetType().Name}: {shown.Message}");
+                AppendDownloadLog($"Error: {shown.GetType().Name}: {shown.Message}");
                 if (shown is ArgumentOutOfRangeException aor && !string.IsNullOrEmpty(aor.ParamName))
                     AppendDownloadLog($"  param: {aor.ParamName}");
                 if (shown.InnerException is not null)
@@ -6163,13 +6016,13 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            MessageBox.Show(this, "Esegui prima il login.", "2FA SMS", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Sign in first.", "2FA SMS", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         if (SmsPhoneComboBox.SelectedItem is not TrustedPhoneNumber phone)
         {
-            MessageBox.Show(this, "Nessun numero SMS disponibile per questo account.", "2FA SMS",
+            MessageBox.Show(this, "No SMS number available for this account.", "2FA SMS",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -6182,7 +6035,7 @@ public partial class MainWindow : Window
             var progress = new Progress<string>(msg => Dispatcher.Invoke(() => LogAuth(msg)));
             await Orchestrator.RequestSmsTwoFactorAsync(_session, phone.Id, progress);
             TwoFactorSmsRadio.IsChecked = true;
-            MessageBox.Show(this, $"Codice SMS inviato a {phone.DisplayLabel}.", "2FA SMS",
+            MessageBox.Show(this, $"SMS code sent to {phone.DisplayLabel}.", "2FA SMS",
                 MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)

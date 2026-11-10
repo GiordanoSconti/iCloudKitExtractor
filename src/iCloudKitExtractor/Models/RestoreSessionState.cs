@@ -9,12 +9,15 @@ namespace iCloudKitExtractor.Models;
 /// <summary>
 /// Stato restore CloudKit per sessione: valori propagati tra richieste e assorbiti dalle risposte.
 /// Foreground hw/sha da identità catturata (stabile); altri campi da risposte/anisette.
+/// <see cref="ObservedForeground"/> tiene l'identità vista in rete (probe), distinta da quella usata in request.
 /// </summary>
 public sealed class RestoreSessionState
 {
     private static readonly Regex UuidRegex = new(
         @"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
         RegexOptions.Compiled);
+
+    private readonly List<string> _observedForegroundSources = new();
 
     public string DeviceSessionId { get; private set; }
     public string OperationGroupId { get; private set; }
@@ -23,6 +26,17 @@ public sealed class RestoreSessionState
     public byte[]? PreAuthSessionBlob { get; private set; }
     public byte[]? PreAuthWscPrefix { get; private set; }
     public bool ForegroundIsSynthetic { get; private set; }
+
+    /// <summary>Ultima identità FG estratta da una risposta (null = mai vista in rete).</summary>
+    public ForegroundRestorePlist? ObservedForeground { get; private set; }
+
+    /// <summary>Sorgente dell'ultimo HIT (es. <c>zones</c>, <c>batch S:</c>, <c>mbs</c>).</summary>
+    public string? ObservedForegroundSource { get; private set; }
+
+    public int ObservedForegroundHitCount { get; private set; }
+    public int ObservedForegroundMissCount { get; private set; }
+
+    public IReadOnlyList<string> ObservedForegroundSources => _observedForegroundSources;
 
     private RestoreSessionState(string deviceSessionId, string operationGroupId)
     {
@@ -55,15 +69,36 @@ public sealed class RestoreSessionState
         return new RestoreRequestContext(DeviceSessionId, Foreground);
     }
 
-    /// <summary>Assorbe metadati Foreground e device-session da payload di risposta.</summary>
-    public void TryAbsorbFromPayload(byte[]? payload)
+    /// <summary>
+    /// Assorbe metadati Foreground e device-session da payload di risposta.
+    /// Con <paramref name="source"/> + <paramref name="log"/> registra HIT/MISS hw+sha osservati in rete
+    /// (senza sostituire l'hw/sha statico usato nelle request).
+    /// </summary>
+    public bool TryAbsorbFromPayload(
+        byte[]? payload,
+        string? source = null,
+        IProgress<string>? log = null,
+        bool logMisses = true)
     {
         if (payload is not { Length: > 64 })
-            return;
+        {
+            if (logMisses && log is not null && !string.IsNullOrWhiteSpace(source))
+            {
+                ObservedForegroundMissCount++;
+                log.Report($"  FG observe [{source}]: MISS (payload vuoto/corto)");
+            }
+            else if (!string.IsNullOrWhiteSpace(source))
+            {
+                ObservedForegroundMissCount++;
+            }
+
+            return false;
+        }
 
         var extracted = ForegroundRestorePlistExtractor.Extract(payload);
         if (extracted is not null)
         {
+            NoteObservedForeground(extracted, source, log);
             var captured = ForegroundRestorePlistBuilder.BuildCapturedAuth(
                 anisette: null,
                 mmeClientInfoFromResponse: extracted.MmeClientInfo);
@@ -72,17 +107,28 @@ public sealed class RestoreSessionState
                 Foreground ?? extracted);
             ForegroundIsSynthetic = false;
         }
+        else if (!string.IsNullOrWhiteSpace(source))
+        {
+            ObservedForegroundMissCount++;
+            if (logMisses && log is not null)
+                log.Report($"  FG observe [{source}]: MISS ({payload.Length:N0} B) — no hw/sha MMCS");
+        }
 
         var sessionId = ForegroundRestorePlistExtractor.ExtractDeviceSessionId(payload);
         if (!string.IsNullOrWhiteSpace(sessionId))
             DeviceSessionId = sessionId;
+
+        return extracted is not null;
     }
 
     /// <summary>
     /// Garantisce Foreground: hw/sha statici (invariati in tutte le catture) +
     /// mme-client-info da risposte precedenti o anisette.
     /// </summary>
-    public void EnsureForeground(ICloudSession session, BackupDevice? device = null)
+    public void EnsureForeground(
+        ICloudSession session,
+        BackupDevice? device = null,
+        IProgress<string>? log = null)
     {
         _ = device; // device non entra in hw/sha (stabili per account/host restore)
         var captured = ForegroundRestorePlistBuilder.BuildCapturedAuth(session.Anisette);
@@ -92,12 +138,73 @@ public sealed class RestoreSessionState
             Foreground = captured;
             // Identità catturata (non hash sintetico locale).
             ForegroundIsSynthetic = false;
-            return;
+        }
+        else
+        {
+            // Arricchisce mme/proto da quanto già assorbito, mantiene hw/sha.
+            Foreground = ForegroundRestorePlistBuilder.MergeWithAbsorbed(captured, Foreground);
+            ForegroundIsSynthetic = false;
         }
 
-        // Arricchisce mme/proto da quanto già assorbito, mantiene hw/sha.
-        Foreground = ForegroundRestorePlistBuilder.MergeWithAbsorbed(captured, Foreground);
-        ForegroundIsSynthetic = false;
+        log?.Report(
+            $"  FG seed (IKE static → request): hw={Foreground.HardwareIdHex} " +
+            $"sha={Foreground.PlistSha256Base64}");
+    }
+
+    /// <summary>Riga di riepilogo probe FG (HIT/MISS sulle risposte early).</summary>
+    public string FormatObservedSummary()
+    {
+        if (ObservedForeground is null)
+        {
+            return $"FG observe summary: hits=0 misses={ObservedForegroundMissCount} " +
+                   "(nessun Hardware-Id / plist-sha256 nelle risposte)";
+        }
+
+        var matchHw = string.Equals(
+            ObservedForeground.HardwareIdHex,
+            ForegroundRestorePlistBuilder.HardwareIdHex,
+            StringComparison.OrdinalIgnoreCase);
+        var matchSha = string.Equals(
+            ObservedForeground.PlistSha256Base64,
+            ForegroundRestorePlistBuilder.PlistSha256Base64,
+            StringComparison.Ordinal);
+        var sources = _observedForegroundSources.Count == 0
+            ? "?"
+            : string.Join(", ", _observedForegroundSources);
+
+        return $"FG observe summary: hits={ObservedForegroundHitCount} " +
+               $"misses={ObservedForegroundMissCount} sources=[{sources}] " +
+               $"hw={ObservedForeground.HardwareIdHex} sha={ObservedForeground.PlistSha256Base64} " +
+               $"matchStaticHw={matchHw} matchStaticSha={matchSha}";
+    }
+
+    private void NoteObservedForeground(
+        ForegroundRestorePlist extracted,
+        string? source,
+        IProgress<string>? log)
+    {
+        ObservedForegroundHitCount++;
+        ObservedForeground = extracted;
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            ObservedForegroundSource = source.Trim();
+            if (!_observedForegroundSources.Contains(ObservedForegroundSource, StringComparer.Ordinal))
+                _observedForegroundSources.Add(ObservedForegroundSource);
+        }
+
+        var matchHw = string.Equals(
+            extracted.HardwareIdHex,
+            ForegroundRestorePlistBuilder.HardwareIdHex,
+            StringComparison.OrdinalIgnoreCase);
+        var matchSha = string.Equals(
+            extracted.PlistSha256Base64,
+            ForegroundRestorePlistBuilder.PlistSha256Base64,
+            StringComparison.Ordinal);
+        var label = string.IsNullOrWhiteSpace(source) ? "?" : source.Trim();
+        log?.Report(
+            $"  FG observe [{label}]: HIT hw={extracted.HardwareIdHex} " +
+            $"sha={extracted.PlistSha256Base64} " +
+            $"matchStaticHw={matchHw} matchStaticSha={matchSha}");
     }
 
     public void MergePreAuthCatalog(UbChunkCatalog catalog) =>

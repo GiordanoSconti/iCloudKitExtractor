@@ -197,7 +197,7 @@ public sealed class CloudKitAssetService
                     throw new InvalidOperationException(
                         AnisetteRefreshBlocked
                             ? $"Anisette in cooldown (~{AnisetteBlockedRemainingMs / 1000}s rimanenti)."
-                            : "Refresh Anisette non disponibile.");
+                            : "Refresh Anisette unavailable.");
                 }
             });
     }
@@ -210,10 +210,10 @@ public sealed class CloudKitAssetService
         CancellationToken ct = default)
     {
         log?.Report("CloudKit: record/save Lock (Foreground Restore)…");
-        restore.TryAbsorbFromPayload(_bootstrapDevicePayload);
-        restore.TryAbsorbFromPayload(_bootstrapSnapshotPayload);
-        restore.TryAbsorbFromPayload(_bootstrapMbsPayload);
-        restore.EnsureForeground(session, device);
+        restore.TryAbsorbFromPayload(_bootstrapDevicePayload, "pre-Lock D:", log);
+        restore.TryAbsorbFromPayload(_bootstrapSnapshotPayload, "pre-Lock S:", log);
+        restore.TryAbsorbFromPayload(_bootstrapMbsPayload, "pre-Lock mbs", log);
+        restore.EnsureForeground(session, device, log);
         var lockOperationId = Guid.NewGuid().ToString().ToUpperInvariant();
         _lockSaveBody = CloudKitLockRequestBuilder.BuildLockSave(
             restore.ToRequestContext(),
@@ -221,7 +221,7 @@ public sealed class CloudKitAssetService
             device.DeviceUuid,
             lockOperationId);
         var payload = await _gateway.RecordSaveAsync(session, _lockSaveBody, ct, restore);
-        restore.TryAbsorbFromPayload(payload);
+        restore.TryAbsorbFromPayload(payload, "Lock response", log);
         CapturePreAuthSessionFromBatch(payload, restore);
 
         var lockText = payload is { Length: > 0 }
@@ -229,16 +229,16 @@ public sealed class CloudKitAssetService
             : string.Empty;
         if (lockText.Contains("Invalid lock id", StringComparison.OrdinalIgnoreCase))
         {
-            log?.Report("  Lock RIFIUTATO: Invalid lock id (MobileBackupServerExtension)");
+            log?.Report("  Lock REJECTED: Invalid lock id (MobileBackupServerExtension)");
             throw new InvalidOperationException(
-                "CloudKit Lock rifiutato (Invalid lock id). Verifica Foreground hw/sha e record {device}:Lock.");
+                "CloudKit Lock rejected (Invalid lock id). Check Foreground hw/sha and record {device}:Lock.");
         }
 
         if (lockText.Contains("owners", StringComparison.Ordinal)
             || lockText.Contains(":Lock", StringComparison.Ordinal))
             log?.Report($"  Lock OK → {payload.Length:N0} byte");
         else
-            log?.Report($"  Lock risposta → {payload.Length:N0} byte (verifica owners/expiration)");
+            log?.Report($"  Lock response → {payload.Length:N0} bytes (check owners/expiration)");
     }
 
     public async Task PrepareDownloadAsync(
@@ -272,7 +272,7 @@ public sealed class CloudKitAssetService
         await EnsureZoneMastersCachedAsync(session, outputDirectory, session.PcsKeysDirectory, log, ct)
             .ConfigureAwait(false);
         if (_restoreState.Foreground is null)
-            _restoreState.EnsureForeground(session, device);
+            _restoreState.EnsureForeground(session, device, log);
         await PaceGatewayAsync(ct).ConfigureAwait(false);
 
         if (device.Keybags.Count == 0)
@@ -297,7 +297,7 @@ public sealed class CloudKitAssetService
         else if (!PcsSessionSeedKeys.HasAny(session))
         {
             log?.Report(
-                "  Keybag unlock defer: PCS assente — Escrow e/o CKKS OpenVault prima del restore");
+                "  Keybag unlock defer: PCS missing — Escrow e/o CKKS OpenVault prima del restore");
         }
 
         await PaceGatewayAsync(ct).ConfigureAwait(false);
@@ -327,7 +327,7 @@ public sealed class CloudKitAssetService
         {
             //  niente authorizeGet qui — prima PrivilegedBatch + decrypt metadata locale.
             log?.Report(
-                "  N: catalogo post-Lock OK — defer authorizeGet a dopo PrivBatch/metadata " +
+                "  N: catalog post-Lock OK — defer authorizeGet a dopo PrivBatch/metadata " +
                 "(ordine ASSET_DECRYPT)");
         }
         else
@@ -335,9 +335,9 @@ public sealed class CloudKitAssetService
             if (_lastEnFetch is not null)
             {
                 log?.Report(
-                    $"  N: catalogo debole (resp={_lastEnFetch.TotalResponseBytes:N0} B, " +
+                    $"  N: catalog weak (resp={_lastEnFetch.TotalResponseBytes:N0} B, " +
                     $"auth={_lastEnFetch.MmcsAuthHeaders.Count}, signed={_lastEnFetch.SignedChunks.Count}) " +
-                    "— PreAuth ubchunk fallback (solo catalogo, no authorizeGet)");
+                    "— PreAuth ubchunk fallback (catalog only, no authorizeGet)");
             }
 
             log?.Report("CloudKit: PreAuth record/retrieve (ubchunk fallback)…");
@@ -383,14 +383,14 @@ public sealed class CloudKitAssetService
             snapshot.RecordName);
         if (cnEntries.Count == 0)
         {
-            log?.Report("  EN post-Lock skip: nessun :CN: file nel bootstrap S:");
+            log?.Report("  EN post-Lock skip: no :CN: files in bootstrap S:");
             return null;
         }
 
         var enNames = BackupEnRecordService.BuildEnRecordNames(cnEntries);
         log?.Report(
             $"CloudKit: N: file list post-Lock (order, {enNames.Count:N0} da {cnEntries.Count:N0} :CN:; " +
-            "nome N:…=:0, non EN:)…");
+            "name N:…=:0, not EN:)…");
 
         try
         {
@@ -469,7 +469,7 @@ public sealed class CloudKitAssetService
             a.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 3);
         if (string.IsNullOrWhiteSpace(auth))
         {
-            log?.Report("  authorizeGet da EN skip: nessun auth f2/f5/f17 strutturato");
+            log?.Report("  authorizeGet da EN skip: no structured auth f2/f5/f17");
             return;
         }
 
@@ -671,7 +671,7 @@ public sealed class CloudKitAssetService
 
         if (seeds.Count == 0)
         {
-            log?.Report("CloudKit: nessun seed A:pref4:… valido da PrivilegedBatch");
+            log?.Report("CloudKit: no A:pref4 seed:… valido da PrivilegedBatch");
             return [];
         }
 
@@ -720,7 +720,7 @@ public sealed class CloudKitAssetService
 
                     if (CloudKitResponseParser.IsCloudKitErrorPayload(payload, out var err))
                     {
-                        var msg = err ?? "errore";
+                        var msg = err ?? "error";
                         var isNf = msg.Contains("NOT_FOUND", StringComparison.OrdinalIgnoreCase);
                         if (isNf)
                         {
@@ -731,7 +731,7 @@ public sealed class CloudKitAssetService
 
                         errors++;
                         if (errors <= 5)
-                            log?.Report($"  {tryName}: errore {msg}");
+                            log?.Report($"  {tryName}: error {msg}");
                         break;
                     }
 
@@ -769,7 +769,7 @@ public sealed class CloudKitAssetService
 
                     errors++;
                     if (errors <= 5)
-                        log?.Report($"  {tryName}: risposta senza BackupAsset/auth");
+                        log?.Report($"  {tryName}: response without BackupAsset/auth");
                     break;
                 }
                 catch (Exception ex) when (IsUnauthorizedCloudKit(ex) && !refreshedOnce)
@@ -841,7 +841,7 @@ public sealed class CloudKitAssetService
             {
                 notFound++;
                 if (notFound <= 5)
-                    log?.Report($"  {name}: errore Error code: NOT_FOUND (TYPE alternati esauriti)");
+                    log?.Report($"  {name}: error Error code: NOT_FOUND (alternate TYPEs exhausted)");
             }
         }
 
@@ -1075,7 +1075,7 @@ public sealed class CloudKitAssetService
                             {
                                 log?.Report(
                                     $"  ERROR PrivilegedBatch: skip chunk ({chunkLocal.Count} seed) — " +
-                                    "refresh Anisette non disponibile (niente loop 401).");
+                                    "refresh Anisette unavailable (niente loop 401).");
                                 return;
                             }
 
@@ -1140,7 +1140,7 @@ public sealed class CloudKitAssetService
                                 || done == chunkCount)
                             {
                                 log?.Report(
-                                    $"  PrivilegedBatch progresso {done}/{chunkCount} " +
+                                    $"  PrivilegedBatch progress {done}/{chunkCount} " +
                                     $"auth={assets.Count} pace={Volatile.Read(ref _gatewayPaceMs)}ms " +
                                     $"parallel={PrivilegedBatchParallelism} abort={Volatile.Read(ref throttleAbort)}");
                             }
@@ -1199,7 +1199,7 @@ public sealed class CloudKitAssetService
                         {
                             log?.Report(
                                 $"  ERROR PrivilegedBatch: skip chunk ({chunkLocal.Count} seed) — " +
-                                "refresh Anisette non disponibile.");
+                                "refresh Anisette unavailable.");
                             return;
                         }
 
@@ -1436,19 +1436,19 @@ public sealed class CloudKitAssetService
             if (!allowPerSeedFallback)
             {
                 log?.Report(
-                    $"  PrivilegedBatch ×{chunk.Count}: {err ?? "errore"} — " +
+                    $"  PrivilegedBatch ×{chunk.Count}: {err ?? "error"} — " +
                     "skip per-seed (batch grande)");
                 return ([], payload, hit401, false);
             }
 
             log?.Report(
-                $"  PrivilegedBatch ×{chunk.Count}: {err ?? "errore"} — fallback per-seed");
+                $"  PrivilegedBatch ×{chunk.Count}: {err ?? "error"} — fallback per-seed");
             var (one, onePayload) = await QueryPrivilegedBatchPerSeedAsync(
                 session, chunk, dumpDir, log, ct).ConfigureAwait(false);
             return (one, onePayload, hit401, false);
         }
 
-        log?.Report($"  PrivilegedBatch ×{chunk.Count}: risposta senza CAog ({payload.Length} B)");
+        log?.Report($"  PrivilegedBatch ×{chunk.Count}: response without CAog ({payload.Length} B)");
         return ([], payload, hit401, false);
     }
 
@@ -2292,15 +2292,15 @@ public sealed class CloudKitAssetService
         CancellationToken ct)
     {
         log?.Report("CloudKit: bootstrap restore (pre-Lock)…");
-        var restore = _restoreState ?? throw new InvalidOperationException("RestoreSessionState non inizializzato.");
-        // Header Foreground+f30 richiesti da gateway; sostituiti se assorbiti da mbs/batch.
-        restore.EnsureForeground(session, device);
+        var restore = _restoreState ?? throw new InvalidOperationException("RestoreSessionState not initialized.");
+        // Header Foreground+f30 richiesti da gateway; probe hw/sha sulle risposte early (log FG observe).
+        restore.EnsureForeground(session, device, log);
         var ctx = restore.ToRequestContext();
 
         if (snapshot.CatalogPayload is { Length: > 256 } cachedSnapshot)
         {
             _bootstrapSnapshotPayload = cachedSnapshot;
-            restore.TryAbsorbFromPayload(cachedSnapshot);
+            restore.TryAbsorbFromPayload(cachedSnapshot, "snapshot cached", log);
             CapturePreAuthSessionFromBatch(cachedSnapshot, restore);
             MergeCatalogPayload(device, cachedSnapshot);
             var listCn = CloudKitManifestChecksumParser.ParseCnEntries(cachedSnapshot).Count;
@@ -2330,7 +2330,7 @@ public sealed class CloudKitAssetService
             }
 
             _bootstrapZonesPayload = zonesPayload;
-            restore.TryAbsorbFromPayload(zonesPayload);
+            restore.TryAbsorbFromPayload(zonesPayload, "zones", log);
         }
         catch (Exception ex)
         {
@@ -2343,7 +2343,7 @@ public sealed class CloudKitAssetService
             session, "BackupAccount", log, ct);
         if (accountPayload is { Length: > 0 })
         {
-            restore.TryAbsorbFromPayload(accountPayload);
+            restore.TryAbsorbFromPayload(accountPayload, "BackupAccount", log);
             log?.Report($"  BackupAccount → {accountPayload.Length:N0} byte");
         }
 
@@ -2354,6 +2354,7 @@ public sealed class CloudKitAssetService
             session, deviceRecord, log, ct, restorePhase: true);
         if (_bootstrapDevicePayload is { Length: > 0 })
         {
+            restore.TryAbsorbFromPayload(_bootstrapDevicePayload, "D:", log);
             MergeCatalogPayload(device, _bootstrapDevicePayload);
             log?.Report(
                 $"  {deviceRecord} → {_bootstrapDevicePayload.Length:N0} byte, " +
@@ -2361,7 +2362,7 @@ public sealed class CloudKitAssetService
         }
         else
         {
-            log?.Report($"  {deviceRecord} non recuperato");
+            log?.Report($"  {deviceRecord} not retrieved");
         }
 
         await PaceGatewayAsync(ct);
@@ -2391,14 +2392,14 @@ public sealed class CloudKitAssetService
             _bootstrapSnapshotPayload, snapUuidForCn).Count;
         if (cnReady >= EnoughCnForPreAuth)
         {
-            log?.Report("  mbs skip (manifest :CN: file già da gateway S:)");
+            log?.Report("  mbs skip (manifest :CN: file already from S: gateway)");
         }
         else
         {
             _bootstrapMbsPayload = await FetchMbsManifestBestAsync(session, log, ct);
             if (_bootstrapMbsPayload is { Length: > 256 })
             {
-                restore.TryAbsorbFromPayload(_bootstrapMbsPayload);
+                restore.TryAbsorbFromPayload(_bootstrapMbsPayload, "mbs", log);
                 CapturePreAuthSessionFromBatch(_bootstrapMbsPayload, restore);
                 log?.Report($"  mbs → {_bootstrapMbsPayload.Length:N0} byte");
             }
@@ -2407,7 +2408,7 @@ public sealed class CloudKitAssetService
                 log?.Report(
                     _bootstrapMbsPayload is { Length: > 0 }
                         ? $"  mbs stub ({_bootstrapMbsPayload.Length} B)"
-                        : "  mbs assente");
+                        : "  mbs missing");
             }
         }
 
@@ -2429,7 +2430,7 @@ public sealed class CloudKitAssetService
                     ? $" ({fileCn.Count} file UUID per EN:, escluso domainBase)"
                     : ""));
         else
-            log?.Report("  manifestChecksums (:CN:) assente — verifica fetch S: batch");
+            log?.Report("  manifestChecksums (:CN:) missing — verify S: batch fetch");
 
         // Catalogo deterministico / EN: devono usare il batch S: (file UUID), non la cache lista.
         SyncSnapshotCatalogPayload(snapshot, log);
@@ -2442,6 +2443,8 @@ public sealed class CloudKitAssetService
                 device.AssetHints.Add(name);
             log?.Report($"  batch hint → {device.AssetHints.Count} totali");
         }
+
+        log?.Report("  " + restore.FormatObservedSummary());
     }
 
     private void SyncSnapshotCatalogPayload(BackupSnapshot snapshot, IProgress<string>? log)
@@ -2464,7 +2467,7 @@ public sealed class CloudKitAssetService
         snapshot.CatalogPayload = _bootstrapSnapshotPayload;
         log?.Report(
             $"  CatalogPayload ← bootstrap S: ({_bootstrapSnapshotPayload.Length:N0} byte) " +
-            "per catalogo/EN:");
+            "for catalog/EN:");
     }
 
     private async Task<byte[]?> FetchMbsManifestBestAsync(
@@ -2513,8 +2516,8 @@ public sealed class CloudKitAssetService
         if (canonicalNames.Count == 0)
             return;
 
-        var restore = _restoreState ?? throw new InvalidOperationException("RestoreSessionState non inizializzato.");
-        restore.TryAbsorbFromPayload(_bootstrapDevicePayload);
+        var restore = _restoreState ?? throw new InvalidOperationException("RestoreSessionState not initialized.");
+        restore.TryAbsorbFromPayload(_bootstrapDevicePayload, "D: (pre-batch)", log);
 
         // retrieve batch usa S:uuid (Canonical). &S: in Device response è solo riferimento.
         byte[]? best = null;
@@ -2572,16 +2575,8 @@ public sealed class CloudKitAssetService
         if (payload is null)
             return;
 
-        restore.TryAbsorbFromPayload(payload);
+        restore.TryAbsorbFromPayload(payload, $"batch {label}", log);
         CapturePreAuthSessionFromBatch(payload, restore);
-
-        var foreground = ForegroundRestorePlistExtractor.Extract(payload);
-        if (foreground is null)
-            return;
-
-        var synth = restore.ForegroundIsSynthetic ? "sintetico" : "ike-static";
-        log?.Report(
-            $"  Foreground da batch {label} (hw={foreground.HardwareIdHex[..Math.Min(12, foreground.HardwareIdHex.Length)]}…, {synth})");
     }
 
     private async Task TryAbsorbForegroundFromSnapshotsAsync(
@@ -2597,10 +2592,9 @@ public sealed class CloudKitAssetService
             if (payload is not { Length: > 256 })
                 continue;
 
-            restore.TryAbsorbFromPayload(payload);
-            if (!restore.ForegroundIsSynthetic)
+            if (restore.TryAbsorbFromPayload(payload, name, log))
             {
-                log?.Report($"  Foreground assorbito da {name}");
+                log?.Report($"  Foreground osservato da {name}");
                 return;
             }
         }
@@ -2763,7 +2757,8 @@ public sealed class CloudKitAssetService
                 var payload = await _gateway.RecordRetrieveAsync(
                     session, body, ct, restorePhase ? _restoreState : null);
                 if (restorePhase)
-                    _restoreState?.TryAbsorbFromPayload(payload);
+                    _restoreState?.TryAbsorbFromPayload(
+                        payload, $"fetch {candidate}", log, logMisses: false);
                 if (payload.Length == 0)
                     continue;
 
@@ -2890,7 +2885,7 @@ public sealed class CloudKitAssetService
             if (last is not null)
             {
                 var hdr = last.Headers.Count == 0
-                    ? "(nessun X-Apple-/Retry-After)"
+                    ? "(no X-Apple-/Retry-After)"
                     : string.Join("; ", last.Headers.Select(static kv => $"{kv.Key}={kv.Value}"));
                 log?.Report(
                     $"  PB throttle HTTP: status={last.StatusCode} op={last.Operation} " +
@@ -2899,7 +2894,7 @@ public sealed class CloudKitAssetService
             }
             else
             {
-                log?.Report("  PB throttle HTTP: (LastResponse assente)");
+                log?.Report("  PB throttle HTTP: (LastResponse missing)");
             }
 
             var diag = CloudKitResponseParser.FormatErrorPayloadDiagnostics(payload);
@@ -3078,7 +3073,7 @@ public sealed class CloudKitAssetService
         if (string.IsNullOrWhiteSpace(auth))
         {
             log?.Report(
-                "  authorizeGet skip: manca x-apple-mmcs-auth firmato (f2/f5/f17) in PreAuth.");
+                "  authorizeGet skip: missing signed x-apple-mmcs-auth (f2/f5/f17) in PreAuth.");
             return;
         }
 
@@ -3088,7 +3083,7 @@ public sealed class CloudKitAssetService
             var authBody = await AuthorizeGetRawAsync(session, contentHost, auth, DefaultZone, ct);
             if (authBody is not { Length: > 0 })
             {
-                log?.Report("  authorizeGet HTTP non-OK o body vuoto");
+                log?.Report("  authorizeGet HTTP non-OK or empty body");
                 return;
             }
 
@@ -3195,17 +3190,17 @@ public sealed class CloudKitAssetService
 
         var catalogAssets = BackupManifestBuilder.FromRecordNames(recordNames);
         log?.Report(
-            $"catalogo PreAuth/hint → {catalogAssets.Count:N0} record asset " +
+            $"PreAuth/hint catalog → {catalogAssets.Count:N0} record asset " +
             $"(KA/MA/LA/NA/JA) — base del Manifest");
 
-        log?.Report("mbs: probe account (spesso stub, non il file list)…");
+        log?.Report("mbs: probe account (often stub, not file list)…");
         try
         {
             var manifest = await _mbs.GetAccountManifestAsync(session, ct);
             var before = recordNames.Count;
             if (manifest.Length < 64)
             {
-                log?.Report($"  mbs stub → {manifest.Length} byte (nessuna lista file)");
+                log?.Report($"  mbs stub → {manifest.Length} byte (no file list)");
             }
             else
             {
@@ -3267,7 +3262,7 @@ public sealed class CloudKitAssetService
         }
         else
         {
-            log?.Report("  scan D:/S: + listing LA/NA skip (catalogo PreAuth già sufficiente)");
+            log?.Report("  scan D:/S: + listing LA/NA skip (PreAuth catalog already sufficient)");
         }
 
         if (!catalogRich)
@@ -3345,7 +3340,7 @@ public sealed class CloudKitAssetService
             log?.Report($"  PreAuth → {preAuthAttached} x-apple-mmcs-auth agganciati agli asset");
         if (orphanAuths.Count > 0)
             log?.Report(
-                $"  PreAuth → {orphanAuths.Count} auth senza nome KA/MA");
+                $"  PreAuth → {orphanAuths.Count} auth without KA/MA name");
 
         // Join orfani ↔ MA:/KA: per checksum (f2/f17 = SHA1 del segmento base64 nel nome).
         var checksumAttached = AttachOrphanAuthsByChecksum(assetsByName, orphanAuths, log);
@@ -3384,7 +3379,7 @@ public sealed class CloudKitAssetService
         {
             log?.Report(
                 $"CloudKit: probe auth → {maMissingAuth.Count} MA: + {kaMissingAuth.Count} KA: " +
-                $"(catalogo {assetsByName.Count:N0}, MA già con auth={maAuthOk})…");
+                $"(catalog {assetsByName.Count:N0}, MA already with auth={maAuthOk})…");
             foreach (var candidate in authProbes)
             {
                 ct.ThrowIfCancellationRequested();
@@ -3421,7 +3416,7 @@ public sealed class CloudKitAssetService
         if (maAuthOk == 0)
         {
             log?.Report(
-                "  nessun MA: con auth f2-matched — Manifest userà scoring authorizeGet " +
+                "  no MA: with f2-matched auth — Manifest userà scoring authorizeGet " +
                 "sugli auth PreAuth (niente bind cieco al nome)");
         }
 
@@ -3440,7 +3435,7 @@ public sealed class CloudKitAssetService
             $"  Asset.protectionInfo wrap: MA: {maWrap}/{maTotal}, altri {otherWrap}");
 
         if (withAuth == 0)
-            log?.Report("  nessun x-apple-mmcs-auth utilizzabile — catalogo comunque scritto");
+            log?.Report("  no usable x-apple-mmcs-auth — catalog still written");
 
         //  MA: (Manifest.db) prima dei KA:; auth prima dei senza auth.
         var ordered = assetsByName.Values
@@ -3466,7 +3461,7 @@ public sealed class CloudKitAssetService
 
         var maCount = ordered.Count(static a => a.RecordName.StartsWith("MA:", StringComparison.Ordinal));
         if (maCount > 0)
-            log?.Report($"  priorità MA: → {maCount} candidati Manifest (download prima dei KA:)");
+            log?.Report($"  MA priority: → {maCount} Manifest candidates (download before KA:)");
 
         return ordered;
     }
@@ -3590,7 +3585,7 @@ public sealed class CloudKitAssetService
         }
 
         if (checksumHits > 0)
-            log?.Report($"  Manifest MA: ← {checksumHits} auth PreAuth per checksum f2 (catalogo {byName.Count:N0})");
+            log?.Report($"  Manifest MA: ← {checksumHits} PreAuth auth for f2 checksum (catalog {byName.Count:N0})");
 
         // Cap authorizeGet: max 96 MA matched unici + 48 PreAuth senza nome.
         const int MaxMatched = 96;
@@ -3618,7 +3613,7 @@ public sealed class CloudKitAssetService
             }
 
             log?.Report(
-                $"  + {unmatched.Count} auth PreAuth senza match nome " +
+                $"  + {unmatched.Count} PreAuth auth without name match " +
                 "(authorizeGet per size reale Manifest)");
         }
 
@@ -3648,9 +3643,9 @@ public sealed class CloudKitAssetService
         if (recordIds.Count == 0)
         {
             if (fullBlobs.Count > 0)
-                log?.Report($"CloudKit: {fullBlobs.Count} keybag blob già completi");
+                log?.Report($"CloudKit: {fullBlobs.Count} keybag blobs already complete");
             else
-                log?.Report("CloudKit: nessun id K: da scaricare");
+                log?.Report("CloudKit: no K: ids to download");
             return;
         }
 
@@ -3673,7 +3668,7 @@ public sealed class CloudKitAssetService
                 var queried = await _gateway.QueryRetrieveAsync(session, body, ct, _restoreState);
                 if (CloudKitResponseParser.IsCloudKitErrorPayload(queried, out var queryErr))
                 {
-                    log?.Report($"  query Keybag {id} → errore: {queryErr}");
+                    log?.Report($"  query Keybag {id} → error: {queryErr}");
                 }
                 else if (queried.Length > 0)
                 {
@@ -3692,7 +3687,7 @@ public sealed class CloudKitAssetService
             if (queryHasKeybagData)
             {
                 log?.Report(
-                    $"  retrieve Keybag {id} skip (query PrivilegedBatch già contiene keybagData)");
+                    $"  retrieve Keybag {id} skip (PrivilegedBatch query already contains keybagData)");
             }
             else
             {
@@ -3728,7 +3723,7 @@ public sealed class CloudKitAssetService
 
             if (payload is null or { Length: 0 })
             {
-                log?.Report($"  FAIL Keybag {id}: nessun payload");
+                log?.Report($"  FAIL Keybag {id}: no payload");
                 continue;
             }
 
@@ -3768,12 +3763,12 @@ public sealed class CloudKitAssetService
                 {
                     log?.Report(
                         $"  {id}: keybagData {keybagData.Length:N0} byte " +
-                        "(cifrato PCS — serve KeyBagKey escrow)");
+                        "(PCS encrypted — KeyBagKey escrow required)");
                 }
             }
             else if (!isKeybagType)
             {
-                log?.Report($"  {id}: payload senza type Keybag / keybagData");
+                log?.Report($"  {id}: payload without Keybag / keybagData type");
             }
 
             if (fields.TryGetValue("secret", out var secret))
@@ -3792,8 +3787,8 @@ public sealed class CloudKitAssetService
         else
         {
             log?.Report(
-                "  nessun blob TLV chiaro nei record K: — salvati payload grezzi " +
-                "(serve unlock PCS/keybagData)");
+                "  no clear TLV blob in K: records: — salvati payload grezzi " +
+                "(PCS/keybagData unlock required)");
         }
     }
 
@@ -3878,11 +3873,11 @@ public sealed class CloudKitAssetService
             rawFiles,
             note = decryptedKeybagFile is not null
                 ? "keybag_decrypted.bin = TLV chiaro (PCS unwrap da Escrow KeySet). " +
-                  "Class keys richiedono secret decifrato (vedi keybag_pcs_unlock_meta.json)."
+                  "Class keys require decrypted secret (vedi keybag_pcs_unlock_meta.json)."
                 : pcsMetaExists
-                    ? "PCS unlock tentato ma senza TLV — vedi keybag_pcs_unlock_meta.json."
-                    : "Solo id/payload grezzi: keybagData ancora cifrato PCS. " +
-                      "Serve KeySet Escrow in sessione (scheda Escrow → Unlock EscrowedKeys)."
+                    ? "PCS unlock attempted but no TLV — see keybag_pcs_unlock_meta.json."
+                    : "Solo id/payload grezzi: keybagData still PCS-encrypted. " +
+                      "Escrow KeySet required in session (Escrow tab → Unlock EscrowedKeys)."
         }, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(path, json, ct);
     }
@@ -3908,10 +3903,9 @@ public sealed class CloudKitAssetService
         // Senza Anisette non martellare CloudKit (401×N → GET remota×N → 429).
         if (AnisetteRefreshBlocked)
             return null;
-        // Hold/pace PB: attendi — non return null (altrimenti wrap miss → no-ikm a raffica
-        // su AppDomain mentre decrypt prosegue senza contents).
+        // Durante Error-Info hold: niente query/retrieve parallele (prefetch owned).
         if (IsGatewayThrottled)
-            await WaitGatewayThrottleAsync(ct).ConfigureAwait(false);
+            return null;
 
         var refreshed = false;
         for (var attempt = 0; attempt < 2; attempt++)
@@ -4117,7 +4111,7 @@ public sealed class CloudKitAssetService
                   $"(fino a {(rateLimited.BlockedUntilUtc ?? DateTimeOffset.UtcNow.AddMilliseconds(cooldownMs)):u}). " +
                   "Niente altre GET a icloudkitextractor.eu; riprendi dopo o usa Anisette locale."
                 : $"  ERROR Anisette offline — niente refresh per ~{cooldownMs / 1000}s. " +
-                  "Verifica ADI worker :6973 / Anisette remota.");
+                  "Check ADI worker :6973 / remote Anisette.");
     }
 
     private static Auth.AnisetteRateLimitedException? FindAnisetteRateLimit(Exception? ex)
@@ -4220,13 +4214,13 @@ public sealed class CloudKitAssetService
         {
             NoteAnisetteRefreshFailure(ex, log);
             var workerAfter = await ProbeAdiWorkerHealthAsync(ct).ConfigureAwait(false);
-            log?.Report($"  refresh sessione fallito: {ex.Message}");
+            log?.Report($"  session refresh failed: {ex.Message}");
             if (FindAnisetteRateLimit(ex) is null)
             {
                 log?.Report(
                     $"  ERROR Anisette offline (ADI worker={workerAfter}) — " +
                     $"niente PrivilegedBatch auth per ~{AnisetteBlockedRemainingMs / 1000}s. " +
-                    "Verifica python akd_adi_worker.py :6973 e GET http://127.0.0.1:6971/.");
+                    "Check python akd_adi_worker.py :6973 and GET http://127.0.0.1:6971/.");
             }
             // #region agent log
             try
@@ -4724,7 +4718,7 @@ public sealed class CloudKitAssetService
             }
             else
             {
-                log?.Report($"  probe {asset.RecordName} → 0 nomi ({probe.ByteLength:N0} byte, blob cifrato?)");
+                log?.Report($"  probe {asset.RecordName} → 0 nomi ({probe.ByteLength:N0} byte, encrypted blob?)");
             }
         }
     }
@@ -4747,14 +4741,14 @@ public sealed class CloudKitAssetService
             var authBody = await AuthorizeGetRawAsync(session, contentHost, mmcsAuth, zoneName, ct);
             if (authBody is not { Length: > 0 })
             {
-                log?.Report("  authorizeGet HTTP non-OK o body vuoto");
+                log?.Report("  authorizeGet HTTP non-OK or empty body");
                 return new ManifestProbeResult([], [], 0);
             }
 
             var chunks = UbChunkBuilder.ParseAuthorizeGetResponse(authBody);
             if (chunks.Count == 0)
             {
-                log?.Report("  authorizeGet senza chunk");
+                log?.Report("  authorizeGet without chunk");
                 return new ManifestProbeResult([], [], 0);
             }
 

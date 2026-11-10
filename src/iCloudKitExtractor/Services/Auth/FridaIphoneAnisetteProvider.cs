@@ -240,7 +240,7 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
         if (!File.Exists(_fetchScript))
         {
             throw new FileNotFoundException(
-                "fetch_anisette.py assente. Imposta FRIDA_ANISETTE_FETCH_PY " +
+                "fetch_anisette.py missing. Imposta FRIDA_ANISETTE_FETCH_PY " +
                 "sul file o sulla directory ios_akd_probe (scripts/ios_akd_probe).",
                 _fetchScript);
         }
@@ -268,7 +268,7 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
 
         using var proc = new Process { StartInfo = psi };
         if (!proc.Start())
-            throw new InvalidOperationException($"Impossibile avviare {_python}");
+            throw new InvalidOperationException($"Cannot start {_python}");
 
         var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = proc.StandardError.ReadToEndAsync(ct);
@@ -324,7 +324,7 @@ public sealed class FridaIphoneAnisetteProvider : IAnisetteProvider
         if (string.IsNullOrWhiteSpace(jsonLine))
         {
             throw new InvalidOperationException(
-                $"fetch_anisette: stdout vuoto. stderr={Truncate(stderr, 400)}");
+                $"fetch_anisette: empty stdout. stderr={Truncate(stderr, 400)}");
         }
 
         using var doc = JsonDocument.Parse(jsonLine);

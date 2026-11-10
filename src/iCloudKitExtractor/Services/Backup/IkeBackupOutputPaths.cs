@@ -92,7 +92,7 @@ public static class IkeBackupOutputPaths
     public static string ResolveSnapshotRoot(string snapshotOrWorkOrBackup)
     {
         if (string.IsNullOrWhiteSpace(snapshotOrWorkOrBackup))
-            throw new ArgumentException("Percorso snapshot richiesto.", nameof(snapshotOrWorkOrBackup));
+            throw new ArgumentException("Snapshot path required.", nameof(snapshotOrWorkOrBackup));
 
         var trimmed = TrimDir(snapshotOrWorkOrBackup);
         var name = Path.GetFileName(trimmed);
@@ -111,7 +111,7 @@ public static class IkeBackupOutputPaths
     public static string ResolveTmpDirectory(string snapshotOrWorkDirectory)
     {
         if (string.IsNullOrWhiteSpace(snapshotOrWorkDirectory))
-            throw new ArgumentException("Percorso snapshot richiesto.", nameof(snapshotOrWorkDirectory));
+            throw new ArgumentException("Snapshot path required.", nameof(snapshotOrWorkDirectory));
 
         var trimmed = TrimDir(snapshotOrWorkDirectory);
         if (string.Equals(Path.GetFileName(trimmed), TmpFolderName, StringComparison.OrdinalIgnoreCase))
@@ -128,7 +128,7 @@ public static class IkeBackupOutputPaths
     public static string ResolveCleanBackupDirectory(string snapshotOrWorkDirectory)
     {
         if (string.IsNullOrWhiteSpace(snapshotOrWorkDirectory))
-            throw new ArgumentException("workDirectory richiesto.", nameof(snapshotOrWorkDirectory));
+            throw new ArgumentException("workDirectory required.", nameof(snapshotOrWorkDirectory));
 
         var trimmed = TrimDir(snapshotOrWorkDirectory);
         if (string.Equals(Path.GetFileName(trimmed), CleanBackupFolderName, StringComparison.OrdinalIgnoreCase))

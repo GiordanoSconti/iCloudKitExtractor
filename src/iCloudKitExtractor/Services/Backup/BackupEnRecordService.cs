@@ -89,7 +89,7 @@ public sealed class BackupEnRecordService
         Directory.CreateDirectory(outputDirectory);
         if (enRecordNames.Count == 0)
         {
-            log?.Report("  EN: nessun nome da :CN: — skip");
+            log?.Report("  EN: no names from :CN: — skip");
             return new EnFetchResult();
         }
 
@@ -197,7 +197,7 @@ public sealed class BackupEnRecordService
             return (mergedLocal, catalogLocal, domainsLocal, pcsSummaryLocal, fileListsLocal, flistLocal);
         }, ct).ConfigureAwait(false);
         swParse.Stop();
-        log?.Report($"  EN: parse+PCS Domain completato in {swParse.ElapsedMilliseconds} ms");
+        log?.Report($"  EN: parse+PCS Domain completed in {swParse.ElapsedMilliseconds} ms");
 
         var catalog = parseResult.catalogLocal;
         var domains = parseResult.domainsLocal;

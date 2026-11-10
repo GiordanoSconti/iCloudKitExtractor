@@ -281,7 +281,7 @@ public sealed class EscrowProxyClient
         }
 
         return last ?? new EscrowCommandResult(
-            0, [], null, [], "get_club: nessun tentativo", null, null, "get_club", null);
+            0, [], null, [], "get_club: no attempts", null, null, "get_club", null);
     }
 
     /// <summary>POST …/get_sms_targets — lista numeri / token (variante SMS).</summary>
@@ -578,7 +578,7 @@ public sealed class EscrowProxyClient
             }),
             note =
                 "Wire: command=GETRECORDS + label=com.apple.protectedcloudstorage.record. " +
-                "Poi srp_init → recover (senza SMS)."
+                "Then srp_init → recover (no SMS)."
         }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(metaPath, meta, ct);
     }
@@ -597,7 +597,7 @@ public sealed class EscrowProxyClient
     private static string RequireBaseUrl(ICloudSession session) =>
         ResolveBaseUrl(session)
         ?? throw new InvalidOperationException(
-            "EscrowProxyUrl assente — manca com.apple.Dataclass.KeychainSync in get_account_settings.");
+            "EscrowProxyUrl missing — com.apple.Dataclass.KeychainSync not in get_account_settings.");
 
     private static void RequireAuth(ICloudSession session)
     {
@@ -605,18 +605,18 @@ public sealed class EscrowProxyClient
             || string.IsNullOrWhiteSpace(session.MobileMeAuthToken))
         {
             throw new InvalidOperationException(
-                "Serve dsid + mmeAuthToken per escrowproxy (stesso token MME del backup).");
+                "dsid + mmeAuthToken required for escrowproxy (same MME token as backup).");
         }
     }
 
     private static void RequirePetAuth(ICloudSession session)
     {
         if (string.IsNullOrWhiteSpace(session.AppleId))
-            throw new InvalidOperationException("Serve Apple ID (email) per auth PET escrow iCDP.");
+            throw new InvalidOperationException("Apple ID (email) required for PET escrow iCDP auth.");
         if (ResolveRawPetToken(session) is null)
         {
             throw new InvalidOperationException(
-                "Serve PET (com.apple.gs.idms.pet) in sessione — rifai login GSA.");
+                "PET (com.apple.gs.idms.pet) required in session — sign in to GSA again.");
         }
     }
 

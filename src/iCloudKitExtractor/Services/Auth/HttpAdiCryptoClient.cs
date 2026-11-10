@@ -142,8 +142,8 @@ public sealed class HttpAdiCryptoClient : IAdiCryptoClient
         if (string.IsNullOrWhiteSpace(adiId))
         {
             throw new InvalidOperationException(
-                "Identificatore ADI mancante (device-ios.json / AdiIdentifier). " +
-                "Esegui configure-emulated-ios-anisette.ps1 o elimina device-ios.json per rigenerarlo.");
+                "ADI identifier missing (device-ios.json / AdiIdentifier). " +
+                "Run configure-emulated-ios-anisette.ps1 or delete device-ios.json to regenerate.");
         }
 
         // Passa l'identità MidService al worker: evita cpim su UUID random ≠ header HTTP → 433.
@@ -185,7 +185,7 @@ public sealed class HttpAdiCryptoClient : IAdiCryptoClient
         catch (HttpRequestException ex)
         {
             throw new InvalidOperationException(
-                $"ADI worker non raggiungibile su {_baseUri.GetLeftPart(UriPartial.Authority)} " +
+                $"ADI worker unreachable at {_baseUri.GetLeftPart(UriPartial.Authority)} " +
                 $"(avvia: python scripts/akd-adi-worker/akd_adi_worker.py --port 6973): {ex.Message}",
                 ex);
         }
