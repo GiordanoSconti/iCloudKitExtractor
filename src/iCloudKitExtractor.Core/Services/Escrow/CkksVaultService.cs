@@ -43,11 +43,11 @@ public sealed class CkksVaultService
 {
     /// <summary>
     /// Manatee + Engram → PCS (Messages/iMessage Manatee zones); PCS → Drive/ADP;
-    /// <c>Passwords</c> → login web; LimitedPeersAllowed → altri vault.
+    /// <c>Passwords</c> → login web; <c>WiFi</c> → reti AirPort; LimitedPeersAllowed → altri vault.
     /// Engram è obbligatorio per <c>com.apple.messages.cloud</c> (HITB 2018 / CKKS PCS).
     /// </summary>
     public static readonly string[] DefaultViews =
-        ["Manatee", "Engram", "ProtectedCloudStorage", "LimitedPeersAllowed", "Passwords"];
+        ["Manatee", "Engram", "ProtectedCloudStorage", "LimitedPeersAllowed", "Passwords", "WiFi"];
 
     private const int MaxSyncPages = 100;
 
@@ -318,6 +318,19 @@ public sealed class CkksVaultService
                 errors.Add("passwords-export: " + ex.Message);
             }
 
+            var material = new CkksKeychainMaterialExport.ExportCounts(0, 0, 0);
+            try
+            {
+                material = await CkksKeychainMaterialExport
+                    .WriteAsync(allItems, outputDirectory, log, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                log?.Report($"  Keychain material export skip: {ex.Message}");
+                errors.Add("keychain-material-export: " + ex.Message);
+            }
+
             var meta = JsonSerializer.Serialize(new
             {
                 success = totalClass > 0 || allItems.Count > 0,
@@ -329,6 +342,9 @@ public sealed class CkksVaultService
                 items = allItems.Count,
                 pcsKeys = pcsKeys.Count,
                 passwordItems = passwordRows,
+                wifiItems = material.Wifi,
+                certItems = material.Certs,
+                keyItems = material.Keys,
                 errors,
                 refImpl = "Laky-64/appleservices ckks OpenVault"
             }, new JsonSerializerOptions { WriteIndented = true });
@@ -339,6 +355,7 @@ public sealed class CkksVaultService
             var msg = ok
                 ? $"OK — items={allItems.Count} classKeys={totalClass} pcsKeys={pcsKeys.Count}"
                   + $" passwords={passwordRows}"
+                  + $" wifi={material.Wifi} certs={material.Certs} keys={material.Keys}"
                   + (errors.Count > 0 ? $" (warn: {errors.Count})" : "")
                 : errors.Count > 0
                     ? string.Join("; ", errors.Take(3))

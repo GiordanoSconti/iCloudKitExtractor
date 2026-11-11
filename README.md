@@ -550,6 +550,8 @@ Keep the copyright notice and attribution (**Giordano Sconti** / Forensis-Lab re
 
 **MIT** — see [`LICENSE`](LICENSE).
 
+Third-party package licenses and protocol-reference projects (clean-room; not vendored): [`NOTICE.md`](NOTICE.md).
+
 Copyright © **Giordano Sconti**. Possession of the code remains with the author, who grants **Forensis-Lab** use, collaboration, and representation rights. Recipients under MIT receive a **license to use and collaborate**, not ownership. The MIT grant is permission to deal in the Software under the copyright conditions — **not** an assignment of rights.
 
 This software talks to Apple services in unofficial ways. Endpoints may change at any time. The authors are not responsible for data loss, account suspension, or other damages.

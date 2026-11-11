@@ -1,20 +1,15 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace iCloudKitExtractor.Services.Escrow;
 
 /// <summary>
 /// Esporta item CKKS view <c>Passwords</c> (e affini) in CSV/JSON leggibile:
-/// <c>srvr</c> / <c>acct</c> / <c>v_Data</c> (password).
+/// <c>srvr</c> / <c>acct</c> / <c>v_Data</c> (password), più note/TOTP da sidecar.
 /// </summary>
 public static class CkksPasswordExport
 {
-    private static readonly Regex NonPrintable = new(
-        @"[\x00-\x08\x0B\x0C\x0E-\x1F]",
-        RegexOptions.Compiled);
-
     public sealed record PasswordRow(
         string View,
         string Name,
@@ -24,8 +19,22 @@ public static class CkksPasswordExport
         string? Acct,
         string? Labl,
         string? Password,
+        string? Notes,
+        string? OtpAuth,
         string DataKind,
         int DataLen);
+
+    public sealed record NoteOtpRow(
+        string View,
+        string Name,
+        string? Agrp,
+        string? Srvr,
+        string? Acct,
+        string? Title,
+        string? Notes,
+        string? OtpAuth,
+        string? TotpIssuer,
+        string? TotpAccount);
 
     public static async Task<int> WriteAsync(
         IReadOnlyList<CkksVaultItem> items,
@@ -35,17 +44,76 @@ public static class CkksPasswordExport
     {
         Directory.CreateDirectory(outputDirectory);
         var rows = new List<PasswordRow>();
+        var noteRows = new List<NoteOtpRow>();
+        var cardRows = new List<PasswordRow>();
+
         foreach (var item in items)
         {
+            var decoded = CkksSecItemPayload.Decode(item);
+
+            if (decoded.Kind == CkksSecItemPayload.Kind.PasswordManagerSidecar
+                || !string.IsNullOrEmpty(decoded.Notes)
+                || !string.IsNullOrEmpty(decoded.OtpAuth))
+            {
+                if (CkksSecItemPayload.IsPasswordManagerAgrp(item.Agrp ?? "")
+                    || decoded.Kind == CkksSecItemPayload.Kind.PasswordManagerSidecar
+                    || !string.IsNullOrEmpty(decoded.OtpAuth))
+                {
+                    noteRows.Add(new NoteOtpRow(
+                        item.View,
+                        item.Name,
+                        item.Agrp,
+                        item.Srvr,
+                        item.Acct,
+                        decoded.Title ?? item.Labl,
+                        decoded.Notes,
+                        decoded.OtpAuth,
+                        decoded.TotpIssuer,
+                        decoded.TotpAccount));
+                }
+            }
+
+            if (decoded.Kind == CkksSecItemPayload.Kind.CreditCard)
+            {
+                cardRows.Add(new PasswordRow(
+                    item.View,
+                    item.Name,
+                    item.Class,
+                    item.Agrp,
+                    item.Srvr,
+                    item.Acct,
+                    decoded.Title ?? item.Labl,
+                    FormatCardSecret(decoded),
+                    decoded.Notes,
+                    null,
+                    decoded.DataKind,
+                    decoded.DataLen));
+                continue;
+            }
+
             if (!IsPasswordLike(item))
                 continue;
-            rows.Add(ToRow(item));
+
+            // Wi‑Fi / cert / keys handled by material export.
+            if (decoded.Kind is CkksSecItemPayload.Kind.Wifi
+                or CkksSecItemPayload.Kind.Certificate
+                or CkksSecItemPayload.Kind.KeyMaterial)
+                continue;
+            if (CkksSecItemPayload.IsPasswordManagerAgrp(item.Agrp ?? "")
+                && decoded.Kind == CkksSecItemPayload.Kind.PasswordManagerSidecar
+                && string.IsNullOrEmpty(decoded.Utf8Secret))
+                continue;
+
+            rows.Add(ToRow(item, decoded));
         }
+
+        // Merge sidecar notes/OTP onto login rows by (srvr, acct).
+        MergeSidecars(rows, noteRows);
 
         var csvPath = Path.Combine(outputDirectory, "ckks_passwords.csv");
         var jsonPath = Path.Combine(outputDirectory, "ckks_passwords.json");
         var sb = new StringBuilder();
-        sb.AppendLine("view,class,agrp,srvr,acct,labl,password,dataKind,dataLen,name");
+        sb.AppendLine("view,class,agrp,srvr,acct,labl,password,notes,otpauth,dataKind,dataLen,name");
         foreach (var r in rows)
         {
             sb.Append(Csv(r.View)).Append(',')
@@ -55,6 +123,8 @@ public static class CkksPasswordExport
                 .Append(Csv(r.Acct)).Append(',')
                 .Append(Csv(r.Labl)).Append(',')
                 .Append(Csv(r.Password)).Append(',')
+                .Append(Csv(r.Notes)).Append(',')
+                .Append(Csv(r.OtpAuth)).Append(',')
                 .Append(Csv(r.DataKind)).Append(',')
                 .Append(r.DataLen).Append(',')
                 .Append(Csv(r.Name))
@@ -67,9 +137,18 @@ public static class CkksPasswordExport
             JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }),
             ct).ConfigureAwait(false);
 
+        await WriteNotesOtpAsync(outputDirectory, noteRows, ct).ConfigureAwait(false);
+        if (cardRows.Count > 0)
+            await WriteCardsAsync(outputDirectory, cardRows, ct).ConfigureAwait(false);
+
         var withSecret = rows.Count(r => !string.IsNullOrEmpty(r.Password));
+        var withOtp = rows.Count(r => !string.IsNullOrEmpty(r.OtpAuth))
+                      + noteRows.Count(r => !string.IsNullOrEmpty(r.OtpAuth));
+        var withNotes = rows.Count(r => !string.IsNullOrEmpty(r.Notes))
+                        + noteRows.Count(r => !string.IsNullOrEmpty(r.Notes));
         log?.Report(
-            $"  Passwords export: {rows.Count} item (password UTF-8={withSecret}) → " +
+            $"  Passwords export: {rows.Count} item (password UTF-8={withSecret}, " +
+            $"notes={withNotes}, otp={withOtp}, cards={cardRows.Count}) → " +
             Path.GetFileName(csvPath));
         if (rows.Count == 0)
         {
@@ -138,15 +217,18 @@ public static class CkksPasswordExport
         if (agrp.Contains("cfnetwork", StringComparison.OrdinalIgnoreCase)
             || agrp.Contains("password", StringComparison.OrdinalIgnoreCase)
             || agrp.Equals("com.apple.security.sos", StringComparison.OrdinalIgnoreCase)
-            || agrp.Contains("Safari", StringComparison.OrdinalIgnoreCase))
+            || agrp.Contains("Safari", StringComparison.OrdinalIgnoreCase)
+            || CkksSecItemPayload.IsPasswordManagerAgrp(agrp)
+            || CkksSecItemPayload.IsCreditCardAgrp(agrp))
             return true;
 
         // inet/genp con v_Data UTF-8 corto = tipico password item
         var cls = item.Class ?? "";
         if ((cls.Equals("inet", StringComparison.OrdinalIgnoreCase)
              || cls.Equals("genp", StringComparison.OrdinalIgnoreCase))
-            && TryUtf8Password(item.Data, out _)
-            && !IsPcsAgrp(agrp))
+            && CkksSecItemPayload.TryUtf8Secret(item.Data, out _)
+            && !IsPcsAgrp(agrp)
+            && !CkksSecItemPayload.IsWifiItem(item))
             return true;
 
         return false;
@@ -155,30 +237,23 @@ public static class CkksPasswordExport
     private static bool IsPcsAgrp(string agrp) =>
         agrp.Contains("ProtectedCloudStorage", StringComparison.OrdinalIgnoreCase);
 
-    private static PasswordRow ToRow(CkksVaultItem item)
+    private static PasswordRow ToRow(CkksVaultItem item, CkksSecItemPayload.Decoded decoded)
     {
-        var kind = "empty";
-        string? password = null;
-        var len = item.Data?.Length ?? 0;
-        if (item.Data is { Length: > 0 } data)
+        var password = decoded.Utf8Secret;
+        var kind = decoded.DataKind;
+        var len = decoded.DataLen;
+
+        if (password is null && item.Data is { Length: > 0 })
         {
-            if (TryUtf8Password(data, out var utf8))
+            kind = decoded.Kind switch
             {
-                kind = "utf8";
-                password = utf8;
-            }
-            else if (data.Length >= 8 && data.AsSpan(0, 8).SequenceEqual("bplist00"u8))
-            {
-                kind = "bplist";
-            }
-            else if (data[0] == 0x30)
-            {
-                kind = "asn1";
-            }
-            else
-            {
-                kind = "binary";
-            }
+                CkksSecItemPayload.Kind.BinaryPlist => "bplist",
+                CkksSecItemPayload.Kind.Asn1 => "asn1",
+                CkksSecItemPayload.Kind.Binary => "binary",
+                CkksSecItemPayload.Kind.Empty => "empty",
+                _ => kind
+            };
+            len = item.Data.Length;
         }
 
         return new PasswordRow(
@@ -190,33 +265,117 @@ public static class CkksPasswordExport
             item.Acct,
             item.Labl,
             password,
+            decoded.Notes,
+            decoded.OtpAuth,
             kind,
             len);
     }
 
-    private static bool TryUtf8Password(byte[]? data, out string text)
+    private static void MergeSidecars(List<PasswordRow> rows, List<NoteOtpRow> sidecars)
     {
-        text = "";
-        if (data is not { Length: > 0 and < 4096 })
-            return false;
-        try
+        if (rows.Count == 0 || sidecars.Count == 0)
+            return;
+
+        for (var i = 0; i < rows.Count; i++)
         {
-            text = Encoding.UTF8.GetString(data);
+            var r = rows[i];
+            var match = sidecars.FirstOrDefault(s =>
+                string.Equals(s.Srvr ?? "", r.Srvr ?? "", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(s.Acct ?? "", r.Acct ?? "", StringComparison.OrdinalIgnoreCase)
+                && (!string.IsNullOrEmpty(s.Srvr) || !string.IsNullOrEmpty(s.Acct)));
+            if (match is null)
+                continue;
+
+            rows[i] = r with
+            {
+                Notes = FirstNonEmpty(r.Notes, match.Notes),
+                OtpAuth = FirstNonEmpty(r.OtpAuth, match.OtpAuth),
+                Labl = FirstNonEmpty(r.Labl, match.Title)
+            };
         }
-        catch
+    }
+
+    private static async Task WriteNotesOtpAsync(
+        string outputDirectory, List<NoteOtpRow> rows, CancellationToken ct)
+    {
+        var csvPath = Path.Combine(outputDirectory, "ckks_notes_otp.csv");
+        var jsonPath = Path.Combine(outputDirectory, "ckks_notes_otp.json");
+        var sb = new StringBuilder();
+        sb.AppendLine("view,agrp,srvr,acct,title,notes,otpauth,totpIssuer,totpAccount,name");
+        foreach (var r in rows)
         {
-            return false;
+            sb.Append(Csv(r.View)).Append(',')
+                .Append(Csv(r.Agrp)).Append(',')
+                .Append(Csv(r.Srvr)).Append(',')
+                .Append(Csv(r.Acct)).Append(',')
+                .Append(Csv(r.Title)).Append(',')
+                .Append(Csv(r.Notes)).Append(',')
+                .Append(Csv(r.OtpAuth)).Append(',')
+                .Append(Csv(r.TotpIssuer)).Append(',')
+                .Append(Csv(r.TotpAccount)).Append(',')
+                .Append(Csv(r.Name))
+                .AppendLine();
         }
 
-        if (string.IsNullOrEmpty(text))
-            return false;
-        if (NonPrintable.IsMatch(text))
-            return false;
-        // Evita di etichettare DER/XML come password.
-        if (text.StartsWith("<?xml", StringComparison.Ordinal)
-            || text.StartsWith("<plist", StringComparison.Ordinal))
-            return false;
-        return true;
+        await File.WriteAllTextAsync(csvPath, sb.ToString(), ct).ConfigureAwait(false);
+        await File.WriteAllTextAsync(
+            jsonPath,
+            JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }),
+            ct).ConfigureAwait(false);
+    }
+
+    private static async Task WriteCardsAsync(
+        string outputDirectory, List<PasswordRow> cards, CancellationToken ct)
+    {
+        var csvPath = Path.Combine(outputDirectory, "ckks_credit_cards.csv");
+        var sb = new StringBuilder();
+        sb.AppendLine("view,class,agrp,srvr,acct,labl,card,notes,dataKind,dataLen,name");
+        foreach (var r in cards)
+        {
+            sb.Append(Csv(r.View)).Append(',')
+                .Append(Csv(r.Class)).Append(',')
+                .Append(Csv(r.Agrp)).Append(',')
+                .Append(Csv(r.Srvr)).Append(',')
+                .Append(Csv(r.Acct)).Append(',')
+                .Append(Csv(r.Labl)).Append(',')
+                .Append(Csv(r.Password)).Append(',')
+                .Append(Csv(r.Notes)).Append(',')
+                .Append(Csv(r.DataKind)).Append(',')
+                .Append(r.DataLen).Append(',')
+                .Append(Csv(r.Name))
+                .AppendLine();
+        }
+
+        await File.WriteAllTextAsync(csvPath, sb.ToString(), ct).ConfigureAwait(false);
+        await File.WriteAllTextAsync(
+            Path.Combine(outputDirectory, "ckks_credit_cards.json"),
+            JsonSerializer.Serialize(cards, new JsonSerializerOptions { WriteIndented = true }),
+            ct).ConfigureAwait(false);
+    }
+
+    private static string FormatCardSecret(CkksSecItemPayload.Decoded d)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(d.CardNumber))
+            parts.Add("pan=" + d.CardNumber);
+        if (!string.IsNullOrEmpty(d.CardName))
+            parts.Add("name=" + d.CardName);
+        if (!string.IsNullOrEmpty(d.CardExpiry))
+            parts.Add("exp=" + d.CardExpiry);
+        if (!string.IsNullOrEmpty(d.CardCvv))
+            parts.Add("cvv=" + d.CardCvv);
+        return string.Join("; ", parts);
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v))
+                return v;
+        }
+
+        return null;
     }
 
     private static string Csv(string? value)

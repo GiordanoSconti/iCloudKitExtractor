@@ -2256,14 +2256,15 @@ public partial class MainWindow : Window
         if (peer.Success)
         {
             AppendDecryptLog(
-                "Auto-start CKKS OpenVault (Manatee + PCS + Passwords)…");
+                "Auto-start CKKS OpenVault (Manatee + PCS + Passwords + WiFi)…");
             var ckks = new CkksVaultService(Http, Orchestrator);
             var vault = await ckks.OpenViewsAsync(_session, outputDir, log: log)
                 .ConfigureAwait(true);
             AppendDecryptLog(vault.Success ? $"CKKS: {vault.Message}" : $"CKKS FAIL: {vault.Message}");
             if (vault.PcsKeysFound > 0)
                 AppendDecryptLog($"Manatee PCS keys in session: {vault.PcsKeysFound}");
-            AppendDecryptLog("Export password (se view Passwords OK): ckks_passwords.csv");
+            AppendDecryptLog(
+                "Export: ckks_passwords.csv + notes/OTP + wifi/certs/keys (se TLK OK)");
             if (OctagonAuthzProbeRunner.IsEnabled)
             {
                 AppendDecryptLog("AUTHZ probes (IKE_AUTHZ_PROBES=1)…");
@@ -2370,9 +2371,16 @@ public partial class MainWindow : Window
                 AppendDecryptLog($"Manatee PCS keys in session: {result.PcsKeysFound}");
             if (result.ItemsJsonPath is not null)
                 AppendDecryptLog($"Items: {result.ItemsJsonPath}");
-            var pwdCsv = Path.Combine(outputDir, "ckks_passwords.csv");
-            if (File.Exists(pwdCsv))
-                AppendDecryptLog($"Passwords CSV: {pwdCsv}");
+            foreach (var name in new[]
+                     {
+                         "ckks_passwords.csv", "ckks_notes_otp.csv", "ckks_wifi.csv",
+                         "ckks_certs.csv", "ckks_keys.csv", "ckks_credit_cards.csv"
+                     })
+            {
+                var p = Path.Combine(outputDir, name);
+                if (File.Exists(p))
+                    AppendDecryptLog($"{name}: {p}");
+            }
             if (OctagonAuthzProbeRunner.IsEnabled && _session is not null)
             {
                 AppendDecryptLog("AUTHZ probes (IKE_AUTHZ_PROBES=1)…");
