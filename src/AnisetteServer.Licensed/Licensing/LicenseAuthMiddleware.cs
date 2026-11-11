@@ -73,8 +73,24 @@ public sealed class LicenseAuthMiddleware
         var auth = ctx.Request.Headers.Authorization.ToString();
         if (!string.IsNullOrWhiteSpace(auth))
         {
-            if (!_validator.TryValidateBearer(auth, out var error, out var payload))
+            if (!_validator.TryValidateBearer(auth, out var error, out var payload, out var syncedFromPeer))
             {
+                if (syncedFromPeer
+                    || string.Equals(error, LicenseValidator.ReplicaSyncedError, StringComparison.Ordinal))
+                {
+                    // License was pulled onto this replica — ask IKE to reconnect once.
+                    ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    ctx.Response.Headers["X-Anisette-License-Synced"] = "1";
+                    await ctx.Response.WriteAsJsonAsync(new
+                    {
+                        ok = false,
+                        error = LicenseValidator.ReplicaSyncedError,
+                        detail = LicenseValidator.ReplicaSyncedDetail,
+                        license_id = payload?.LicenseId,
+                    });
+                    return;
+                }
+
                 ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 ctx.Response.Headers.WWWAuthenticate = "Bearer";
                 await ctx.Response.WriteAsJsonAsync(new

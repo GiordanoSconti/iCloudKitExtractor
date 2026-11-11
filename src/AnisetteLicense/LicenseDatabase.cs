@@ -87,6 +87,32 @@ public sealed class LicenseDatabase : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// Rehydrate a SQLite row from a Bearer whose Ed25519 signature already verified.
+    /// Used when replicas / hub are missing the id but the Package-C token is authentic.
+    /// </summary>
+    public void UpsertFromVerifiedPayload(LicensePayload payload, string? tokenHint = null)
+    {
+        if (string.IsNullOrWhiteSpace(payload.LicenseId))
+            throw new ArgumentException("license_id required", nameof(payload));
+
+        UpsertSync(new LicenseSyncRecord
+        {
+            LicenseId = payload.LicenseId.Trim(),
+            Subject = string.IsNullOrWhiteSpace(payload.Subject) ? "verified-bearer" : payload.Subject.Trim(),
+            IssuedAt = DateTimeOffset.FromUnixTimeSeconds(payload.IssuedAtUnix).UtcDateTime.ToString("o"),
+            ExpiresAt = payload.ExpiresAtUnix is long exp
+                ? DateTimeOffset.FromUnixTimeSeconds(exp).UtcDateTime.ToString("o")
+                : null,
+            Note = payload.Note,
+            TokenHint = tokenHint,
+            Fingerprint = payload.Fingerprint,
+            ClientIp = payload.ClientIp,
+            Enabled = true,
+            EmittedOnce = true,
+        });
+    }
+
     /// <summary>Insert or replace a row replicated from a peer (same Ed25519 keyspace).</summary>
     public void UpsertSync(LicenseSyncRecord record)
     {

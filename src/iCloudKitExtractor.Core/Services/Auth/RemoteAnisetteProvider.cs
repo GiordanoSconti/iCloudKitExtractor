@@ -26,6 +26,9 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
     /// <summary>App-wide hook (MainWindow overlay) for any remote provider instance.</summary>
     public static event Action<string>? AnyLicenseBundleIssued;
 
+    /// <summary>Raised when a replica synced the license from the hub and asks the client to reconnect.</summary>
+    public static event Action<string>? AnyLicenseReplicaSynced;
+
     public RemoteAnisetteProvider(HttpClient http, string baseUrl, string? licenseBearer = null)
     {
         _http = http;
@@ -89,6 +92,10 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
                     .ConfigureAwait(false);
             }
             catch (AnisetteRateLimitedException)
+            {
+                throw;
+            }
+            catch (AnisetteLicenseReplicaSyncedException)
             {
                 throw;
             }
@@ -233,6 +240,19 @@ public sealed class RemoteAnisetteProvider : IAnisetteProvider
                 throw new AnisetteRateLimitedException(
                     $"HTTP {code} GET {uri}: {TrimBody(body)}",
                     until);
+            }
+
+            if (code is 503 or 409
+                || body.Contains(AnisetteLicenseReplicaSyncedException.ErrorCode, StringComparison.OrdinalIgnoreCase))
+            {
+                if (AnisetteLicenseReplicaSyncedException.TryParse(body, out var syncedDetail)
+                    || response.Headers.Contains("X-Anisette-License-Synced"))
+                {
+                    if (!AnisetteLicenseReplicaSyncedException.TryParse(body, out syncedDetail))
+                        syncedDetail = AnisetteLicenseReplicaSyncedException.UserMessage;
+                    AnyLicenseReplicaSynced?.Invoke(syncedDetail);
+                    throw new AnisetteLicenseReplicaSyncedException(syncedDetail);
+                }
             }
 
             throw new InvalidOperationException(

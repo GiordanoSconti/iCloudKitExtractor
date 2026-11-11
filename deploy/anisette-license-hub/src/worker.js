@@ -23,6 +23,18 @@ export default {
       return json({ ok: false, error: "sync_unauthorized" }, 401, replicaId);
     }
 
+    const store = kv(env);
+    if (!store) {
+      return json(
+        {
+          ok: false,
+          error: "kv_not_bound",
+          detail: "Bind KV as LICENSES (see wrangler.toml.example) and redeploy.",
+        },
+        500,
+        replicaId);
+    }
+
     if (request.method === "POST" && path === "/internal/license-sync") {
       let body;
       try {
@@ -36,9 +48,9 @@ export default {
       }
 
       const record = normalize(body);
-      await env.LICENSES.put(keyId(id), JSON.stringify(record));
+      await store.put(keyId(id), JSON.stringify(record));
       if (record.fingerprint) {
-        await env.LICENSES.put(keyFp(record.fingerprint), id);
+        await store.put(keyFp(record.fingerprint), id);
       }
       return json({ ok: true, license_id: id, replica_id: replicaId }, 200, replicaId);
     }
@@ -48,11 +60,11 @@ export default {
       const byFp = path.match(/^\/internal\/license\/by-fingerprint\/([^/]+)$/);
       if (byFp) {
         const fp = decodeURIComponent(byFp[1]).trim();
-        const id = await env.LICENSES.get(keyFp(fp));
+        const id = await store.get(keyFp(fp));
         if (!id) {
           return json({ ok: false, error: "not_found" }, 404, replicaId);
         }
-        const raw = await env.LICENSES.get(keyId(id));
+        const raw = await store.get(keyId(id));
         if (!raw) {
           return json({ ok: false, error: "not_found" }, 404, replicaId);
         }
@@ -65,7 +77,7 @@ export default {
         if (id.toLowerCase() === "by-fingerprint") {
           return json({ ok: false, error: "not_found" }, 404, replicaId);
         }
-        const raw = await env.LICENSES.get(keyId(id));
+        const raw = await store.get(keyId(id));
         if (!raw) {
           return json({ ok: false, error: "not_found" }, 404, replicaId);
         }
@@ -76,6 +88,10 @@ export default {
     return json({ ok: false, error: "method_not_allowed" }, 405, replicaId);
   },
 };
+
+function kv(env) {
+  return env.LICENSES || env.ANISETTE_LICENSE_KV || null;
+}
 
 function keyId(id) {
   return `lic:${id}`;

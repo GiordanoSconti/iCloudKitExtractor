@@ -81,6 +81,10 @@ Both Minis (same Ed25519 keys + same sync secret):
 
 (`licenseReplicaId` still unique per Mini; the hub answers as `license-hub`.)
 
+When a Bearer hits a replica that does not yet have the SQLite row, that replica pulls from the
+hub, then responds `503` / `license_replica_synced` so iCloudKit Extractor shows an English
+prompt to reconnect (the license is already local for the next attempt).
+
 ### Alternative: dedicated sync hostnames (two tunnel UUIDs)
 
 If you prefer peer-to-peer without a Worker, point each Mini’s `licensePeers` at a

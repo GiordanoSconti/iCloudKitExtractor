@@ -136,6 +136,7 @@ public partial class MainWindow : Window
         TryLoadHeaderLogo();
         UpdateDownloadButtonLabel();
         RemoteAnisetteProvider.AnyLicenseBundleIssued += OnAnisetteLicenseBundleIssued;
+        RemoteAnisetteProvider.AnyLicenseReplicaSynced += OnAnisetteLicenseReplicaSynced;
 
         // Paths filled when a case is created/opened (no default Documents dump).
         OutputFolderTextBox.Text = "";
@@ -1040,6 +1041,20 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(bundleBase64))
             return;
         Dispatcher.UIThread.Post(() => ApplyIssuedLicenseBundle(bundleBase64));
+    }
+
+    private void OnAnisetteLicenseReplicaSynced(string detail)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var msg = string.IsNullOrWhiteSpace(detail)
+                ? AnisetteLicenseReplicaSyncedException.UserMessage
+                : detail.Trim();
+            LogAuth("Anisette license replica sync: " + msg);
+            if (AnisetteSettingsStatusText is not null)
+                AnisetteSettingsStatusText.Text = "License synced on server — please reconnect.";
+            ShowMessage("Anisette license", msg);
+        });
     }
 
     private void ApplyIssuedLicenseBundle(string bundleBase64)
