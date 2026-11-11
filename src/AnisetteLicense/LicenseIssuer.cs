@@ -129,17 +129,15 @@ public sealed class LicenseIssuer
             return;
         if (!_db.TryGet(licenseId, out var row, out _) || row is null)
             return;
-        _ = Task.Run(async () =>
+        // Await briefly so the hub receives the row before the client retries another replica.
+        try
         {
-            try
-            {
-                await _sync.PushRowAsync(row, hint).ConfigureAwait(false);
-            }
-            catch
-            {
-                // ignore
-            }
-        });
+            _sync.PushRowAsync(row, hint).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // local issue still succeeds; hub may catch up on next validate/rehydrate
+        }
     }
 }
 

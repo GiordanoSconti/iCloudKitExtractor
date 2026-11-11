@@ -33,6 +33,8 @@
 > [!IMPORTANT]
 > **Anisette preview — ONLINE** · [https://www.icloudkitextractor.eu](https://www.icloudkitextractor.eu)  
 > Leave the IKE **License** field empty on first connect to receive a Package-C license once.  
+> **Multi-server:** the preview now runs on **multiple Tunnel replicas** (license rows sync through a Cloudflare Worker hub so any origin can validate your Package-C Bearer).  
+> **11 Nov 2026:** brief connection / license errors were possible while that multi-replica sync was being rolled out — **service is fully restored**.  
 > **VPN:** networks recognized as **institutions / universities** go through **manual operator consent** — access for later requests can be **allowed** or **denied**. Commercial / anonymous VPNs remain restricted under the acceptable-use rules in [Preview access](#preview-access-to-anisette-server).
 
 <p align="center">
@@ -217,20 +219,25 @@ Temporary public preview endpoint (leave the IKE **License** field empty on firs
 
 **https://www.icloudkitextractor.eu**
 
-> **Status — currently active and running.** Published via **Cloudflare Tunnel** (see below). Prefer self-host or contact for access if the preview is temporarily down.
+> **Status — currently active and running (fully restored).** Published via **Cloudflare Tunnel** with **multiple origin replicas** (see below). Prefer self-host or contact for access if the preview is temporarily down.
+
+> **Multi-server (Nov 2026).** The same public hostname can be served by more than one lab machine behind Cloudflare. Package-C licenses are synchronized through a small **Cloudflare Worker + KV** hub so a Bearer issued on one replica validates on the others. On **11 November 2026**, short-lived connection or `license_id not registered` errors may have occurred while that work was deploying — **the service is fully operational again**.
 
 > **Note — VPN / institutional access.** A **manual authorization** flow was added for VPNs recognized as institutions / universities: when such a network is detected, the operator can **allow** controlled access for subsequent requests or **deny** it. Commercial / anonymous VPNs remain subject to the acceptable-use rules below.
 
 #### How the preview is published (Cloudflare Tunnel)
 
-The lab middleware (**Anisette Middleware** / `AnisetteServer.Mac` Avalonia app — **Windows and macOS** — or headless Licensed) listens locally on **HTTP** `:6971` (`http://127.0.0.1:6971` / `http://0.0.0.0:6971`). A small **`cloudflared`** agent on the same machine opens an **outbound-only** tunnel to Cloudflare. Clients hit a public HTTPS hostname; Cloudflare terminates TLS and forwards into the tunnel. **No router port forward, UPnP, or public IP** is required — this also works behind CGNAT (e.g. many Vodafone Station / FWA setups).
+The lab middleware (**Anisette Middleware** / `AnisetteServer.Mac` Avalonia app — **Windows and macOS** — or headless Licensed) listens locally on **HTTP** `:6971` (`http://127.0.0.1:6971` / `http://0.0.0.0:6971`). A small **`cloudflared`** agent on each replica opens an **outbound-only** tunnel to Cloudflare. Clients hit a public HTTPS hostname; Cloudflare terminates TLS and forwards into a healthy replica. **No router port forward, UPnP, or public IP** is required — this also works behind CGNAT (e.g. many Vodafone Station / FWA setups).
 
 ```
 IKE / curl  →  https://www.icloudkitextractor.eu[…]  →  Cloudflare edge
-                                                         ↕  tunnel (outbound)
-                                                   cloudflared (lab Mac)
-                                                         ↓
-                                              http://127.0.0.1:6971  (Anisette)
+                                    ┌──────────────────┴──────────────────┐
+                                    ↕ tunnel                    ↕ tunnel
+                              cloudflared (replica A)     cloudflared (replica B)
+                                    ↓                            ↓
+                           http://127.0.0.1:6971          http://127.0.0.1:6971
+                           (Anisette Middleware)         (Anisette Middleware)
+                                    └──────── Worker/KV license hub ────────┘
 ```
 
 Self-host tip (same pattern as the preview): keep Anisette on local HTTP, point a Cloudflare Tunnel ingress hostname at `http://127.0.0.1:6971`, then set IKE `ANISETTE_SERVER_URL` to your `https://…` hostname. Details: [Cloudflare Tunnel docs](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/). Licensed stack: [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md).

@@ -46,11 +46,30 @@ public static class LicenseSyncEndpoints
             });
         });
 
+        app.MapGet("/internal/license/index", (HttpRequest req, HttpResponse res, LicenseDatabase db) =>
+        {
+            StampReplica(res);
+            if (!IsAuthorizedSyncRequest(req))
+                return Results.Json(new { ok = false, error = "sync_unauthorized" }, statusCode: 401);
+
+            var ids = db.ListAll().Select(r => r.LicenseId).ToList();
+            return Results.Json(new
+            {
+                ok = true,
+                ids,
+                replica_id = LicenseSyncOptions.LocalReplicaId,
+            });
+        });
+
         app.MapGet("/internal/license/{id}", (string id, HttpRequest req, HttpResponse res, LicenseDatabase db) =>
         {
             StampReplica(res);
             if (!IsAuthorizedSyncRequest(req))
                 return Results.Json(new { ok = false, error = "sync_unauthorized" }, statusCode: 401);
+
+            if (string.Equals(id, "index", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(id, "by-fingerprint", StringComparison.OrdinalIgnoreCase))
+                return Results.Json(new { ok = false, error = "not_found" }, statusCode: 404);
 
             if (!db.TryGet(id, out var row, out var err) || row is null)
                 return Results.Json(new { ok = false, error = err }, statusCode: 404);
