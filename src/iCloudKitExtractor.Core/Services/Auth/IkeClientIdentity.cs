@@ -32,16 +32,47 @@ public static class IkeClientIdentity
 
     private static string ResolveMachineId()
     {
-        try
+        if (OperatingSystem.IsWindows())
         {
-            using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Cryptography");
-            var guid = key?.GetValue("MachineGuid") as string;
-            if (!string.IsNullOrWhiteSpace(guid))
-                return guid.Trim();
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Cryptography");
+                var guid = key?.GetValue("MachineGuid") as string;
+                if (!string.IsNullOrWhiteSpace(guid))
+                    return guid.Trim();
+            }
+            catch
+            {
+                // fall through
+            }
         }
-        catch
+        else
         {
-            // fall through
+            try
+            {
+                var idPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "iCloudKitExtractor",
+                    "machine-id.txt");
+                var dir = Path.GetDirectoryName(idPath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+
+                if (File.Exists(idPath))
+                {
+                    var existing = File.ReadAllText(idPath).Trim();
+                    if (!string.IsNullOrWhiteSpace(existing))
+                        return existing;
+                }
+
+                var fresh = Guid.NewGuid().ToString("D");
+                File.WriteAllText(idPath, fresh);
+                return fresh;
+            }
+            catch
+            {
+                // fall through
+            }
         }
 
         try

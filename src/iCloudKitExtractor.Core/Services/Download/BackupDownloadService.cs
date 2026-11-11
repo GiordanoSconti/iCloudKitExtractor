@@ -157,6 +157,11 @@ public sealed class BackupDownloadService
     private IProgress<string>? _downloadLog;
 
     /// <summary>
+    /// Asset saltati (auth gap / no shard) candidati al pass finale MissingFiles.
+    /// </summary>
+    private readonly ConcurrentBag<BackupAsset> _missingRetryBag = [];
+
+    /// <summary>
     /// Ford host bodies scaricati da fresh authorizeGet (anche se IKM iniziale non apre).
     /// Sopravvive al purge MMCS store — riusati se lo stesso wrap ricompare in payload.
     /// Key = assetSignature hex (o path).
@@ -298,6 +303,7 @@ public sealed class BackupDownloadService
         _cachedShareBootstrapZones = null;
         _mmcsKekOkLog = 0;
         _mmcsKekFailLog = 0;
+        _missingRetryBag.Clear();
         _pendingDecryptTasks.Clear();
         _uiFilesDownloaded = 0;
         _uiFilesDecrypted = 0;
@@ -431,7 +437,7 @@ public sealed class BackupDownloadService
 
         EnFetchResult? enFetch = _assets.LastEnFetch;
         if (enFetch is null
-            && catalog.Source.StartsWith("modern", StringComparison.OrdinalIgnoreCase)
+            && IsModernOrDualCatalog(catalog.Source)
             && catalog.CnEntryCount > 0)
         {
             progress?.Report(new DownloadProgressReport { Status = "EN: file list post-Lock…" });
@@ -500,8 +506,7 @@ public sealed class BackupDownloadService
         var assets = await ResolveAssetsForCatalogAsync(
             session, job, catalog, log, ct, enFetch);
 
-        var isModernCn = string.Equals(
-            catalog.Source, "modern-CN", StringComparison.OrdinalIgnoreCase);
+        var isModernCn = IsModernOrDualCatalog(catalog.Source);
         var kalamaSeeds = enFetch is not null
             ? CollectKaLaMaSeeds(enFetch, job.Device)
             : [];
@@ -1893,18 +1898,36 @@ public sealed class BackupDownloadService
                                 $"  ERROR MmcsAuth: PrivilegedBatch incomplete (Anisette) for " +
                                 $"{skipAuthPaths.Count} file — not marked Failed; " +
                                 "repair Anisette and resume the snapshot.");
+                            // Ripresa successiva: tieni i gap in coda MissingFiles.
+                            foreach (var skipped in skipAuthAssets)
+                            {
+                                DecryptFailureJournal.Record(
+                                    workDir,
+                                    skipped,
+                                    "repair Anisette and resume the snapshot.",
+                                    "  ERROR MmcsAuth: PrivilegedBatch incomplete (Anisette) for ");
+                                AppendAuthGapSnapshotLog(workDir, skipped, anisetteBlocked: true);
+                                _missingRetryBag.Add(skipped);
+                            }
                         }
                         else
                         {
                             foreach (var skipped in skipAuthAssets)
                             {
                                 NoteFileDownloaded(
-                                    "mmcs_auth_skip", skipped.RelativePath ?? skipped.RecordName);
+                                    "repair Anisette and resume the snapshot.", skipped.RelativePath ?? skipped.RecordName);
                                 NoteDecryptFailed(
-                                    "mmcs_auth_skip",
+                                    "repair Anisette and resume the snapshot.",
                                     skipped.RelativePath ?? skipped.RecordName,
                                     emitUiError: true,
                                     detail: "MmcsAuth/authorizeGet skip");
+                                DecryptFailureJournal.Record(
+                                    workDir,
+                                    skipped,
+                                    "repair Anisette and resume the snapshot.",
+                                    "MmcsAuth assente dopo PrivilegedBatch — authorizeGet non tentato");
+                                AppendAuthGapSnapshotLog(workDir, skipped, anisetteBlocked: false);
+                                _missingRetryBag.Add(skipped);
                             }
 
                             ReportMmcsAuthSkipSummary(skipAuthPaths, readyBatch.Count, log);
@@ -2892,6 +2915,24 @@ public sealed class BackupDownloadService
             await _decryptQueue.DisposeAsync().ConfigureAwait(false);
         _decryptQueue = null;
 
+        var missingRecovered = await RetryMissingPayloadPassAsync(
+            session,
+            contentHost,
+            job,
+            workDir,
+            cleanDir,
+            fsWriter,
+            fileKeyCtx,
+            enFetch,
+            progress,
+            log,
+            ct).ConfigureAwait(false);
+        if (missingRecovered > 0)
+        {
+            writtenSharded += missingRecovered;
+            log?.Report($"MissingFiles retry: recuperati {missingRecovered:N0} payload");
+        }
+
         await WriteItunesSidecarsAtEndOfSnapshotAsync(
             session, job, log, ct).ConfigureAwait(false);
 
@@ -3058,6 +3099,16 @@ public sealed class BackupDownloadService
                 $"(failed={uiFailed:N0}, ciphertext={uiCipher:N0}, staged={stagedChunks}, " +
                 $"MMCS={mmcsOk}, AES={fileDecryptOk}) → Backup/"
         });
+        // Chiudi Manifest.db (WAL checkpoint) prima delle firme SHA-256.
+        try
+        {
+            await fsWriter.CloseForHashingAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            log?.Report($"  Manifest.db close pre-HASH: {ex.Message}");
+        }
+
         await WriteOutputHashManifestAsync(snapshotRoot, progress, log, ct)
             .ConfigureAwait(false);
         }
@@ -3239,6 +3290,11 @@ public sealed class BackupDownloadService
     /// <summary>
     /// Conta come «Cifrati» solo se scritto in Backup/ e MMCS/Ford non ha prodotto plaintext.
     /// </summary>
+    private static bool IsModernOrDualCatalog(string? source) =>
+        !string.IsNullOrWhiteSpace(source)
+        && (source.StartsWith("modern", StringComparison.OrdinalIgnoreCase)
+            || source.StartsWith("dual", StringComparison.OrdinalIgnoreCase));
+
     private static bool CountsAsCiphertextOnDisk(in AssetDownloadOutcome one) =>
         one.WrittenSharded && !one.MmcsDecrypted;
 
@@ -3803,7 +3859,7 @@ public sealed class BackupDownloadService
         return string.IsNullOrWhiteSpace(label) ? body : $"[{label}] {body}";
     }
 
-    /// <summary>Un solo messaggio ERROR: MmcsAuth missing = fail terminale (niente decrypt dopo).</summary>
+    /// <summary>Un solo messaggio ERROR: MmcsAuth assente = fail terminale (niente decrypt dopo).</summary>
     private static void ReportMmcsAuthSkipSummary(
         IReadOnlyList<string> paths,
         int readyCount,
@@ -3987,6 +4043,183 @@ public sealed class BackupDownloadService
         return ok;
     }
 
+    /// <summary>
+    /// Pass finale: auth-gap / MissingFiles senza shard → PB monofile + download monofile.
+    /// Prima dei sidecar iTunes così Completeness vede i payload recuperati.
+    /// </summary>
+    private async Task<int> RetryMissingPayloadPassAsync(
+        ICloudSession session,
+        string contentHost,
+        DownloadJob job,
+        string workDir,
+        string cleanDir,
+        BackupFilesystemWriter fsWriter,
+        BackupFileKeyContext fileKeyCtx,
+        EnFetchResult? enFetch,
+        IProgress<DownloadProgressReport>? progress,
+        IProgress<string>? log,
+        CancellationToken ct)
+    {
+        var pref4 = _activeDevicePrefix4;
+        if (string.IsNullOrWhiteSpace(pref4)
+            && !string.IsNullOrWhiteSpace(job.Device.DeviceUuid))
+            pref4 = CloudKitRecordNames.DevicePrefix4(job.Device.DeviceUuid);
+        if (string.IsNullOrWhiteSpace(pref4))
+            return 0;
+
+        var byFileId = new Dictionary<string, BackupAsset>(StringComparer.OrdinalIgnoreCase);
+        foreach (var a in _missingRetryBag)
+        {
+            var fid = a.EnsureFileId();
+            if (string.IsNullOrWhiteSpace(fid) || fid.Length < 2)
+                continue;
+            byFileId.TryAdd(fid, a);
+        }
+
+        var completeness = BackupCompleteness.Evaluate(cleanDir);
+        var toRetry = new List<BackupAsset>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (fileId, _, _) in completeness.Missing)
+        {
+            if (!byFileId.TryGetValue(fileId, out var asset))
+                continue;
+            if (!seen.Add(fileId))
+                continue;
+            toRetry.Add(asset);
+        }
+
+        foreach (var (fileId, asset) in byFileId)
+        {
+            if (!seen.Add(fileId))
+                continue;
+            var shard = IkeBackupOutputPaths.ToShardedFilePath(cleanDir, fileId);
+            if (File.Exists(shard))
+                continue;
+            toRetry.Add(asset);
+        }
+
+        var sigCache = Path.Combine(workDir, IkeBackupOutputPaths.DeviceSigCacheFolderName);
+        foreach (var asset in _missingRetryBag)
+        {
+            if (asset.AssetSignature is not { Length: 21 } sig)
+                continue;
+            var hex = Convert.ToHexString(sig).ToLowerInvariant();
+            var fid = asset.EnsureFileId();
+            if (!string.IsNullOrWhiteSpace(fid) && !seen.Add(fid!))
+                continue;
+            if (File.Exists(Path.Combine(sigCache, hex)))
+                continue;
+            if (!string.IsNullOrWhiteSpace(fid))
+            {
+                var shard = IkeBackupOutputPaths.ToShardedFilePath(cleanDir, fid);
+                if (File.Exists(shard))
+                    continue;
+            }
+
+            toRetry.Add(asset);
+        }
+
+        if (toRetry.Count == 0)
+            return 0;
+
+        var unique = new List<BackupAsset>(toRetry.Count);
+        var seenSig = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var a in toRetry)
+        {
+            if (a.AssetSignature is { Length: 21 } sig)
+            {
+                var hex = Convert.ToHexString(sig).ToLowerInvariant();
+                if (!seenSig.Add(hex))
+                    continue;
+            }
+
+            unique.Add(a);
+        }
+
+        const int retryCap = 64;
+        if (unique.Count > retryCap)
+            unique = unique.Take(retryCap).ToList();
+
+        log?.Report(
+            $"MissingFiles retry pass ×{unique.Count}" +
+            (completeness.MissingOnDisk > 0
+                ? $" (Manifest missing={completeness.MissingOnDisk:N0})"
+                : "") +
+            "…");
+
+        foreach (var a in unique)
+            a.MmcsAuth = null;
+
+        await ResolveFlistBatchAuthAsync(
+            session, unique, pref4, workDir, enFetch, log, ct).ConfigureAwait(false);
+
+        var recovered = 0;
+        var idx = 0;
+        foreach (var asset in unique)
+        {
+            ct.ThrowIfCancellationRequested();
+            idx++;
+            if (asset.AssetSignature is not { Length: 21 }
+                || MmcsAuthBuilder.TryBuildFlistAuthorizeEntry(
+                    asset.AssetSignature, asset.MmcsAuth) is null)
+            {
+                DecryptFailureJournal.Record(
+                    workDir,
+                    asset,
+                    "repair Anisette and resume the snapshot.",
+                    "MissingFiles retry: MmcsAuth ancora assente");
+                AppendAuthGapSnapshotLog(workDir, asset, anisetteBlocked: false);
+                continue;
+            }
+
+            var label = asset.RelativePath ?? asset.RecordName;
+            log?.Report($"  MissingFiles retry {idx}/{unique.Count}: {label}");
+            try
+            {
+                var one = await DownloadAndDecryptAssetAsync(
+                    session,
+                    contentHost,
+                    asset,
+                    workDir,
+                    workDir,
+                    fsWriter,
+                    fileKeyCtx,
+                    idx,
+                    unique.Count,
+                    progress,
+                    log,
+                    ct).ConfigureAwait(false);
+
+                if (one.WrittenSharded)
+                {
+                    recovered++;
+                    NoteFileDecrypted("missing_retry_ok", label);
+                    if (CountsAsCiphertextOnDisk(one))
+                        NoteCiphertextSaved("missing_retry_cipher", label);
+                }
+                else if (!one.Ok && !one.QueuedDecrypt)
+                {
+                    DecryptFailureJournal.Record(
+                        workDir,
+                        asset,
+                        "missing_retry_fail",
+                        "MissingFiles retry: download/decrypt non materializzato");
+                }
+            }
+            catch (Exception ex)
+            {
+                log?.Report($"  MissingFiles retry fail {label}: {ex.Message}");
+                DecryptFailureJournal.Record(
+                    workDir,
+                    asset,
+                    "missing_retry_fail",
+                    ex.Message);
+            }
+        }
+
+        return recovered;
+    }
     private static async Task WriteItunesSidecarsAtEndOfSnapshotAsync(
         ICloudSession session,
         DownloadJob job,
@@ -4461,7 +4694,7 @@ public sealed class BackupDownloadService
         LogWrapIkmProvenance(asset, "after-bind");
         // #endregion
 
-        // FillFordIkmFromContents: Record → wrap → IKM@CKFile+0x160 (only path).
+        // FillFordIkmFromContents: Record → wrap → IKM@CKFile+0x160 (unica strada).
         AssetMaterialPipeline.FillFordIkmFromContents(
             asset,
             (a, wrap) =>
@@ -5610,11 +5843,12 @@ public sealed class BackupDownloadService
         var byF2 = MmcsAuthBuilder.IndexAuthsByChecksum(preAuth);
         log?.Report($"  PreAuth auth available: {preAuth.Count} (f2 index={byF2.Count})");
 
-        // Path moderno: :CN: → EN: (capture); fallback discovery/PreAuth.
-        if (string.Equals(catalog.Source, "modern-CN", StringComparison.OrdinalIgnoreCase))
+        // Path moderno / dual: :CN: → EN: (capture); fallback discovery/PreAuth.
+        // dual-CN+M ha già confrontato M: in catalogo; il download resta su EN:.
+        if (IsModernOrDualCatalog(catalog.Source))
         {
             log?.Report(
-                "  modern-CN catalog — auth MMCS da EN: (preferito) / PreAuth / query KA:MA");
+                $"  modern-CN catalog — auth MMCS da EN: (preferito) / PreAuth / query KA:MA");
             return await ResolveModernCnDownloadAssetsAsync(
                 session, job, byF2, log, ct, enFetch);
         }
@@ -5888,8 +6122,10 @@ public sealed class BackupDownloadService
             },
             async (asset, token) =>
             {
+                // Non saltare sotto throttle: WaitGatewayThrottle dentro TryResolve.
+                // Skip → 0 wrap → no-ikm massivo (line_search / AppDomain).
                 if (_assets.IsGatewayThrottled)
-                    return;
+                    await _assets.WaitGatewayThrottleAsync(token).ConfigureAwait(false);
                 await EnsureAssetRecordPayloadAsync(session, asset, log, token)
                     .ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(asset.AssetProtectionInfoHex)
@@ -8986,7 +9222,7 @@ public sealed class BackupDownloadService
     }
 
     /// <summary>
-    /// Conteggi Domain.fileList: gli Asset MMCS sono i file to download;
+    /// Conteggi Domain.fileList: gli Asset MMCS sono i file da scaricare;
     /// cartelle/symlink/empty restano solo in FileMetadata.
     /// </summary>
     private readonly record struct DomainInventoryTotals(
@@ -9598,6 +9834,62 @@ public sealed class BackupDownloadService
             }
         }
 
+        // Monofile PB: un seed (e varianti size/+-) per asset ancora senza auth.
+        // Chiude sticky gap che i wave ×N lasciano (es. 1 IndexedDB Moovit su 265).
+        AttachFetchedAuthToFlistAssets(need, fetched, payload, out _);
+        var monoNeed = need
+            .Where(static a => !HasUsableMmcsAuth(a.MmcsAuth)
+                && !string.IsNullOrWhiteSpace(a.RecordIdSuffix)
+                && a.AssetSignature is { Length: 21 })
+            .ToList();
+        if (monoNeed.Count > 0 && !_assets.AnisetteRefreshBlocked)
+        {
+            const int monoCap = 48;
+            var monoTake = monoNeed.Count <= monoCap
+                ? monoNeed
+                : monoNeed.Take(monoCap).ToList();
+            log?.Report(
+                $"  PrivilegedBatch monofile gap ×{monoTake.Count}" +
+                (monoNeed.Count > monoCap ? $" (di {monoNeed.Count})" : "") +
+                "…");
+            var monoRecovered = 0;
+            foreach (var asset in monoTake)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (HasUsableMmcsAuth(asset.MmcsAuth))
+                    continue;
+                if (_assets.IsGatewayThrottled)
+                    await _assets.WaitGatewayThrottleAsync(ct).ConfigureAwait(false);
+
+                var type = seedTypes.TryGetValue(asset.RecordIdSuffix!, out var t) ? t : "A";
+                foreach (var seed in EnumerateMonofileAuthSeeds(
+                             devicePrefix4, asset, enBySuffix, type))
+                {
+                    var (moreMono, morePayloadMono) = await _assets
+                        .FetchPrivilegedBatchMultiAsync(
+                            session, [seed], snapshotDirectory, log, ct)
+                        .ConfigureAwait(false);
+                    if (moreMono.Count > 0)
+                        fetched.AddRange(moreMono);
+                    if (morePayloadMono is { Length: > 0 })
+                        payload = morePayloadMono;
+                    AttachFetchedAuthToFlistAssets(
+                        new[] { asset }, fetched, payload, out _);
+                    if (HasUsableMmcsAuth(asset.MmcsAuth))
+                    {
+                        monoRecovered++;
+                        break;
+                    }
+                }
+            }
+
+            if (monoRecovered > 0)
+            {
+                log?.Report(
+                    $"  PrivilegedBatch monofile: recuperati {monoRecovered}/{monoTake.Count}");
+            }
+        }
+
         AttachFetchedAuthToFlistAssets(need, fetched, payload, out var attached);
         RememberFlistMmcsAuthBatch(need);
         RememberFlistMmcsAuthBatch(fetched);
@@ -9963,6 +10255,93 @@ public sealed class BackupDownloadService
         if (sizeBytes is long sz and >= 0)
             s = CloudKitMmcsIds.EnsurePrivilegedBatchSeedSize(s, sz, overwriteExisting: true);
         return s;
+    }
+
+    /// <summary>
+    /// Seed monofile per gap auth: size flist, size da rid, varianti base64 <c>+/-</c>.
+    /// </summary>
+    private static IEnumerable<string> EnumerateMonofileAuthSeeds(
+        string devicePrefix4,
+        BackupAsset asset,
+        IReadOnlyDictionary<string, string> enBySuffix,
+        string type)
+    {
+        var rid = asset.RecordIdSuffix;
+        if (string.IsNullOrWhiteSpace(rid))
+            yield break;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Offer(string? seed)
+        {
+            if (string.IsNullOrWhiteSpace(seed) || CloudKitMmcsIds.IsUuidRecordName(seed))
+                return;
+            seen.Add(seed);
+        }
+
+        var primary = ResolvePrivilegedBatchSeedForFlistAsset(
+            devicePrefix4, rid, asset.SizeBytes, enBySuffix, type, out _);
+        Offer(primary);
+
+        var ridSize = CloudKitMmcsIds.TryExtractSizeFromRid(rid);
+        if (ridSize is long rs
+            && asset.SizeBytes is long fs
+            && rs != fs)
+        {
+            Offer(ResolvePrivilegedBatchSeedForFlistAsset(
+                devicePrefix4, rid, rs, enBySuffix, type, out _));
+        }
+
+        if (primary is not null)
+        {
+            foreach (var v in CloudKitMmcsIds.EnumerateAssetRecordNameVariants(
+                         primary, asset.SizeBytes))
+                Offer(v);
+            if (ridSize is long alt && asset.SizeBytes is long cur && alt != cur)
+            {
+                foreach (var v in CloudKitMmcsIds.EnumerateAssetRecordNameVariants(primary, alt))
+                    Offer(v);
+            }
+        }
+
+        foreach (var s in seen)
+            yield return s;
+    }
+
+    /// <summary>Sempre-on sotto snapshot: <c>{work}/auth_gaps.jsonl</c>.</summary>
+    private static void AppendAuthGapSnapshotLog(
+        string snapshotWorkDirectory,
+        BackupAsset asset,
+        bool anisetteBlocked)
+    {
+        if (string.IsNullOrWhiteSpace(snapshotWorkDirectory))
+            return;
+        try
+        {
+            Directory.CreateDirectory(snapshotWorkDirectory);
+            var path = Path.Combine(snapshotWorkDirectory, "auth_gaps.jsonl");
+            var line = JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["ts"] = DateTime.UtcNow.ToString("O"),
+                ["stage"] = "repair Anisette and resume the snapshot.",
+                ["anisetteBlocked"] = anisetteBlocked,
+                ["domain"] = asset.Domain,
+                ["path"] = asset.RelativePath ?? asset.RecordName,
+                ["rid"] = asset.RecordIdSuffix,
+                ["size"] = asset.SizeBytes,
+                ["comp"] = asset.CompressionMethod,
+                ["pc"] = asset.ProtectionClass,
+                ["sig"] = asset.AssetSignature is { Length: 21 } sig
+                    ? Convert.ToHexString(sig)
+                    : null,
+                ["fileId"] = asset.EnsureFileId(),
+                ["hasAuth"] = HasUsableMmcsAuth(asset.MmcsAuth),
+            });
+            File.AppendAllText(path, line + Environment.NewLine);
+        }
+        catch
+        {
+            // ignore
+        }
     }
 
     /// <summary>

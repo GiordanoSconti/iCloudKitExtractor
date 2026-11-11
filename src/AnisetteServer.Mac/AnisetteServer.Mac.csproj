@@ -4,6 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- External volumes (exFAT/AFP) create AppleDouble ._ files that break CSC. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/._*</DefaultItemExcludes>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RootNamespace>AnisetteServer.Mac</RootNamespace>
     <!-- Folder/project id stays AnisetteServer.Mac (historical); product runs on Windows + macOS. -->
@@ -36,11 +38,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\iCloudKitExtractor\Models\AnisetteHeaders.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\IAnisetteProvider.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\AnisetteFetchOptions.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaAnisetteOptions.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaIphoneAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Models\AnisetteHeaders.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\IAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\AnisetteFetchOptions.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\FridaAnisetteOptions.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\FridaIphoneAnisetteProvider.cs" LinkBase="Shared" />
     <Compile Include="..\AnisetteServer.Licensed\Licensing\LicenseAuthMiddleware.cs" LinkBase="Licensing" />
     <Compile Include="..\AnisetteServer.Licensed\Hosting\AnisetteHttpsHosting.cs" LinkBase="Hosting" />
   </ItemGroup>
@@ -48,6 +50,18 @@
   <ItemGroup>
     <None Include="..\..\scripts\ios_akd_probe\**\*"
           Link="ios_akd_probe\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <!-- NAC relay: pypush scripts (+ IMDAppleServices when present locally; gitignored). -->
+    <None Include="..\..\scripts\nac-pypush\**\*"
+          Exclude="..\..\scripts\nac-pypush\**/._*"
+          Link="nac-pypush\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <!-- Native Absinthe helper -->
+    <None Include="..\..\native\AbsintheNac\**\*"
+          Exclude="..\..\native\AbsintheNac\**/._*"
+          Link="AbsintheNac\%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

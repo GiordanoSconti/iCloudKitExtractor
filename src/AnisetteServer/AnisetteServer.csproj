@@ -12,30 +12,30 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\iCloudKitExtractor\Protocol\AppleXmlPlist.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Models\AnisetteHeaders.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Http\AppleClientInfo.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Http\AkdHttpHeaders.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Http\AppleCertificateTrust.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\AdiDeviceProfile.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\GrandSlamCpdBuilder.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\AnisetteDeviceStore.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\AppleRuntimeLocator.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\CoreAdiBridgeClient.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\AdiProvisioningService.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\IAnisetteProvider.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\AnisetteFetchOptions.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\CoreAdiAnisetteProvider.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\IAdiCryptoClient.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\HttpAdiCryptoClient.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\EmulatedAkdAnisetteProvider.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaIphoneAnisetteProvider.cs" LinkBase="Shared" />
-    <Compile Include="..\iCloudKitExtractor\Services\Auth\FridaAnisetteOptions.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Protocol\AppleXmlPlist.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Models\AnisetteHeaders.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Http\AppleClientInfo.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Http\AkdHttpHeaders.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Http\AppleCertificateTrust.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\AdiDeviceProfile.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\GrandSlamCpdBuilder.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\AnisetteDeviceStore.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\AppleRuntimeLocator.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\CoreAdiBridgeClient.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\AdiProvisioningService.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\IAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\AnisetteFetchOptions.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\CoreAdiAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\IAdiCryptoClient.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\HttpAdiCryptoClient.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\EmulatedAkdAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\FridaIphoneAnisetteProvider.cs" LinkBase="Shared" />
+    <Compile Include="..\iCloudKitExtractor.Core\Services\Auth\FridaAnisetteOptions.cs" LinkBase="Shared" />
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\iCloudKitExtractor\Assets\certs\AppleServerAuthenticationCA.der" Link="Assets\certs\AppleServerAuthenticationCA.der" />
-    <EmbeddedResource Include="..\iCloudKitExtractor\Assets\certs\AppleRootCA.cer" Link="Assets\certs\AppleRootCA.cer" />
+    <EmbeddedResource Include="..\iCloudKitExtractor.Core\Assets\certs\AppleServerAuthenticationCA.der" Link="Assets\certs\AppleServerAuthenticationCA.der" />
+    <EmbeddedResource Include="..\iCloudKitExtractor.Core\Assets\certs\AppleRootCA.cer" Link="Assets\certs\AppleRootCA.cer" />
   </ItemGroup>
 
   <ItemGroup>

@@ -48,6 +48,10 @@ public partial class MainWindow : Window
         LiteCheck.IsChecked = _settings.Lite;
         TimeoutBox.Value = _settings.TimeoutSec;
         ListenBox.Text = _settings.ListenUrls;
+        NacBackendBox.Text = string.IsNullOrWhiteSpace(_settings.NacBackend) ? "auto" : _settings.NacBackend;
+        NacAbsintheScriptBox.Text = _settings.NacAbsintheScript ?? "";
+        NacScriptRootBox.Text = _settings.NacScriptRoot ?? "";
+        NacDataPlistBox.Text = _settings.NacDataPlist ?? "";
         DataRootBox.Text = string.IsNullOrWhiteSpace(_settings.DataRoot)
             ? MiddlewareSettings.DefaultDataRoot()
             : _settings.DataRoot;
@@ -65,7 +69,19 @@ public partial class MainWindow : Window
         _settings.FetchScript = string.IsNullOrWhiteSpace(FetchScriptBox.Text) ? null : FetchScriptBox.Text.Trim();
         _settings.Lite = LiteCheck.IsChecked == true;
         _settings.TimeoutSec = (int)(TimeoutBox.Value ?? 60);
-        _settings.ListenUrls = ListenBox.Text?.Trim() ?? "http://0.0.0.0:6971";
+        _settings.ListenUrls = ListenBox.Text?.Trim() ?? "http://127.0.0.1:6971";
+        _settings.NacBackend = string.IsNullOrWhiteSpace(NacBackendBox.Text)
+            ? "auto"
+            : NacBackendBox.Text.Trim().ToLowerInvariant();
+        _settings.NacAbsintheScript = string.IsNullOrWhiteSpace(NacAbsintheScriptBox.Text)
+            ? null
+            : NacAbsintheScriptBox.Text.Trim();
+        _settings.NacScriptRoot = string.IsNullOrWhiteSpace(NacScriptRootBox.Text)
+            ? null
+            : NacScriptRootBox.Text.Trim();
+        _settings.NacDataPlist = string.IsNullOrWhiteSpace(NacDataPlistBox.Text)
+            ? null
+            : NacDataPlistBox.Text.Trim();
         _settings.DataRoot = DataRootBox.Text?.Trim();
         _settings.RequireVpnConsent = RequireVpnConsentCheck.IsChecked == true;
         _settings.VpnConsentAllow = (VpnAllowBox.Text ?? "")
@@ -89,7 +105,12 @@ public partial class MainWindow : Window
     private void RefreshStatus()
     {
         StatusText.Text = _host.StatusText;
-        MintText.Text = _host.LastMintSummary;
+        MintText.Text = string.IsNullOrEmpty(_host.LastMintSummary)
+            ? ""
+            : "Anisette: " + _host.LastMintSummary;
+        NacText.Text = string.IsNullOrEmpty(_host.LastNacSummary)
+            ? ""
+            : "NAC: " + _host.LastNacSummary;
         ErrorText.Text = _host.LastError;
         StartBtn.IsEnabled = !_host.IsRunning;
         StopBtn.IsEnabled = _host.IsRunning;

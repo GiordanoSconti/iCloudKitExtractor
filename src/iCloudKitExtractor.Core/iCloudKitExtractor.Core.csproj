@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>iCloudKitExtractor</RootNamespace>
+    <AssemblyName>iCloudKitExtractor.Core</AssemblyName>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/._*</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+    <PackageReference Include="LzfseSharp" Version="2.0.0" />
+    <PackageReference Include="MailKit" Version="4.18.1" />
+    <PackageReference Include="MetadataExtractor" Version="2.8.1" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.6" />
+    <PackageReference Include="MimeKit" Version="4.18.1" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\certs\AppleServerAuthenticationCA.der" Condition="Exists('Assets\certs\AppleServerAuthenticationCA.der')" />
+    <EmbeddedResource Include="Assets\certs\AppleRootCA.cer" Condition="Exists('Assets\certs\AppleRootCA.cer')" />
+    <EmbeddedResource Include="Assets\ike\wsc_preauth_session_prefix.bin" Condition="Exists('Assets\ike\wsc_preauth_session_prefix.bin')" />
+    <EmbeddedResource Include="Assets\ike\wsc_prefix_frame1.bin" Condition="Exists('Assets\ike\wsc_prefix_frame1.bin')" />
+    <EmbeddedResource Include="Assets\ike\wsc_prefix_frame2_template.bin" Condition="Exists('Assets\ike\wsc_prefix_frame2_template.bin')" />
+    <EmbeddedResource Include="Assets\ike\wsc_session_blob_header.bin" Condition="Exists('Assets\ike\wsc_session_blob_header.bin')" />
+    <EmbeddedResource Include="Assets\ike\wsc_session_unit_template.bin" Condition="Exists('Assets\ike\wsc_session_unit_template.bin')" />
+  </ItemGroup>
+</Project>

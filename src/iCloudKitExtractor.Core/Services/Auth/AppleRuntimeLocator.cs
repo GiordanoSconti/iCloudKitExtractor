@@ -281,6 +281,9 @@ public sealed class AppleRuntimeLocator
 
     private static string? ReadRegistryInstallDir()
     {
+        if (!OperatingSystem.IsWindows())
+            return null;
+
         foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
         {
             try

@@ -48,8 +48,19 @@
             </Grid>
 
             <TextBlock Text="Listen URLs" FontWeight="SemiBold"/>
-            <TextBox x:Name="ListenBox" Text="http://0.0.0.0:6971"/>
-            <TextBlock Text="Default HTTP (no certs). For HTTPS use https://0.0.0.0:6971 — cert auto-created in data/tls/ (or ANISETTE_TLS_PFX / CERT+KEY)."
+            <TextBox x:Name="ListenBox" Text="http://127.0.0.1:6971"/>
+            <TextBlock Text="Default loopback for local IKE. For HTTPS use https://127.0.0.1:6971 — cert auto-created in data/tls/ (or ANISETTE_TLS_PFX / CERT+KEY)."
+                       Opacity="0.65" TextWrapping="Wrap" FontSize="12"/>
+
+            <TextBlock Text="NAC backend (auto | absinthe | pypush)" FontWeight="SemiBold"/>
+            <TextBox x:Name="NacBackendBox" Text="auto"/>
+            <TextBlock Text="NAC Absinthe script (native/AbsintheNac/absinthe_nac.py)" FontWeight="SemiBold"/>
+            <TextBox x:Name="NacAbsintheScriptBox" PlaceholderText="empty = auto-resolve"/>
+            <TextBlock Text="NAC script root (scripts/nac-pypush Unicorn fallback)" FontWeight="SemiBold"/>
+            <TextBox x:Name="NacScriptRootBox" PlaceholderText="empty = auto-resolve from repo / output"/>
+            <TextBlock Text="NAC data.plist (Mac IOKit persona — Unicorn only)" FontWeight="SemiBold"/>
+            <TextBox x:Name="NacDataPlistBox" PlaceholderText="empty = {dataRoot}/data/nac/data.plist (auto-capture on macOS)"/>
+            <TextBlock Text="GET /validation-data → Absinthe nativo (identityservicesd) se possibile, altrimenti pypush/Unicorn. Su Apple Silicon MLB/ROM spesso assenti nel fallback."
                        Opacity="0.65" TextWrapping="Wrap" FontSize="12"/>
 
             <TextBlock Text="Data root (keys + SQLite; tls/ only if HTTPS)" FontWeight="SemiBold"/>
@@ -62,6 +73,7 @@
             </StackPanel>
 
             <TextBlock x:Name="MintText" Text="" Opacity="0.75" TextWrapping="Wrap" Margin="0,8,0,0"/>
+            <TextBlock x:Name="NacText" Text="" Opacity="0.75" TextWrapping="Wrap"/>
             <TextBlock x:Name="ErrorText" Foreground="#B00020" TextWrapping="Wrap"/>
           </StackPanel>
         </ScrollViewer>

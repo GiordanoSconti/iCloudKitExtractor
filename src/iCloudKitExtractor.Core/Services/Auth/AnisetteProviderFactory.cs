@@ -63,8 +63,11 @@ public static class AnisetteProviderFactory
         var remoteUrl = ResolveServerUrl();
         // Dedicated client for Anisette HTTPS so Apple trust policy is not weakened.
         var remoteHttp = AnisetteRemoteHttp.Create(remoteUrl);
+        IAnisetteProvider windows = OperatingSystem.IsWindows()
+            ? new CoreAdiAnisetteProvider(http, AdiDeviceProfile.Windows)
+            : new UnavailableAnisetteProvider("CoreADI/AOSKit Anisette is Windows-only; use remote Anisette on macOS.");
         return new(
-            new CoreAdiAnisetteProvider(http, AdiDeviceProfile.Windows),
+            windows,
             new RemoteAnisetteProvider(remoteHttp, remoteUrl, ResolveLicenseBearer()));
     }
 

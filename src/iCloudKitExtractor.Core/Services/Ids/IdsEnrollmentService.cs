@@ -178,6 +178,14 @@ public sealed class IdsEnrollmentService
             if (captured is { Length: > 0 })
             {
                 Log("NAC: using Frida-captured validation-data — " + captureDetail);
+                if (NacValidationService.IsRelayConfigured)
+                {
+                    Log(
+                        "WARNING: Frida blob overrides NAC relay ("
+                        + NacValidationService.ResolveRelayUrl()
+                        + "). Delete madrid-persona/validation-data.b64 to use Mac Mini relay.");
+                }
+
                 if (overridePushKey is null)
                     Log("NOTE: iPhone-bound blob + Windows Albert token may still get 6009.");
                 else
@@ -186,8 +194,11 @@ public sealed class IdsEnrollmentService
             }
             else
             {
-                Log("NAC: generating validation-data (pypush IMDAppleServices)…");
                 var nac = new NacValidationService();
+                if (NacValidationService.IsRelayConfigured)
+                    Log("NAC: requesting validation-data via relay…");
+                else
+                    Log("NAC: generating validation-data (pypush IMDAppleServices)…");
                 validation = await nac.GenerateAsync(Log, ct).ConfigureAwait(false);
             }
 

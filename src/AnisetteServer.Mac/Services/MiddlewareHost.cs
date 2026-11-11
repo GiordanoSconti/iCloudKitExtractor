@@ -24,6 +24,7 @@ public sealed class MiddlewareHost : IAsyncDisposable
     public string StatusText { get; private set; } = "Stopped";
     public string LastError { get; private set; } = "";
     public string LastMintSummary { get; private set; } = "";
+    public string LastNacSummary { get; private set; } = "";
     public ConnectionLogStore ConnectionLog { get; } = new();
     public AbuseRateLimiter AbuseLimiter { get; } = new();
     public VpnConsentStore VpnConsent { get; } = new();
@@ -122,6 +123,7 @@ public sealed class MiddlewareHost : IAsyncDisposable
                 Lite = settings.Lite,
                 TimeoutSec = settings.TimeoutSec,
             }));
+        builder.Services.AddSingleton(_ => new NacRelayService(settings));
 
         StatusText = "Binding Kestrel…";
         Changed?.Invoke();
@@ -130,9 +132,11 @@ public sealed class MiddlewareHost : IAsyncDisposable
         app.UseMiddleware<ConnectionGuardMiddleware>();
         app.UseMiddleware<LicenseAuthMiddleware>();
 
-        app.MapGet("/health", (IAnisetteProvider anisette) =>
+        app.MapGet("/health", (IAnisetteProvider anisette, NacRelayService nac) =>
         {
             var fr = anisette as FridaIphoneAnisetteProvider;
+            var gen = Path.Combine(nac.ScriptRoot, "generate_validation_data.py");
+            var binary = Path.Combine(nac.ScriptRoot, "emulated", "IMDAppleServices");
             return Results.Json(new
             {
                 ok = fr is not null && File.Exists(fr.FetchScript),
@@ -144,6 +148,17 @@ public sealed class MiddlewareHost : IAsyncDisposable
                 licensed = true,
                 listen = settings.ListenUrls,
                 tlsCer = wantsHttps ? AnisetteTlsCertificate.CerPath : null,
+                nac = new
+                {
+                    scriptRoot = nac.ScriptRoot,
+                    absintheScript = nac.AbsintheScript,
+                    absinthePresent = File.Exists(nac.AbsintheScript),
+                    generateScript = File.Exists(gen),
+                    imdAppleServices = File.Exists(binary),
+                    dataPlist = nac.DataPlistPath,
+                    dataPlistPresent = File.Exists(nac.DataPlistPath),
+                    lastBackend = nac.LastBackend,
+                },
             });
         });
 
@@ -182,6 +197,54 @@ public sealed class MiddlewareHost : IAsyncDisposable
         app.MapGet("/v1/get_headers", Mint);
         app.MapPost("/otp", Mint);
 
+        app.MapGet("/validation-data", async (NacRelayService nac, CancellationToken ct) =>
+        {
+            try
+            {
+                var result = await nac.GenerateAsync(ct).ConfigureAwait(false);
+                if (!result.Success)
+                {
+                    LastError = result.Error ?? "NAC failed";
+                    LastNacSummary = $"{DateTime.Now:HH:mm:ss} FAIL: {Truncate(LastError, 80)}";
+                    Changed?.Invoke();
+                    return Results.Json(new
+                    {
+                        ok = false,
+                        source = nac.LastBackend.Length > 0 ? nac.LastBackend : "nac",
+                        error = result.Error,
+                    }, statusCode: 503);
+                }
+
+                LastNacSummary =
+                    $"{DateTime.Now:HH:mm:ss} OK validation-data {result.Length} B"
+                    + (string.IsNullOrEmpty(result.Serial) ? "" : $" serial={result.Serial}");
+                if (!string.IsNullOrEmpty(result.Warning))
+                    LastNacSummary += " · " + Truncate(result.Warning, 60);
+                Changed?.Invoke();
+                return Results.Json(new
+                {
+                    ok = true,
+                    validation_data_b64 = result.ValidationDataB64,
+                    length = result.Length,
+                    serial = result.Serial,
+                        source = nac.LastBackend.Length > 0 ? nac.LastBackend : "nac",
+                        warning = result.Warning,
+                    });
+            }
+            catch (Exception ex)
+            {
+                LastError = ex.Message;
+                LastNacSummary = $"{DateTime.Now:HH:mm:ss} FAIL: {Truncate(ex.Message, 80)}";
+                Changed?.Invoke();
+                return Results.Json(new
+                {
+                    ok = false,
+                    source = "nac",
+                    error = ex.Message,
+                }, statusCode: 503);
+            }
+        });
+
         _cts = new CancellationTokenSource();
         _app = app;
         _runTask = app.RunAsync(_cts.Token);
@@ -203,7 +266,8 @@ public sealed class MiddlewareHost : IAsyncDisposable
         var tlsNote = wantsHttps
             ? $" · TLS {AnisetteTlsCertificate.CerPath}"
             : " · HTTP (no cert)";
-        StatusText = $"Listening {settings.ListenUrls} → Frida {settings.FridaHost}{tlsNote}";
+        StatusText =
+            $"Listening {settings.ListenUrls} → Frida {settings.FridaHost} · NAC /validation-data{tlsNote}";
         Changed?.Invoke();
 
         _ = Task.Run(async () =>

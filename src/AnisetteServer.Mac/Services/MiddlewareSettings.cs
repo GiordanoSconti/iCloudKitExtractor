@@ -25,7 +25,23 @@ public sealed class MiddlewareSettings
     public int TimeoutSec { get; set; } = 60;
 
     [JsonPropertyName("listenUrls")]
-    public string ListenUrls { get; set; } = "http://0.0.0.0:6971";
+    public string ListenUrls { get; set; } = "http://127.0.0.1:6971";
+
+    /// <summary>Path to scripts/nac-pypush (generate_validation_data.py). Empty = auto-resolve.</summary>
+    [JsonPropertyName("nacScriptRoot")]
+    public string? NacScriptRoot { get; set; }
+
+    /// <summary>Mac NAC data.plist. Empty = {dataRoot}/data/nac/data.plist (auto-captured on macOS).</summary>
+    [JsonPropertyName("nacDataPlist")]
+    public string? NacDataPlist { get; set; }
+
+    /// <summary>auto | absinthe | pypush. Default auto = native Absinthe then Unicorn fallback.</summary>
+    [JsonPropertyName("nacBackend")]
+    public string NacBackend { get; set; } = "auto";
+
+    /// <summary>Path to native/AbsintheNac/absinthe_nac.py. Empty = auto-resolve.</summary>
+    [JsonPropertyName("nacAbsintheScript")]
+    public string? NacAbsintheScript { get; set; }
 
     [JsonPropertyName("dataRoot")]
     public string? DataRoot { get; set; }

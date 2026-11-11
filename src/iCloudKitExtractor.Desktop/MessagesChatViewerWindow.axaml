@@ -1,0 +1,110 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="iCloudKitExtractor.MessagesChatViewerWindow"
+        x:CompileBindings="False"
+        Title="Messages"
+        Height="820" Width="1180"
+        MinHeight="560" MinWidth="860"
+        WindowStartupLocation="CenterOwner"
+        Background="#F2F2F7">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="52"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#F2FFFFF2" BorderBrush="#1A000000" BorderThickness="0,0,0,1">
+            <Grid Margin="18,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Messaggi" FontSize="18" FontWeight="SemiBold"
+                               Foreground="#1B1C1F" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="SummaryText" Margin="14,0,0,0" FontSize="12"
+                               Foreground="#5F6368" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBox x:Name="SearchBox" Width="240" Height="30"
+                             VerticalContentAlignment="Center" Padding="10,0"
+                             PlaceholderText="Filtra chat e messaggi"
+                             ToolTip.Tip="Filtra chat e messaggi"/>
+                    <Button Content="Ricarica" Margin="10,0,0,0" Padding="12,4" Click="Reload_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="320" MinWidth="240"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="#F8FFFFF8" BorderBrush="#14000000" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Margin="16,12,16,6" FontSize="12"
+                               Foreground="#5F6368" Text="Chat"/>
+                    <ListBox x:Name="ChatList" BorderThickness="0" Background="Transparent"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             SelectionChanged="ChatList_OnSelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="44,*,Auto">
+                                    <Ellipse Width="40" Height="40" Fill="#D1D1D6"/>
+                                    <TextBlock Grid.Column="0" Text="{Binding Initials}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               FontWeight="SemiBold" FontSize="13" Foreground="#3A3A3C"/>
+                                    <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                   FontSize="13" Foreground="#1B1C1F"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding Preview}" FontSize="12"
+                                                   Foreground="#6B6B70" Margin="0,2,0,0"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Top" HorizontalAlignment="Right">
+                                        <TextBlock Text="{Binding LastTimeDisplay}" FontSize="11"
+                                                   Foreground="#8E8E93" HorizontalAlignment="Right"/>
+                                        <TextBlock Text="{Binding MessageCount}" FontSize="10"
+                                                   Foreground="#AEAEB2" Margin="0,4,0,0"
+                                                   HorizontalAlignment="Right"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="56"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Background="#F2FFFFF2" BorderBrush="#14000000" BorderThickness="0,0,0,1">
+                    <StackPanel VerticalAlignment="Center" Margin="18,0">
+                        <TextBlock x:Name="ThreadTitle" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="#1B1C1F" Text="Seleziona una chat"/>
+                        <TextBlock x:Name="ThreadSubtitle" FontSize="11" Foreground="#8E8E93"/>
+                    </StackPanel>
+                </Border>
+
+                <ScrollViewer x:Name="ThreadScroll" Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Background="#F2F2F7"
+                              Padding="18,14">
+                    <ItemsControl x:Name="MessageList"/>
+                </ScrollViewer>
+
+                <TextBlock x:Name="EmptyHint" Grid.Row="1"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontSize="14" Foreground="#8E8E93"
+                           Text="Nessuna chat da mostrare"
+                           IsHitTestVisible="False"/>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

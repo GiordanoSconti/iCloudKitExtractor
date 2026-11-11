@@ -3338,9 +3338,16 @@ public partial class MainWindow : Window
             var personaBit = MadridDevicePersona.HasPersona()
                 ? $"persona={persona?.SerialNumber ?? "?"}"
                 : "persona=missing";
+            string nacBit;
+            if (IdsValidationDataStore.HasBlob())
+                nacBit = NacValidationService.IsRelayConfigured ? "nac=frida(overrides-relay)" : "nac=frida";
+            else if (NacValidationService.IsRelayConfigured)
+                nacBit = "nac=relay";
+            else
+                nacBit = "nac=local";
             var valBit = IdsValidationDataStore.HasBlob() ? "valdata=Frida" : "valdata=missing";
             var pushBit = IphoneApsPushStore.HasCredentials() ? "pushAPS=iPhone" : "pushAPS=Albert";
-            personaBit = $"{personaBit}; {valBit}; {pushBit}";
+            personaBit = $"{personaBit}; {nacBit}; {valBit}; {pushBit}";
             if (madridOk)
             {
                 var handles = meta?.Handles is { Count: > 0 }
@@ -4642,7 +4649,7 @@ public partial class MainWindow : Window
                             ExploratoryServicesStatusText.Text =
                                 "CloudKitContainers: " + TrimUiStatus(msg, 120);
                     }));
-                return await new CloudKitContainerProbeService(Orchestrator)
+                return await new CloudKitContainerProbeService(Orchestrator, Http)
                     .ProbeAsync(session, candidates, progress)
                     .ConfigureAwait(false);
             });

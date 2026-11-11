@@ -165,14 +165,10 @@ You can also verify offline whether a given Recovery Key matches harvested `RK-�
 
 ## Quick start
 
-**Needs:** Windows · [.NET 10 SDK](https://dotnet.microsoft.com/download) · a physical Anisette source (emulated stacks are no longer reliable) · an Apple ID **you** control.
+**Needs:** [.NET 10 SDK](https://dotnet.microsoft.com/download) · a physical Anisette source (emulated stacks are no longer reliable) · an Apple ID **you** control.
 
-```powershell
-dotnet build src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
-dotnet run --project src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
-```
-
-Or grab a signed build from [Releases](https://github.com/GiordanoSconti/iCloudKitExtractor/releases). Each release notes the **SHA-256** of the zip archives (also as `HASHES.sha256`); verify with `Get-FileHash -Algorithm SHA256`.
+- **Build & run** (Windows WPF / macOS Avalonia + Anisette): see **[How to Build](#how-to-build)** below.
+- Or grab a signed build from [Releases](https://github.com/GiordanoSconti/iCloudKitExtractor/releases). Each release notes the **SHA-256** of the zip archives (also as `HASHES.sha256`); verify with `Get-FileHash -Algorithm SHA256` (Windows) or `shasum -a 256` (macOS).
 
 ### Preview access to Anisette Server
 
@@ -235,7 +231,35 @@ OTP minted on-device via Frida → AuthKit/`akd`, then served by `AnisetteServer
 
 Optional app config file: `%AppData%\iCloudKitExtractor\anisette.json` (`authMode`, `serverUrl`). Env vars override the file.
 
-#### 3. Start AnisetteServer (Frida backend)
+#### 3. Start Anisette + IKE
+
+Build/run commands (Frida env, AnisetteServer / Anisette Middleware, iCloudKitExtractor) live in **[How to Build](#how-to-build)** — Windows and macOS are listed separately.
+
+Smoke test once Anisette is up:
+
+```bash
+curl http://127.0.0.1:6971/health
+curl http://127.0.0.1:6971/
+```
+
+Expect JSON with machine data (`X-Apple-I-MD-M`, `X-MMe-Client-Info` containing `com.apple.akd`).
+
+## How to Build
+
+Prerequisites for both platforms: [.NET 10 SDK](https://dotnet.microsoft.com/download), repo cloned locally, and (for Frida Anisette) a jailbroken iPhone with frida-server — see [Preparing a jailbroken iPhone](#preparing-a-jailbroken-iphone) and [Preferred Anisette](#preferred-anisette-frida-on-a-jailbroken-iphone).
+
+Shared library: `src/iCloudKitExtractor.Core` (`net10.0`). UI clients:
+
+| OS | Anisette | iCloudKit Extractor |
+|----|----------|---------------------|
+| **Windows** | `AnisetteServer` (console) and/or `AnisetteServer.Mac` → **AnisetteMiddleware** (Avalonia) | `iCloudKitExtractor` (WPF, `net10.0-windows`) |
+| **macOS** | `AnisetteServer.Mac` → **AnisetteMiddleware** (Avalonia) | `iCloudKitExtractor.Desktop` (Avalonia, `net10.0`) |
+
+Default local Anisette URL used below: `http://127.0.0.1:6971`.
+
+### Windows
+
+#### AnisetteServer (console, Frida)
 
 ```powershell
 $env:ANISETTE_SERVER_BACKEND = "frida"
@@ -248,27 +272,87 @@ $env:FRIDA_ANISETTE_PYTHON = "python"
 $env:FRIDA_ANISETTE_LITE = "1"
 $env:FRIDA_ANISETTE_TIMEOUT = "60"
 
+dotnet build src/AnisetteServer/AnisetteServer.csproj -c Release
 dotnet run --project src/AnisetteServer/AnisetteServer.csproj -c Release -- --backend frida --port 6971
 ```
 
 CLI `--backend` / `--port` override the environment.
 
-Smoke test:
+#### Anisette Middleware (Avalonia UI — Windows)
 
 ```powershell
-curl http://127.0.0.1:6971/health
-curl http://127.0.0.1:6971/
+dotnet build src/AnisetteServer.Mac/AnisetteServer.Mac.csproj -c Release
+dotnet run --project src/AnisetteServer.Mac/AnisetteServer.Mac.csproj -c Release
 ```
 
-Expect JSON with machine data (`X-Apple-I-MD-M`, `X-MMe-Client-Info` containing `com.apple.akd`).
+Publish example:
 
-#### 4. Point IKE at the server
+```powershell
+dotnet publish src/AnisetteServer.Mac/AnisetteServer.Mac.csproj -c Release -r win-x64 --self-contained false
+```
+
+#### iCloudKit Extractor (WPF)
+
+With Anisette already listening on `:6971`:
 
 ```powershell
 $env:ANISETTE_SERVER_URL = "http://127.0.0.1:6971/"
 $env:ICLOUD_AUTH_MODE = "iphone"
+
+dotnet build src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
 dotnet run --project src/iCloudKitExtractor/iCloudKitExtractor.csproj -c Release
 ```
+
+WPF targets `net10.0-windows` — build this project on Windows (or with Windows targeting packs). Optional Anisette settings file: `%AppData%\iCloudKitExtractor\anisette.json`.
+
+### macOS
+
+#### Anisette Middleware (Avalonia UI)
+
+Preferred on Mac (same binary name **AnisetteMiddleware**):
+
+```bash
+export ANISETTE_SERVER_BACKEND=frida
+export ANISETTE_SERVER_PORT=6971
+export FRIDA_ANISETTE_HOST=127.0.0.1:27042
+export FRIDA_ANISETTE_PROCESS=akd
+export FRIDA_ANISETTE_PYTHON=python3
+export FRIDA_ANISETTE_LITE=1
+export FRIDA_ANISETTE_TIMEOUT=60
+
+dotnet build src/AnisetteServer.Mac/AnisetteServer.Mac.csproj -c Release
+dotnet run --project src/AnisetteServer.Mac/AnisetteServer.Mac.csproj -c Release
+```
+
+Headless middleware (no UI):
+
+```bash
+dotnet run --project src/AnisetteServer.Mac/AnisetteServer.Mac.csproj -c Release -- --headless
+```
+
+Publish example (Apple Silicon):
+
+```bash
+dotnet publish src/AnisetteServer.Mac/AnisetteServer.Mac.csproj -c Release -r osx-arm64 --self-contained false
+```
+
+More detail: [src/AnisetteServer.Mac/README.md](src/AnisetteServer.Mac/README.md) · [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md).
+
+#### iCloudKit Extractor (Avalonia Desktop)
+
+WPF does **not** run on macOS. Use the Avalonia client:
+
+```bash
+export ANISETTE_SERVER_URL=http://127.0.0.1:6971/
+export ICLOUD_AUTH_MODE=iphone
+# Optional NAC relay (same Mac Mini middleware): IKE_NAC_RELAY_URL or derive from Anisette URL
+
+dotnet build src/iCloudKitExtractor.Core/iCloudKitExtractor.Core.csproj -c Release
+dotnet build src/iCloudKitExtractor.Desktop/iCloudKitExtractor.Desktop.csproj -c Release
+dotnet run --project src/iCloudKitExtractor.Desktop/iCloudKitExtractor.Desktop.csproj -c Release
+```
+
+Optional Anisette settings: `~/Library/Application Support/iCloudKitExtractor/anisette.json` (same schema as Windows). Default Anisette on macOS is local `http://127.0.0.1:6971`.
 
 ## Preparing a jailbroken iPhone
 
@@ -365,9 +449,11 @@ Lab diary entries under [Notes](https://giordanosconti.github.io/iCloudKitExtrac
 
 | Path | Role |
 |------|------|
-| `src/iCloudKitExtractor` | Main WPF app |
+| `src/iCloudKitExtractor.Core` | Shared services / models / protocol (`net10.0`) |
+| `src/iCloudKitExtractor` | Main WPF app (**Windows**) |
+| `src/iCloudKitExtractor.Desktop` | Avalonia UI (**macOS** / also runnable on Windows) |
 | `src/PhotosViewer` | Photo library viewer (copied into `viewer-payload` on IKE build) |
-| `src/AnisetteServer` | OTP / ADI server (unsigned, local) |
+| `src/AnisetteServer` | OTP / ADI server (unsigned, local; typical on Windows) |
 | `src/AnisetteServer.Licensed` | Licensed HTTP gate (self-host) |
 | `src/AnisetteServer.Mac` | Avalonia Frida middleware + license panel (**Windows / macOS**; binary `AnisetteMiddleware`) |
 | `src/AnisetteLicense` / `AnisetteLicenseGen` | Package-C crypto + CLI |
