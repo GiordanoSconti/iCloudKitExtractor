@@ -21,6 +21,8 @@ public static class OutputHashManifest
         ".tmp",
         "obj",
         "bin",
+        // Sensitive key material — purged at report close; never include in integrity.
+        IkeCaseSession.EscrowFolder,
     };
 
     public static async Task<HashManifestResult> WriteForDirectoryAsync(

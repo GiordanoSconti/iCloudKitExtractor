@@ -374,8 +374,19 @@ public partial class MainWindow : Window
                 $"  areas with data: {model.Areas.Count(a => a.FileCount > 0)} · " +
                 $"files={model.Areas.Sum(a => a.FileCount):N0}");
             RecordCaseOp("report", "generated", Path.GetFileName(path));
-            MessageBox.Show(this, "CloudKit Report generated.\n\n" + path, "LE Report",
+
+            var purged = _case.PurgeEscrowSensitiveData();
+            RecordCaseOp("escrow", "purged",
+                purged > 0 ? $"{purged} file(s) removed after report" : "escrow/ cleared after report");
+            AppendReportLog($"Escrow purged ({purged} file(s)) — sensitive material removed.");
+
+            MessageBox.Show(this,
+                "CloudKit Report generated.\n\n" + path +
+                "\n\nEscrow data was purged. The case will now close and the UI will reset.",
+                "LE Report",
                 MessageBoxButton.OK, MessageBoxImage.Information);
+
+            CloseCaseAndResetUi($"report generated → {Path.GetFileName(path)}");
         }
         catch (Exception ex)
         {
@@ -383,6 +394,85 @@ public partial class MainWindow : Window
             MessageBox.Show(this, ex.Message, "LE Report",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    /// <summary>
+    /// Closes the active case, clears auth/session state, and returns every tab to Case-only.
+    /// </summary>
+    private void CloseCaseAndResetUi(string? reason = null)
+    {
+        if (_case is not null)
+        {
+            try
+            {
+                IkeCaseOpsJournal.Append(_case, "case", "closed",
+                    string.IsNullOrWhiteSpace(reason) ? null : reason);
+            }
+            catch { /* journal best-effort */ }
+        }
+
+        _case = null;
+        _session = null;
+        _orchestrator = null;
+        _madridClient = null;
+        _lastReportPath = null;
+        _imapMail = null;
+        _imapSelectedFolder = null;
+        try { _imapCts?.Cancel(); } catch { /* ignore */ }
+        _imapCts = null;
+
+        _suppressPathWarn = true;
+        try
+        {
+            if (CaseIdTextBox is not null) CaseIdTextBox.Text = "";
+            if (CaseNameTextBox is not null) CaseNameTextBox.Text = "";
+            if (CaseExaminerTextBox is not null) CaseExaminerTextBox.Text = "";
+            if (CaseAgencyTextBox is not null) CaseAgencyTextBox.Text = "";
+            if (CaseNotesTextBox is not null) CaseNotesTextBox.Text = "";
+            if (CaseDestinationTextBox is not null) CaseDestinationTextBox.Text = "";
+            if (CaseStatusText is not null) CaseStatusText.Text = "No case open — create or open a case to continue.";
+            if (CaseLayoutHintText is not null)
+                CaseLayoutHintText.Text =
+                    "A case package creates logs/, backup/, escrow/, whatsapp/, drive/, files/, syncdata/, mail/, ops/, report/ under the destination.";
+
+            OutputFolderTextBox.Text = "";
+            DecryptOutputTextBox.Text = "";
+            WhatsAppOutputTextBox.Text = "";
+            ICloudDriveOutputTextBox.Text = "";
+            ICloudFilesOutputTextBox.Text = "";
+            SyncDataOutputTextBox.Text = "";
+
+            if (AppleIdTextBox is not null) AppleIdTextBox.Text = "";
+            if (PasswordBox is not null) PasswordBox.Password = "";
+            if (EscrowPasswordBox is not null) EscrowPasswordBox.Password = "";
+            if (EscrowRecoverySaltBox is not null) EscrowRecoverySaltBox.Text = "";
+            if (Hsa2AppleIdTextBox is not null) Hsa2AppleIdTextBox.Text = "";
+            if (Hsa2PasswordBox is not null) Hsa2PasswordBox.Password = "";
+            if (ImapAppPasswordBox is not null) ImapAppPasswordBox.Password = "";
+
+            if (ReportStatusText is not null) ReportStatusText.Text = "";
+            ClearLogTextBox(CaseLogTextBox);
+            ClearLogTextBox(ReportLogTextBox);
+        }
+        finally
+        {
+            _suppressPathWarn = false;
+        }
+
+        if (SaveCaseMetadataButton is not null)
+            SaveCaseMetadataButton.IsEnabled = false;
+
+        UpdateSessionUi(false);
+        ApplyUiWizardStage(UiWizardStage.CaseOnly);
+        LogAuth(string.IsNullOrWhiteSpace(reason)
+            ? "Case closed — UI reset to Case tab."
+            : $"Case closed ({reason}) — UI reset to Case tab.");
+    }
+
+    private static void ClearLogTextBox(System.Windows.Controls.TextBox? box)
+    {
+        if (box is null) return;
+        box.Clear();
     }
 
     private void OpenReportButton_Click(object sender, RoutedEventArgs e)

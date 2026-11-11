@@ -14,7 +14,8 @@ public static class IkeCaseReportBuilder
     private static readonly (string Folder, string Label)[] Areas =
     [
         (IkeCaseSession.BackupFolder, "Device backups"),
-        (IkeCaseSession.EscrowFolder, "Escrow / Octagon"),
+        // Escrow / Octagon is intentionally omitted: sensitive key material is not
+        // inventoried or hashed; it is purged when the CloudKit Report is generated.
         (IkeCaseSession.WhatsAppFolder, "WhatsApp CloudKit"),
         (IkeCaseSession.DriveFolder, "iCloud Drive"),
         (IkeCaseSession.FilesFolder, "iCloud Files"),
@@ -53,6 +54,11 @@ public static class IkeCaseReportBuilder
             try
             {
                 var rel = Path.GetRelativePath(session.RootPath, integrityPath).Replace('\\', '/');
+                if (rel.StartsWith(IkeCaseSession.EscrowFolder + "/", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(rel, IkeCaseSession.EscrowFolder, StringComparison.OrdinalIgnoreCase)
+                    || rel.StartsWith(IkeCaseSession.EscrowFolder + "\\", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 var json = File.ReadAllText(integrityPath);
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;

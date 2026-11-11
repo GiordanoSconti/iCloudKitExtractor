@@ -188,6 +188,44 @@ public sealed class IkeCaseSession
         }
     }
 
+    /// <summary>
+    /// Deletes all files under <see cref="EscrowRoot"/> (keys / bottles / CKKS exports)
+    /// and recreates an empty <c>escrow/</c> folder. Called after CloudKit Report generation.
+    /// </summary>
+    public int PurgeEscrowSensitiveData()
+    {
+        var root = EscrowRoot;
+        var deleted = 0;
+        if (Directory.Exists(root))
+        {
+            foreach (var f in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    File.SetAttributes(f, FileAttributes.Normal);
+                    File.Delete(f);
+                    deleted++;
+                }
+                catch
+                {
+                    // best-effort purge
+                }
+            }
+
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // leftover locked dirs — EnsureSubfolders recreates as needed
+            }
+        }
+
+        Directory.CreateDirectory(root);
+        return deleted;
+    }
+
     private static void EnsureSubfolders(string root)
     {
         foreach (var name in Subfolders)
