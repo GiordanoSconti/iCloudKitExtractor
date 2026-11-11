@@ -52,10 +52,16 @@ export default {
       if (record.fingerprint) {
         await store.put(keyFp(record.fingerprint), id);
       }
+      await addToIndex(store, id);
       return json({ ok: true, license_id: id, replica_id: replicaId }, 200, replicaId);
     }
 
     if (request.method === "GET") {
+      if (path === "/internal/license/index") {
+        const ids = await readIndex(store);
+        return json({ ok: true, ids, replica_id: replicaId }, 200, replicaId);
+      }
+
       // Fingerprint route first — do not treat "by-fingerprint" as a license id.
       const byFp = path.match(/^\/internal\/license\/by-fingerprint\/([^/]+)$/);
       if (byFp) {
@@ -74,7 +80,7 @@ export default {
       const byId = path.match(/^\/internal\/license\/([^/]+)$/);
       if (byId) {
         const id = decodeURIComponent(byId[1]).trim();
-        if (id.toLowerCase() === "by-fingerprint") {
+        if (id.toLowerCase() === "by-fingerprint" || id.toLowerCase() === "index") {
           return json({ ok: false, error: "not_found" }, 404, replicaId);
         }
         const raw = await store.get(keyId(id));
@@ -91,6 +97,48 @@ export default {
 
 function kv(env) {
   return env.LICENSES || env.ANISETTE_LICENSE_KV || null;
+}
+
+const INDEX_KEY = "lic:index";
+
+async function readIndex(store) {
+  try {
+    const raw = await store.get(INDEX_KEY);
+    let ids = [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        ids = parsed.map((x) => String(x || "").trim()).filter(Boolean);
+      }
+    }
+    if (ids.length === 0) {
+      // Backfill from existing lic:* keys (first deploy / pre-index rows).
+      let cursor;
+      do {
+        const page = await store.list({ prefix: "lic:", cursor });
+        for (const k of page.keys) {
+          if (!k.name || k.name === INDEX_KEY) continue;
+          // skip accidental nested keys; license ids are lic:{hex}
+          const id = k.name.slice("lic:".length);
+          if (id && id !== "index") ids.push(id);
+        }
+        cursor = page.list_complete ? undefined : page.cursor;
+      } while (cursor);
+      ids = [...new Set(ids)];
+      if (ids.length) await store.put(INDEX_KEY, JSON.stringify(ids));
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+async function addToIndex(store, id) {
+  const ids = await readIndex(store);
+  if (!ids.includes(id)) {
+    ids.push(id);
+    await store.put(INDEX_KEY, JSON.stringify(ids));
+  }
 }
 
 function keyId(id) {

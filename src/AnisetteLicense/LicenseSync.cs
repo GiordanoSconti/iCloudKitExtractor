@@ -14,6 +14,7 @@ public static class LicenseSyncOptions
     public const string HeaderName = "X-Anisette-License-Sync";
     public const string HopHeaderName = "X-Anisette-Sync-Hop";
     public const string ReplicaHeaderName = "X-Anisette-Replica-Id";
+    public const string HubReplicaId = "license-hub";
     public const string EnvPeers = "ANISETTE_LICENSE_PEERS";
     public const string EnvSecret = "ANISETTE_LICENSE_SYNC_SECRET";
     public const string EnvReplicaId = "ANISETTE_LICENSE_REPLICA_ID";
@@ -43,10 +44,6 @@ public static class LicenseSyncOptions
     public static bool IsConfigured =>
         PeerBaseUrls.Count > 0 && !string.IsNullOrWhiteSpace(SyncSecret);
 
-    /// <summary>
-    /// How many times to hit the shared Tunnel hostname until a *different*
-    /// replica answers (default 12). Needed when both origins share one hostname.
-    /// </summary>
     public static int SyncAttempts
     {
         get
@@ -58,9 +55,6 @@ public static class LicenseSyncOptions
         }
     }
 
-    /// <summary>
-    /// Stable id for this origin. Env wins; otherwise persisted under data/replica-id.txt.
-    /// </summary>
     public static string LocalReplicaId
     {
         get
@@ -119,9 +113,16 @@ public static class LicenseSyncOptions
         return false;
     }
 
-    public static bool IsOtherReplica(string? responseReplicaId) =>
-        !string.IsNullOrWhiteSpace(responseReplicaId)
-        && !string.Equals(responseReplicaId.Trim(), LocalReplicaId, StringComparison.OrdinalIgnoreCase);
+    /// <summary>True when the response came from the Worker hub or another Mini (not self).</summary>
+    public static bool IsSuccessfulSyncPeer(string? responseReplicaId)
+    {
+        if (string.IsNullOrWhiteSpace(responseReplicaId))
+            return false;
+        var id = responseReplicaId.Trim();
+        if (string.Equals(id, HubReplicaId, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return !string.Equals(id, LocalReplicaId, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed class LicenseSyncRecord
@@ -177,7 +178,6 @@ public sealed class LicenseSyncRecord
 
 public sealed class LicenseSyncClient
 {
-    // Snake_case via [JsonPropertyName] — must match Worker KV /internal contract.
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -195,18 +195,19 @@ public sealed class LicenseSyncClient
 
     public void UpsertLocal(LicenseSyncRecord record) => _db.UpsertSync(record);
 
-    public async Task PushAsync(LicenseSyncRecord record, CancellationToken ct = default)
+    /// <returns>True if the hub or another replica acknowledged the row.</returns>
+    public async Task<bool> PushAsync(LicenseSyncRecord record, CancellationToken ct = default)
     {
         if (!LicenseSyncOptions.IsConfigured)
-            return;
+            return false;
 
         var secret = LicenseSyncOptions.SyncSecret!;
         var attempts = LicenseSyncOptions.SyncAttempts;
-        var reachedOther = false;
+        var reached = false;
 
         foreach (var peer in LicenseSyncOptions.PeerBaseUrls)
         {
-            for (var i = 0; i < attempts && !reachedOther; i++)
+            for (var i = 0; i < attempts && !reached; i++)
             {
                 try
                 {
@@ -216,21 +217,23 @@ public sealed class LicenseSyncClient
                     req.Content = JsonContent.Create(record, options: JsonOpts);
                     using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
                     var remoteId = ReadReplicaId(resp);
-                    if (resp.IsSuccessStatusCode && LicenseSyncOptions.IsOtherReplica(remoteId))
-                        reachedOther = true;
+                    if (resp.IsSuccessStatusCode && LicenseSyncOptions.IsSuccessfulSyncPeer(remoteId))
+                        reached = true;
                 }
                 catch
                 {
                     // peer unreachable / tunnel blip — retry
                 }
 
-                if (!reachedOther && i + 1 < attempts)
+                if (!reached && i + 1 < attempts)
                     await Task.Delay(40 + (i * 25), ct).ConfigureAwait(false);
             }
         }
+
+        return reached;
     }
 
-    public async Task PushRowAsync(LicenseRow row, string? tokenHint = null, CancellationToken ct = default) =>
+    public async Task<bool> PushRowAsync(LicenseRow row, string? tokenHint = null, CancellationToken ct = default) =>
         await PushAsync(LicenseSyncRecord.FromRow(row, tokenHint), ct).ConfigureAwait(false);
 
     public async Task<LicenseSyncRecord?> PullByIdAsync(string licenseId, CancellationToken ct = default)
@@ -255,6 +258,83 @@ public sealed class LicenseSyncClient
             ct).ConfigureAwait(false);
     }
 
+    /// <summary>Pull every id listed by the hub index into the local SQLite DB.</summary>
+    public async Task<int> PullAllFromHubAsync(CancellationToken ct = default)
+    {
+        if (!LicenseSyncOptions.IsConfigured)
+            return 0;
+
+        var ids = await PullIndexAsync(ct).ConfigureAwait(false);
+        var n = 0;
+        foreach (var id in ids)
+        {
+            var rec = await PullByIdAsync(id, ct).ConfigureAwait(false);
+            if (rec is not null)
+                n++;
+        }
+
+        return n;
+    }
+
+    public async Task<IReadOnlyList<string>> PullIndexAsync(CancellationToken ct = default)
+    {
+        if (!LicenseSyncOptions.IsConfigured)
+            return Array.Empty<string>();
+
+        var secret = LicenseSyncOptions.SyncSecret!;
+        var attempts = LicenseSyncOptions.SyncAttempts;
+
+        foreach (var peer in LicenseSyncOptions.PeerBaseUrls)
+        {
+            for (var i = 0; i < attempts; i++)
+            {
+                try
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Get, peer + "/internal/license/index");
+                    req.Headers.TryAddWithoutValidation(LicenseSyncOptions.HeaderName, secret);
+                    req.Headers.TryAddWithoutValidation(LicenseSyncOptions.HopHeaderName, "1");
+                    using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+                    var remoteId = ReadReplicaId(resp);
+                    if (!LicenseSyncOptions.IsSuccessfulSyncPeer(remoteId))
+                    {
+                        if (i + 1 < attempts)
+                            await Task.Delay(40 + (i * 25), ct).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        if (i + 1 < attempts)
+                            await Task.Delay(40 + (i * 25), ct).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                    using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+                    if (!doc.RootElement.TryGetProperty("ids", out var arr)
+                        || arr.ValueKind != JsonValueKind.Array)
+                        return Array.Empty<string>();
+
+                    return arr.EnumerateArray()
+                        .Select(e => e.GetString()?.Trim())
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Select(s => s!)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+                catch
+                {
+                    // retry
+                }
+
+                if (i + 1 < attempts)
+                    await Task.Delay(40 + (i * 25), ct).ConfigureAwait(false);
+            }
+        }
+
+        return Array.Empty<string>();
+    }
+
     private async Task<LicenseSyncRecord?> PullWithRetriesAsync(
         Func<string, string> urlForPeer,
         bool acceptNotFoundFromOther,
@@ -275,8 +355,7 @@ public sealed class LicenseSyncClient
                     using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
                     var remoteId = ReadReplicaId(resp);
 
-                    // LB hit us again — keep retrying until another origin answers.
-                    if (!LicenseSyncOptions.IsOtherReplica(remoteId))
+                    if (!LicenseSyncOptions.IsSuccessfulSyncPeer(remoteId))
                     {
                         if (i + 1 < attempts)
                             await Task.Delay(40 + (i * 25), ct).ConfigureAwait(false);

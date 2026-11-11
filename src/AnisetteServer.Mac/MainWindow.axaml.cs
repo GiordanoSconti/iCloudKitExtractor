@@ -155,11 +155,31 @@ public partial class MainWindow : Window
             _settings.ApplyToEnvironment();
             var dbPath = LicensePaths.DatabasePath;
             using var db = new LicenseDatabase(dbPath);
+
+            var hubPulled = 0;
+            if (LicenseSyncOptions.IsConfigured)
+            {
+                using var syncHttp = new System.Net.Http.HttpClient
+                {
+                    Timeout = TimeSpan.FromSeconds(20),
+                };
+                var sync = new LicenseSyncClient(syncHttp, db);
+                try
+                {
+                    hubPulled = sync.PullAllFromHubAsync().GetAwaiter().GetResult();
+                }
+                catch (Exception syncEx)
+                {
+                    ErrorText.Text = "Hub sync: " + syncEx.Message;
+                }
+            }
+
             _licenseRows = db.ListAll().ToList();
             // Materialize a new list so Avalonia always refreshes the ItemsSource.
             LicenseList.ItemsSource = _licenseRows.Select(FormatRow).ToList();
             LicenseDbHint.Text =
                 $"{_licenseRows.Count} license(s) · {dbPath}"
+                + (hubPulled > 0 ? $" · pulled {hubPulled} from hub" : "")
                 + " · loopback free only without CF/XFF headers; Cloudflare Tunnel clients auto-issue";
         }
         catch (Exception ex)

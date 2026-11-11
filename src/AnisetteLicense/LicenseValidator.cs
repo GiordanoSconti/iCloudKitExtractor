@@ -71,6 +71,8 @@ public sealed class LicenseValidator
         if (!missing)
             return false;
 
+        var hubOk = false;
+
         // 1) Pull from Worker hub / peers
         if (_sync is not null && LicenseSyncOptions.IsConfigured)
         {
@@ -90,8 +92,7 @@ public sealed class LicenseValidator
             }
         }
 
-        // 2) Signature already proved authenticity — rehydrate local SQLite (and push to hub).
-        // Fixes divergent replica DBs / hub outages when Package-C Bearer is still valid.
+        // 2) Signature already proved authenticity — rehydrate local SQLite and push to hub.
         try
         {
             var hint = token.Length <= 24 ? token : token[..12] + "…" + token[^8..];
@@ -99,18 +100,25 @@ public sealed class LicenseValidator
             if (_sync is not null && LicenseSyncOptions.IsConfigured
                 && _db.TryGet(payload.LicenseId, out var row, out _) && row is not null)
             {
-                _ = Task.Run(async () =>
+                try
                 {
-                    try { await _sync.PushRowAsync(row, hint).ConfigureAwait(false); }
-                    catch { /* ignore */ }
-                });
+                    hubOk = _sync.PushRowAsync(row, hint).GetAwaiter().GetResult();
+                }
+                catch
+                {
+                    hubOk = false;
+                }
             }
 
             if (_db.TryGetActive(payload.LicenseId, out _, out error))
             {
-                syncedFromPeer = true;
-                error = ReplicaSyncedError;
-                return false;
+                // Only claim cross-replica sync when the hub (or other Mini) acknowledged.
+                syncedFromPeer = hubOk;
+                error = hubOk
+                    ? ReplicaSyncedError
+                    : "license rehydrated locally but hub sync failed — check ANISETTE_LICENSE_SYNC_SECRET";
+                // Allow the request if hub push failed but local row exists — otherwise UX loops forever.
+                return !hubOk;
             }
         }
         catch (Exception ex)
