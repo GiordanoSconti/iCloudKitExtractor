@@ -4,11 +4,13 @@ public sealed class LicenseValidator
 {
     private readonly string _publicKeyPath;
     private readonly LicenseDatabase _db;
+    private readonly LicenseSyncClient? _sync;
 
-    public LicenseValidator(string publicKeyPath, LicenseDatabase db)
+    public LicenseValidator(string publicKeyPath, LicenseDatabase db, LicenseSyncClient? sync = null)
     {
         _publicKeyPath = publicKeyPath;
         _db = db;
+        _sync = sync;
     }
 
     public bool TryValidateBearer(string? authorizationHeader, out string error, out LicensePayload? payload)
@@ -47,9 +49,26 @@ public sealed class LicenseValidator
         if (!LicenseCrypto.TryVerify(token, _publicKeyPath, out payload, out error))
             return false;
 
-        if (!_db.TryGetActive(payload!.LicenseId, out _, out error))
-            return false;
+        if (_db.TryGetActive(payload!.LicenseId, out _, out error))
+            return true;
 
-        return true;
+        // Replica miss: pull from peer tunnels then retry (multi-LAN HA).
+        if (_sync is not null
+            && LicenseSyncOptions.IsConfigured
+            && error.Contains("not registered", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var pulled = _sync.PullByIdAsync(payload.LicenseId).GetAwaiter().GetResult();
+                if (pulled is not null && _db.TryGetActive(payload.LicenseId, out _, out error))
+                    return true;
+            }
+            catch
+            {
+                // fall through with original error
+            }
+        }
+
+        return false;
     }
 }

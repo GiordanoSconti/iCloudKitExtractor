@@ -87,6 +87,51 @@ public sealed class LicenseDatabase : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>Insert or replace a row replicated from a peer (same Ed25519 keyspace).</summary>
+    public void UpsertSync(LicenseSyncRecord record)
+    {
+        if (string.IsNullOrWhiteSpace(record.LicenseId))
+            throw new ArgumentException("license_id required", nameof(record));
+
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText =
+            """
+            INSERT INTO licenses (
+              license_id, subject, issued_at, expires_at, revoked_at, note, token_hint,
+              fingerprint, client_ip, enabled, emitted_once)
+            VALUES (
+              $id, $sub, $iat, $exp, $rev, $note, $hint,
+              $fp, $ip, $en, $emitted)
+            ON CONFLICT(license_id) DO UPDATE SET
+              subject = excluded.subject,
+              issued_at = excluded.issued_at,
+              expires_at = excluded.expires_at,
+              revoked_at = excluded.revoked_at,
+              note = excluded.note,
+              token_hint = COALESCE(excluded.token_hint, licenses.token_hint),
+              fingerprint = COALESCE(excluded.fingerprint, licenses.fingerprint),
+              client_ip = COALESCE(excluded.client_ip, licenses.client_ip),
+              enabled = excluded.enabled,
+              emitted_once = CASE
+                WHEN excluded.emitted_once != 0 OR licenses.emitted_once != 0 THEN 1
+                ELSE 0 END;
+            """;
+        cmd.Parameters.AddWithValue("$id", record.LicenseId.Trim());
+        cmd.Parameters.AddWithValue("$sub", string.IsNullOrWhiteSpace(record.Subject) ? "sync" : record.Subject);
+        cmd.Parameters.AddWithValue("$iat", string.IsNullOrWhiteSpace(record.IssuedAt)
+            ? DateTimeOffset.UtcNow.ToString("o")
+            : record.IssuedAt);
+        cmd.Parameters.AddWithValue("$exp", (object?)record.ExpiresAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$rev", (object?)record.RevokedAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$note", (object?)record.Note ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$hint", (object?)record.TokenHint ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$fp", (object?)record.Fingerprint ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$ip", (object?)record.ClientIp ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$en", record.Enabled ? 1 : 0);
+        cmd.Parameters.AddWithValue("$emitted", record.EmittedOnce ? 1 : 0);
+        cmd.ExecuteNonQuery();
+    }
+
     public bool TryGetActive(string licenseId, out LicenseRow? row, out string error)
     {
         row = null;

@@ -61,7 +61,16 @@ data/tls/
 **/data/tls/
 **/anisette_ed25519_private.pem
 **/anisette_ed25519_public.pem
+**/middleware.json
+**/replica-id.txt
 *.pfx
+
+# Cloudflare Workers local secrets / state
+**/.wrangler/
+**/.dev.vars
+**/dev.vars
+**/wrangler.toml.local
+deploy/anisette-license-hub/wrangler.toml
 
 # Local release build trees (publish via GitHub Releases, not git)
 _release/

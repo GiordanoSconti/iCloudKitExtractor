@@ -35,9 +35,25 @@ AnisetteHttpsHosting.Configure(builder, urls);
 
 builder.Services.AddSingleton(_ => new LicenseDatabase(dbPath));
 builder.Services.AddSingleton(sp =>
-    new LicenseValidator(publicKeyPath, sp.GetRequiredService<LicenseDatabase>()));
+{
+    var syncHttp = new HttpClient(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+    })
+    { Timeout = TimeSpan.FromSeconds(15) };
+    return new LicenseSyncClient(syncHttp, sp.GetRequiredService<LicenseDatabase>());
+});
 builder.Services.AddSingleton(sp =>
-    new LicenseIssuer(privateKeyPath, publicKeyPath, sp.GetRequiredService<LicenseDatabase>()));
+    new LicenseValidator(
+        publicKeyPath,
+        sp.GetRequiredService<LicenseDatabase>(),
+        sp.GetRequiredService<LicenseSyncClient>()));
+builder.Services.AddSingleton(sp =>
+    new LicenseIssuer(
+        privateKeyPath,
+        publicKeyPath,
+        sp.GetRequiredService<LicenseDatabase>(),
+        sp.GetRequiredService<LicenseSyncClient>()));
 
 // Optional Authorization allowlist: ANISETTE_LICENSE_ALLOWLIST_ENFORCE=1
 // entries in {ANISETTE_LICENSE_ROOT}/data/license-allowlist.json (or middleware seed).
@@ -77,6 +93,7 @@ builder.Services.AddSingleton<IAnisetteProvider>(sp =>
 var app = builder.Build();
 
 app.UseMiddleware<LicenseAuthMiddleware>();
+app.MapLicenseSync();
 
 app.MapGet("/health", async (HttpRequest req, IAnisetteProvider anisette, CancellationToken ct) =>
 {

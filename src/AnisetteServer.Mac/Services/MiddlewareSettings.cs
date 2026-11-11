@@ -67,6 +67,24 @@ public sealed class MiddlewareSettings
     [JsonPropertyName("licenseAllowlist")]
     public List<string> LicenseAllowlist { get; set; } = new();
 
+    /// <summary>
+    /// Peer Anisette base URL(s) for license sync. With one Tunnel + two replicas,
+    /// set this to the shared public hostname on both machines.
+    /// </summary>
+    [JsonPropertyName("licensePeers")]
+    public string? LicensePeers { get; set; }
+
+    /// <summary>Shared secret for /internal/license-sync between Tunnel replicas.</summary>
+    [JsonPropertyName("licenseSyncSecret")]
+    public string? LicenseSyncSecret { get; set; }
+
+    /// <summary>
+    /// Unique id for this origin (e.g. mini-it / mini-my). Required so same-hostname
+    /// LB sync can tell self from the other replica.
+    /// </summary>
+    [JsonPropertyName("licenseReplicaId")]
+    public string? LicenseReplicaId { get; set; }
+
     public static string DefaultConfigPath()
     {
         var dir = DefaultDataRoot();
@@ -79,27 +97,43 @@ public sealed class MiddlewareSettings
         if (!string.IsNullOrEmpty(env))
             return Path.GetFullPath(env);
 
+        string preferred;
+        string legacy;
+
         // Strict OS roots — do not infer macOS from a %USERPROFILE%\Library folder on Windows.
         if (OperatingSystem.IsMacOS())
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            return Path.Combine(home, "Library", "Application Support", "ForensisLab", "AnisetteMiddleware");
+            var appSupport = Path.Combine(home, "Library", "Application Support");
+            preferred = Path.Combine(appSupport, "iCloudKitExtractor", "AnisetteMiddleware");
+            legacy = Path.Combine(appSupport, "ForensisLab", "AnisetteMiddleware");
         }
-
-        if (OperatingSystem.IsWindows())
+        else if (OperatingSystem.IsWindows())
         {
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "ForensisLab",
-                "AnisetteMiddleware");
+            var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            preferred = Path.Combine(roaming, "iCloudKitExtractor", "AnisetteMiddleware");
+            legacy = Path.Combine(roaming, "ForensisLab", "AnisetteMiddleware");
+        }
+        else
+        {
+            // Linux / other: XDG-style under ~/.local/share
+            var xdg = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrWhiteSpace(xdg))
+                xdg = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+            preferred = Path.Combine(xdg, "iCloudKitExtractor", "AnisetteMiddleware");
+            legacy = Path.Combine(xdg, "ForensisLab", "AnisetteMiddleware");
         }
 
-        // Linux / other: XDG-style under ~/.local/share
-        var xdg = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(xdg))
-            xdg = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
-        return Path.Combine(xdg, "ForensisLab", "AnisetteMiddleware");
+        // Keep using the old folder if it already has keys/db and the new one does not.
+        if (!HasMiddlewareData(preferred) && HasMiddlewareData(legacy))
+            return legacy;
+        return preferred;
     }
+
+    private static bool HasMiddlewareData(string root) =>
+        File.Exists(Path.Combine(root, "keys", "anisette_ed25519_private.pem"))
+        || File.Exists(Path.Combine(root, "middleware.json"))
+        || File.Exists(Path.Combine(root, "data", "anisette-licenses.db"));
 
     /// <summary>
     /// Point <see cref="LicensePaths"/> at this middleware data root (keys + SQLite).
@@ -124,6 +158,16 @@ public sealed class MiddlewareSettings
         Environment.SetEnvironmentVariable("FRIDA_ANISETTE_TIMEOUT", TimeoutSec.ToString());
         if (!string.IsNullOrWhiteSpace(FetchScript))
             Environment.SetEnvironmentVariable("FRIDA_ANISETTE_FETCH_PY", FetchScript);
+
+        if (!string.IsNullOrWhiteSpace(LicensePeers))
+            Environment.SetEnvironmentVariable(LicenseSyncOptions.EnvPeers, LicensePeers.Trim());
+        if (!string.IsNullOrWhiteSpace(LicenseSyncSecret))
+            Environment.SetEnvironmentVariable(LicenseSyncOptions.EnvSecret, LicenseSyncSecret.Trim());
+        if (!string.IsNullOrWhiteSpace(LicenseReplicaId))
+        {
+            Environment.SetEnvironmentVariable(LicenseSyncOptions.EnvReplicaId, LicenseReplicaId.Trim());
+            LicenseSyncOptions.InvalidateReplicaIdCache();
+        }
     }
 
     public void EnsureKeys()

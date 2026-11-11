@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net.Http;
 using System.Text.Json.Serialization;
 using iCloudKitExtractor.AnisetteLicense;
 using iCloudKitExtractor.AnisetteServer.Licensed.Hosting;
@@ -102,12 +103,25 @@ public sealed class MiddlewareHost : IAsyncDisposable
 
         builder.Services.AddSingleton(_ => new LicenseDatabase(LicensePaths.DatabasePath));
         builder.Services.AddSingleton(sp =>
-            new LicenseValidator(LicensePaths.PublicKeyPath, sp.GetRequiredService<LicenseDatabase>()));
+        {
+            var syncHttp = new HttpClient(new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+            })
+            { Timeout = TimeSpan.FromSeconds(15) };
+            return new LicenseSyncClient(syncHttp, sp.GetRequiredService<LicenseDatabase>());
+        });
+        builder.Services.AddSingleton(sp =>
+            new LicenseValidator(
+                LicensePaths.PublicKeyPath,
+                sp.GetRequiredService<LicenseDatabase>(),
+                sp.GetRequiredService<LicenseSyncClient>()));
         builder.Services.AddSingleton(sp =>
             new LicenseIssuer(
                 LicensePaths.PrivateKeyPath,
                 LicensePaths.PublicKeyPath,
-                sp.GetRequiredService<LicenseDatabase>()));
+                sp.GetRequiredService<LicenseDatabase>(),
+                sp.GetRequiredService<LicenseSyncClient>()));
         builder.Services.AddSingleton<ILicenseAllowlist>(LicenseAllowlist);
         builder.Services.AddSingleton(LicenseAllowlist);
         builder.Services.AddSingleton(ConnectionLog);
@@ -192,6 +206,7 @@ public sealed class MiddlewareHost : IAsyncDisposable
             }
         }
 
+        app.MapLicenseSync();
         app.MapGet("/", Mint);
         app.MapGet("/get_headers", Mint);
         app.MapGet("/v1/get_headers", Mint);

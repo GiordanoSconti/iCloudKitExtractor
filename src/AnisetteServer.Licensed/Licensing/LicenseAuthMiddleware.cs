@@ -42,6 +42,20 @@ public sealed class LicenseAuthMiddleware
             return;
         }
 
+        // Peer license sync (Cloudflare Tunnel / multi-LAN) — secret gate, not Package-C.
+        if (LicenseSyncEndpoints.IsSyncPath(path))
+        {
+            if (!LicenseSyncEndpoints.IsAuthorizedSyncRequest(ctx.Request))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await ctx.Response.WriteAsJsonAsync(new { ok = false, error = "sync_unauthorized" });
+                return;
+            }
+
+            await _next(ctx);
+            return;
+        }
+
         string? Header(string name) => ctx.Request.Headers[name].ToString();
         var clientIp = InboundClientAddress.Resolve(ctx.Connection.RemoteIpAddress, Header);
         ctx.Items[InboundClientAddress.ItemsKey] = clientIp;

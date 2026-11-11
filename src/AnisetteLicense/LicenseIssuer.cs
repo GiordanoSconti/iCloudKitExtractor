@@ -6,13 +6,19 @@ public sealed class LicenseIssuer
     private readonly string _privateKeyPath;
     private readonly string _publicKeyPath;
     private readonly LicenseDatabase _db;
+    private readonly LicenseSyncClient? _sync;
     private readonly object _gate = new();
 
-    public LicenseIssuer(string privateKeyPath, string publicKeyPath, LicenseDatabase db)
+    public LicenseIssuer(
+        string privateKeyPath,
+        string publicKeyPath,
+        LicenseDatabase db,
+        LicenseSyncClient? sync = null)
     {
         _privateKeyPath = privateKeyPath;
         _publicKeyPath = publicKeyPath;
         _db = db;
+        _sync = sync;
     }
 
     public string IssueManual(
@@ -42,6 +48,7 @@ public sealed class LicenseIssuer
             ? bundle.Token
             : bundle.Token[..12] + "…" + bundle.Token[^8..];
         _db.Insert(payload, hint, emittedOnce: false);
+        PushFireAndForget(payload.LicenseId, hint);
         return bundle.Token;
     }
 
@@ -67,6 +74,20 @@ public sealed class LicenseIssuer
             }
 
             var existing = _db.FindByFingerprint(fp);
+            if (existing is null && _sync is not null && LicenseSyncOptions.IsConfigured)
+            {
+                try
+                {
+                    var pulled = _sync.PullByFingerprintAsync(fp).GetAwaiter().GetResult();
+                    if (pulled is not null)
+                        existing = _db.FindByFingerprint(fp);
+                }
+                catch
+                {
+                    // peers unreachable — continue with local issue
+                }
+            }
+
             if (existing is not null)
             {
                 if (existing.EmittedOnce || !string.IsNullOrEmpty(existing.RevokedAt) || existing.Enabled)
@@ -97,8 +118,28 @@ public sealed class LicenseIssuer
                 ? bundle.Token
                 : bundle.Token[..12] + "…" + bundle.Token[^8..];
             _db.Insert(payload, hint, emittedOnce: true);
+            PushFireAndForget(payload.LicenseId, hint);
             return AutoIssueResult.Issued(payload.LicenseId, b64, fp);
         }
+    }
+
+    private void PushFireAndForget(string licenseId, string? hint)
+    {
+        if (_sync is null || !LicenseSyncOptions.IsConfigured)
+            return;
+        if (!_db.TryGet(licenseId, out var row, out _) || row is null)
+            return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _sync.PushRowAsync(row, hint).ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignore
+            }
+        });
     }
 }
 

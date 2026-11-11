@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using iCloudKitExtractor.AnisetteLicense;
+using iCloudKitExtractor.AnisetteServer.Licensed.Licensing;
 using Microsoft.AspNetCore.Http;
 
 namespace AnisetteServer.Mac.Services;
@@ -49,7 +50,11 @@ public sealed class ConnectionGuardMiddleware
         var allHeaders = CaptureAllHeaders(ctx);
 
         // /health + true local loopback skip abuse; Tunnel clients are rate-limited by real IP.
-        var skipAbuse = string.Equals(path, "/health", StringComparison.OrdinalIgnoreCase)
+        // License sync between Tunnel replicas also skips VPN/abuse (authenticated by sync secret).
+        var syncOk = LicenseSyncEndpoints.IsSyncPath(path)
+                     && LicenseSyncEndpoints.IsAuthorizedSyncRequest(ctx.Request);
+        var skipAbuse = syncOk
+                        || string.Equals(path, "/health", StringComparison.OrdinalIgnoreCase)
                         || InboundClientAddress.IsTrustedLocalLoopback(ctx.Connection.RemoteIpAddress, Header);
 
         IPAddress? classifyIp = IPAddress.TryParse(ip, out var parsed)

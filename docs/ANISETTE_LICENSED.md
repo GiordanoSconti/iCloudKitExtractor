@@ -38,6 +38,54 @@ iCloudKit Extractor stores the **entire Base64 blob** in `%AppData%\iCloudKitExt
 4. IKE fills the License field, saves settings, shows an overlay (copy + “won’t be sent again”).
 5. Later requests from the same fingerprint without Bearer → `401 license_already_issued` (no re-send).
 
+## Multi-replica / Cloudflare Tunnel (different LANs)
+
+Cloudflare may send client traffic to **any** origin. Each replica has its own SQLite, so a
+license auto-issued on A is unknown on B → `401`.
+
+On every auto-issue / manual issue the issuer **pushes** the row to `licensePeers`
+(`POST /internal/license-sync`). On Bearer miss the validator **pulls**.
+
+### Single hostname only (`https://www.icloudkitextractor.eu`)
+
+Tunnel replicas are **not** individually addressable on one hostname (geo routing hits
+yourself). Keep `www` for IKE, and put a **Workers route** on the same host for sync:
+
+| Path | Goes to |
+|------|---------|
+| `www.icloudkitextractor.eu/*` | Tunnel replicas (Anisette) |
+| `www.icloudkitextractor.eu/internal/license*` | Worker + KV (shared license hub) |
+
+Worker sources: `deploy/anisette-license-hub/`.
+
+```bash
+cd deploy/anisette-license-hub
+copy wrangler.toml.example wrangler.toml   # Windows; on macOS: cp …
+npx wrangler kv namespace create ANISETTE_LICENSE_KV   # paste id into wrangler.toml
+npx wrangler secret put ANISETTE_LICENSE_SYNC_SECRET   # never commit this value
+npx wrangler deploy
+# Dashboard → Workers → Routes:
+#   www.icloudkitextractor.eu/internal/license*
+# wrangler.toml is gitignored (local KV id); only wrangler.toml.example is public.
+```
+
+Both Minis (same Ed25519 keys + same sync secret):
+
+```json
+{
+  "licenseSyncSecret": "long-random-shared-secret",
+  "licensePeers": "https://www.icloudkitextractor.eu",
+  "licenseReplicaId": "mini-it"
+}
+```
+
+(`licenseReplicaId` still unique per Mini; the hub answers as `license-hub`.)
+
+### Alternative: dedicated sync hostnames (two tunnel UUIDs)
+
+If you prefer peer-to-peer without a Worker, point each Mini’s `licensePeers` at a
+hostname that resolves only to the other tunnel UUID (still under the same zone).
+
 ## Quick start (keys + issue)
 
 ```powershell
@@ -70,7 +118,8 @@ UI:
 - **Server**: Frida host (`192.168.x.y:27042`), process `akd`, Python, listen URLs (`http://0.0.0.0:6971` by default; `https://…` optional), Start/Stop
 - **Licenses**: list / disable / enable / remove / manual Package-C issue
 
-Default data root: `%AppData%\ForensisLab\AnisetteMiddleware` on Windows, or `~/Library/Application Support/ForensisLab/AnisetteMiddleware/` on macOS.  
+Default data root: `%AppData%\iCloudKitExtractor\AnisetteMiddleware` on Windows, or `~/Library/Application Support/iCloudKitExtractor/AnisetteMiddleware/` on macOS.  
+(Legacy `ForensisLab\AnisetteMiddleware` is still used if it already contains keys and the new path does not.)  
 TLS files land in `data/tls/` only when you enable HTTPS.
 
 ### HTTP (default) vs HTTPS (optional)
