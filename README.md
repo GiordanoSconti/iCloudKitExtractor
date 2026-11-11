@@ -161,6 +161,47 @@ Flow in short:
 
 You can also verify offline whether a given Recovery Key matches harvested `RK-…` peer IDs and unwrap recoverable share dumps the same way.
 
+## iCDP records (Octagon bottles)
+
+Octagon trust for ADP / Manatee / PCS often rests on **iCDP bottles**: Escrowproxy Secure Backup rows labeled `com.apple.icdp.record.*`. Each row is tied to a device that previously joined the circle (serial, build, remaining HSM tries). Listing bottles (`get_records`) is **non-destructive**. Recovering a bottle against the HSM is **not**.
+
+Lab diary: [Day 9 — bottles, iCDP, trusted-device PIN](https://giordanosconti.github.io/iCloudKitExtractor/blog/posts/2026-10-05-day-09-octagon-bottles-icdp.html) · [Day 10 — Recovery Key / TLKShares](https://giordanosconti.github.io/iCloudKitExtractor/blog/posts/2026-10-24-day-10-recovery-key-tlkshares.html).
+
+### Unlocking with a device PIN (iCSC / passcode)
+
+1. Sign in to IKE so the session has PET / tokens.
+2. **List iCDP bottles**, then **Unlock Octagon bottle** with the **passcode of that trusted device** (not the Apple ID password, not the old PCS `dsid:dsid` secret).
+3. Escrowproxy `SRP_INIT` / `RECOVER` unwraps the EscrowBottle → **BottledPeerEntropy** (~72 bytes).
+4. Cuttlefish `fetchViableBottles` returns **OTBottle Contents**; AES-GCM with that entropy yields the peer signing/encryption keys → KeySet / vault path.
+
+**Credential at bottle creation time:** the PIN / device passcode (and, where applicable, the Apple ID password or Recovery Key used to bind that escrow row) is the one that was in force **when that iCDP record was created**. If the device passcode, Apple ID password, or Recovery Key was **changed later** and the bottle was **never re-created** (e.g. no Sign out → Sign in that minted a new `com.apple.icdp.record.*`), you must still use the **old** credential from creation time — **not** the current one. A new PIN/password only unlocks bottles minted **after** that change.
+
+**HSM caution:** each wrong PIN burns an attempt on that record (on the order of **~10** tries). IKE treats recover as irreversible and expects an explicit confirm. Prefer the correct device PIN; do not brute-force production bottles.
+
+### Unlocking with a Recovery Key (when the PIN path is unavailable)
+
+If you do not have a usable bottle PIN (lost device, exhausted attempts, bottle not viable), use the **Recovery Key → Octagon peer → `fetchRecoverableTLKShares` → OpenVault** path described in [Recovery Key & Octagon](#recovery-key--octagon). That does **not** replace Escrowproxy `RECOVER` on an iCDP label; it opens the same class of vault material through recoverable TLKShares addressed to the RK peer. The same creation-time rule applies: use the Recovery Key that was active when the recoverable shares / circle binding were established, not a key rotated afterward unless Octagon was re-enrolled with the new key.
+
+### Orphan iCDP records (no OTBottle Contents)
+
+`fetchViableBottles` can still list bottle **metadata** (labels, serials, peer ids) while **Contents** is empty or missing. In IKE those show up as viable/partial rows with `contents=0 B`.
+
+Such records are **orphans for peer-key recovery**: Escrow unlock may still produce entropy for an old Escrow row, but there is **no OTBottle ciphertext** to AES-GCM-open into signing/encryption keys. Trying every bottle then fails with GCM / “no Contents” style errors. Those stubs are **no longer useful** for the KeySet path; keep them for inventory only, and unlock a different bottle that still has Contents—or use Recovery Key if available.
+
+Typical lab situations: device left the circle long ago, bottle was retired after circle changes, or Escrow and Cuttlefish views are out of sync (Escrow label present, OTBottle payload gone).
+
+### Recreating a usable bottle (Sign out → Sign in on the device)
+
+To mint a **fresh** iCDP / Octagon bottle for a specific device you control:
+
+1. On that device, open **Settings → [your name]** (or System Settings on Mac).
+2. **Sign out** of the Apple ID (iCloud). Confirm you understand local iCloud data handling prompts for that device.
+3. **Sign in** again with the same Apple ID, complete any 2FA / device trust steps, and wait until iCloud / Keychain / backup sync settle.
+4. The device re-joins Octagon and Escrow can publish a **new** `com.apple.icdp.record.*` bottle with recoverable Contents.
+5. In IKE: sign in again, **refresh the bottle list**, unlock with that device’s **current passcode**, then continue with peer keys / OpenVault / backup as usual.
+
+This is an **account + device** operation on hardware you are authorized to use—not something IKE can fabricate server-side. Prefer Recovery Key when the goal is only vault access and a healthy RK exists; use Sign out / Sign in when you need a **new PIN-bound bottle** for that device.
+
 ---
 
 ## Quick start

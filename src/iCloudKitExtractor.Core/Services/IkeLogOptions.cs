@@ -7,7 +7,8 @@ namespace iCloudKitExtractor.Services;
 /// <list type="bullet">
 /// <item>UI: checkbox «Solo errori» oppure <c>IKE_QUIET=1</c> (default se var assente: vedi <see cref="Quiet"/>).</item>
 /// <item>Disco: salta journal <c>pending_chunks</c> / fallback rumorosi; niente NDJSON agent su hot path.</item>
-/// <item>UI: checkbox «Salva log run» / <c>IKE_PERSIST_RUN_LOGS</c> → %AppData%/iCloudKitExtractor/logs/run_*.</item>
+/// <item>UI: checkbox «Salva log run» / <c>IKE_PERSIST_RUN_LOGS</c> → %AppData%/iCloudKitExtractor/logs/run_* (HTTP/HAR).</item>
+/// <item>UI panel text (auth/escrow/…) → <see cref="IkeUiSessionLog"/> under logs/ui_* (default on; <c>IKE_UI_LOG=0</c> off).</item>
 /// </list>
 /// Disattiva quiet con checkbox off o <c>IKE_QUIET=0</c>.
 /// </summary>

@@ -501,6 +501,9 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         ApplyResponsiveLayout(ActualWidth, ActualHeight);
+        var uiLogPath = IkeUiSessionLog.TryTakeSessionAnnouncement();
+        if (uiLogPath is not null)
+            LogAuth(uiLogPath);
         try
         {
             await EnsureAuthProfileAsync().ConfigureAwait(true);
@@ -780,7 +783,7 @@ public partial class MainWindow : Window
     }
 
     private void AppendAuthLog(string line) =>
-        AppendBoundedLog(AuthLogTextBox, line);
+        AppendBoundedLog(AuthLogTextBox, line, "auth");
 
     /// <summary>
     /// Traffico HTTP condiviso: in operazioni Backup → log Informazioni/Avvisi/Errori;
@@ -922,7 +925,7 @@ public partial class MainWindow : Window
             DownloadLogKind.Warning => LogWarningBrush,
             _ => LogInfoBrush,
         };
-        AppendRichLogLine(box, line, bodyBrush);
+        AppendRichLogLine(box, line, bodyBrush, "download");
         // #region agent log
         NoteUiStall(
             "MainWindow.AppendDownloadLog",
@@ -1262,8 +1265,9 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private void AppendRichLogLine(RichTextBox box, string line, SolidColorBrush bodyBrush)
+    private void AppendRichLogLine(RichTextBox box, string line, SolidColorBrush bodyBrush, string channel)
     {
+        IkeUiSessionLog.Append(channel, line);
         var doc = box.Document;
         FitRichLogPageWidth(box, doc);
         var stamp = $"[{DateTime.Now:HH:mm:ss}] ";
@@ -1335,10 +1339,11 @@ public partial class MainWindow : Window
     }
 
     private void AppendDecryptLog(string line) =>
-        AppendBoundedLog(DecryptLogTextBox, line);
+        AppendBoundedLog(DecryptLogTextBox, line, "escrow");
 
-    private static void AppendBoundedLog(TextBox box, string line)
+    private void AppendBoundedLog(TextBox box, string line, string channel)
     {
+        IkeUiSessionLog.Append(channel, line);
         box.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}");
         if (box.LineCount > LogLineLimit)
             TrimLogTextBox(box, LogLinesToKeep);
@@ -2035,7 +2040,7 @@ public partial class MainWindow : Window
     }
 
     private void AppendWhatsAppLog(string line) =>
-        AppendBoundedLog(WhatsAppLogTextBox, line);
+        AppendBoundedLog(WhatsAppLogTextBox, line, "whatsapp");
 
     private void BrowseWhatsAppOutput_Click(object sender, RoutedEventArgs e)
     {
@@ -2142,7 +2147,7 @@ public partial class MainWindow : Window
     }
 
     private void AppendICloudDriveLog(string line) =>
-        AppendBoundedLog(ICloudDriveLogTextBox, line);
+        AppendBoundedLog(ICloudDriveLogTextBox, line, "drive");
 
     private void BrowseICloudDriveOutput_Click(object sender, RoutedEventArgs e)
     {
@@ -2262,7 +2267,7 @@ public partial class MainWindow : Window
     }
 
     private void AppendICloudFilesLog(string line) =>
-        AppendBoundedLog(ICloudFilesLogTextBox, line);
+        AppendBoundedLog(ICloudFilesLogTextBox, line, "files");
 
     private void BrowseICloudFilesOutput_Click(object sender, RoutedEventArgs e)
     {
@@ -2400,7 +2405,7 @@ public partial class MainWindow : Window
             DownloadLogKind.Warning => LogWarningBrush,
             _ => LogInfoBrush,
         };
-        AppendRichLogLine(box, line, bodyBrush);
+        AppendRichLogLine(box, line, bodyBrush, "syncdata");
     }
 
     private void CopySyncDataLog_Click(object sender, RoutedEventArgs e)
@@ -2900,6 +2905,7 @@ public partial class MainWindow : Window
     {
         if (TrustedDevicesResultTextBox is null)
             return;
+        IkeUiSessionLog.Append("trusted", line);
         var stamp = DateTime.Now.ToString("HH:mm:ss");
         TrustedDevicesResultTextBox.AppendText(
             (TrustedDevicesResultTextBox.Text.Length > 0 ? Environment.NewLine : "")

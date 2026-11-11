@@ -508,6 +508,9 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object? sender, RoutedEventArgs e)
     {
         ApplyResponsiveLayout(Bounds.Width, Bounds.Height);
+        var uiLogPath = IkeUiSessionLog.TryTakeSessionAnnouncement();
+        if (uiLogPath is not null)
+            LogAuth(uiLogPath);
         try
         {
             await EnsureAuthProfileAsync().ConfigureAwait(true);
@@ -793,7 +796,7 @@ public partial class MainWindow : Window
     }
 
     private void AppendAuthLog(string line) =>
-        AppendBoundedLog(AuthLogTextBox, line);
+        AppendBoundedLog(AuthLogTextBox, line, "auth");
 
     /// <summary>
     /// Traffico HTTP condiviso: in operazioni Backup → log Informazioni/Avvisi/Errori;
@@ -939,7 +942,7 @@ public partial class MainWindow : Window
             DownloadLogKind.Warning => LogWarningBrush,
             _ => LogInfoBrush,
         };
-        AppendRichLogLine(box, line, bodyBrush);
+        AppendRichLogLine(box, line, bodyBrush, "download");
         // #region agent log
         NoteUiStall(
             "MainWindow.AppendDownloadLog",
@@ -1284,8 +1287,9 @@ public partial class MainWindow : Window
     /// Avalonia: log tabs are plain read-only TextBoxes (no FlowDocument/colors).
     /// Warning/Error lines get a short prefix since per-line colors are not available.
     /// </summary>
-    private void AppendRichLogLine(TextBox box, string line, SolidColorBrush bodyBrush)
+    private void AppendRichLogLine(TextBox box, string line, SolidColorBrush bodyBrush, string channel)
     {
+        IkeUiSessionLog.Append(channel, line);
         box.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}");
 
         if (box.GetLineCount() > LogLineLimit)
@@ -1303,10 +1307,11 @@ public partial class MainWindow : Window
         (box.Text ?? "").TrimEnd();
 
     private void AppendDecryptLog(string line) =>
-        AppendBoundedLog(DecryptLogTextBox, line);
+        AppendBoundedLog(DecryptLogTextBox, line, "escrow");
 
-    private static void AppendBoundedLog(TextBox box, string line)
+    private void AppendBoundedLog(TextBox box, string line, string channel)
     {
+        IkeUiSessionLog.Append(channel, line);
         box.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}");
         if (box.GetLineCount() > LogLineLimit)
             TrimLogTextBox(box, LogLinesToKeep);
@@ -1965,7 +1970,7 @@ public partial class MainWindow : Window
     }
 
     private void AppendWhatsAppLog(string line) =>
-        AppendBoundedLog(WhatsAppLogTextBox, line);
+        AppendBoundedLog(WhatsAppLogTextBox, line, "whatsapp");
 
     private async void BrowseWhatsAppOutput_Click(object? sender, RoutedEventArgs e)
     {
@@ -2061,7 +2066,7 @@ public partial class MainWindow : Window
     }
 
     private void AppendICloudDriveLog(string line) =>
-        AppendBoundedLog(ICloudDriveLogTextBox, line);
+        AppendBoundedLog(ICloudDriveLogTextBox, line, "drive");
 
     private async void BrowseICloudDriveOutput_Click(object? sender, RoutedEventArgs e)
     {
@@ -2170,7 +2175,7 @@ public partial class MainWindow : Window
     }
 
     private void AppendICloudFilesLog(string line) =>
-        AppendBoundedLog(ICloudFilesLogTextBox, line);
+        AppendBoundedLog(ICloudFilesLogTextBox, line, "files");
 
     private async void BrowseICloudFilesOutput_Click(object? sender, RoutedEventArgs e)
     {
@@ -2297,7 +2302,7 @@ public partial class MainWindow : Window
             DownloadLogKind.Warning => LogWarningBrush,
             _ => LogInfoBrush,
         };
-        AppendRichLogLine(box, line, bodyBrush);
+        AppendRichLogLine(box, line, bodyBrush, "syncdata");
     }
 
     private void CopySyncDataLog_Click(object? sender, RoutedEventArgs e)
@@ -2782,6 +2787,7 @@ public partial class MainWindow : Window
     {
         if (TrustedDevicesResultTextBox is null)
             return;
+        IkeUiSessionLog.Append("trusted", line);
         var stamp = DateTime.Now.ToString("HH:mm:ss");
         TrustedDevicesResultTextBox.AppendText(
             (TrustedDevicesResultTextBox.Text.Length > 0 ? Environment.NewLine : "")
