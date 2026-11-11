@@ -75,8 +75,91 @@
 
             <TabControl x:Name="MainTabControl" Grid.Row="0" Grid.Column="0"
                         ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <!-- Case (required before Sign in) -->
+                <TabItem x:Name="CaseTab" Header="Case">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Classes="section">
+                            <StackPanel>
+                                <TextBlock Text="Case package" Classes="sectionLabel"/>
+                                <TextBlock TextWrapping="Wrap" Margin="0,0,0,10" Opacity="0.85"
+                                           Text="Create or open a case before signing in. All acquisition output defaults to this folder. Changing a path later prompts a warning if it leaves the case root."/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Case ID *" Classes="fieldLabel"/>
+                                    <TextBox x:Name="CaseIdTextBox" Grid.Column="1" Margin="0,0,0,8"/>
+                                    <TextBlock Grid.Row="1" Text="Case name *" Classes="fieldLabel"/>
+                                    <TextBox x:Name="CaseNameTextBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8"/>
+                                    <TextBlock Grid.Row="2" Text="Examiner *" Classes="fieldLabel"/>
+                                    <TextBox x:Name="CaseExaminerTextBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8"
+                                             ToolTip.Tip="Examiner name (metadata only — not a digital signature)"/>
+                                    <TextBlock Grid.Row="3" Text="Agency / lab" Classes="fieldLabel"/>
+                                    <TextBox x:Name="CaseAgencyTextBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,8"/>
+                                    <TextBlock Grid.Row="4" Text="Notes" Classes="fieldLabel"/>
+                                    <TextBox x:Name="CaseNotesTextBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8"
+                                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56"/>
+                                    <TextBlock Grid.Row="5" Text="Destination *" Classes="fieldLabel"/>
+                                    <Grid Grid.Row="5" Grid.Column="1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="CaseDestinationTextBox" Margin="0,0,10,0"/>
+                                        <Button Grid.Column="1" Content="Browse" Classes="secondary"
+                                                Click="BrowseCaseDestination_Click"/>
+                                    </Grid>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button x:Name="CreateCaseButton" Content="Create case"
+                                            Classes="primary" MinWidth="132" Margin="0,0,8,0"
+                                            Click="CreateCaseButton_Click"/>
+                                    <Button x:Name="OpenCaseButton" Content="Open existing"
+                                            Classes="secondary" MinWidth="132" Margin="0,0,8,0"
+                                            Click="OpenCaseButton_Click"/>
+                                    <Button x:Name="SaveCaseMetadataButton" Content="Save metadata"
+                                            Classes="secondary" MinWidth="132" IsEnabled="False"
+                                            Click="SaveCaseMetadataButton_Click"/>
+                                </StackPanel>
+                                <TextBlock x:Name="CaseStatusText" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Classes="section" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Case layout" Classes="sectionLabel"/>
+                                <TextBlock x:Name="CaseLayoutHintText" TextWrapping="Wrap" Opacity="0.85"
+                                           Text="After create/open: case.json, logs/, backup/, escrow/, whatsapp/, drive/, files/, syncdata/, mail/"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="2" Classes="logCard">
+                            <DockPanel LastChildFill="True">
+                                <TextBlock DockPanel.Dock="Top" Text="Case log"
+                                           Classes="sectionLabel" Margin="0,0,0,4"/>
+                                <TextBox x:Name="CaseLogTextBox" Classes="log"/>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
                 <!-- Accesso -->
-                <TabItem x:Name="AccessTab" Header="Sign in">
+                <TabItem x:Name="AccessTab" Header="Sign in" IsEnabled="False">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -663,7 +746,7 @@
                 </TabItem>
 
                 <!-- IMAP Posta iCloud (app-specific password, sola lettura) -->
-                <TabItem x:Name="ImapMailTab" Header="IMAP Mail" IsEnabled="True">
+                <TabItem x:Name="ImapMailTab" Header="IMAP Mail" IsEnabled="False">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -1094,7 +1177,7 @@
                 </TabItem>
 
                 <!-- Dispositivi fidati (post-login GrandSlam) — accanto a Servizi iCloud -->
-                <TabItem x:Name="TrustedDevicesTab" Header="Trusted devices (Work in progress)" IsEnabled="True">
+                <TabItem x:Name="TrustedDevicesTab" Header="Trusted devices (Work in progress)" IsEnabled="False">
                     <Grid>
                         <Grid.RowDefinitions>
                             <!-- Controlli alti: ScrollViewer con altezza * (come Escrow). -->
@@ -1384,6 +1467,42 @@
                                         <TextBox x:Name="SyncDataErrorLogBox" Classes="log" MinHeight="0"/>
                                     </TabItem>
                                 </TabControl>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- LE Report -->
+                <TabItem x:Name="ReportTab" Header="LE Report" IsEnabled="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Classes="section">
+                            <StackPanel>
+                                <TextBlock Text="iCloudKitExtractor — CloudKit Report" Classes="sectionLabel"/>
+                                <TextBlock TextWrapping="Wrap" Margin="0,0,0,10" Opacity="0.85"
+                                           Text="Build a modern slide-style HTML report for this case: metadata, operation timeline, acquisition inventory, and SHA-256 integrity digests. Session tokens and credentials are never included."/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="GenerateReportButton" Content="Generate report"
+                                            Classes="primary" MinWidth="140" Margin="0,0,8,0"
+                                            Click="GenerateReportButton_Click"/>
+                                    <Button x:Name="OpenReportButton" Content="Open report"
+                                            Classes="secondary" MinWidth="120" Margin="0,0,8,0"
+                                            Click="OpenReportButton_Click"/>
+                                    <Button x:Name="RevealReportFolderButton" Content="Reveal folder"
+                                            Classes="secondary" MinWidth="120"
+                                            Click="RevealReportFolderButton_Click"/>
+                                </StackPanel>
+                                <TextBlock x:Name="ReportStatusText" Margin="0,12,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Classes="logCard" Margin="0,12,0,0">
+                            <DockPanel LastChildFill="True">
+                                <TextBlock DockPanel.Dock="Top" Text="Report log"
+                                           Classes="sectionLabel" Margin="0,0,0,4"/>
+                                <TextBox x:Name="ReportLogTextBox" Classes="log"/>
                             </DockPanel>
                         </Border>
                     </Grid>

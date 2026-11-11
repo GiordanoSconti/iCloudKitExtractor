@@ -29,6 +29,7 @@ using iCloudKitExtractor.Services.Push;
 using iCloudKitExtractor.Services.Ids;
 using iCloudKitExtractor.Services.IMessage;
 using iCloudKitExtractor.Services.CloudKit;
+using iCloudKitExtractor.Services.Forensics;
 using MailKit;
 using System.Diagnostics;
 
@@ -119,28 +120,30 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _imapCts;
     private ImapMessageFilter? _imapFilter;
 
+    /// <summary>Active forensic case package (required before Sign in).</summary>
+    private IkeCaseSession? _case;
+    private bool _suppressPathWarn;
+    private string? _lastReportPath;
+
     public MainWindow()
 
     {
 
         InitializeComponent();
         WireToggleEvents();
+        WireOutputPathLostFocus();
         SizeChanged += MainWindow_SizeChanged;
         TryLoadHeaderLogo();
         UpdateDownloadButtonLabel();
         RemoteAnisetteProvider.AnyLicenseBundleIssued += OnAnisetteLicenseBundleIssued;
 
-        OutputFolderTextBox.Text = Path.Combine(
-
-            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-
-            "iCloudBackups");
-
-        DecryptOutputTextBox.Text = OutputFolderTextBox.Text;
-        WhatsAppOutputTextBox.Text = OutputFolderTextBox.Text;
-        ICloudDriveOutputTextBox.Text = OutputFolderTextBox.Text;
-        ICloudFilesOutputTextBox.Text = OutputFolderTextBox.Text;
-        SyncDataOutputTextBox.Text = OutputFolderTextBox.Text;
+        // Paths filled when a case is created/opened (no default Documents dump).
+        OutputFolderTextBox.Text = "";
+        DecryptOutputTextBox.Text = "";
+        WhatsAppOutputTextBox.Text = "";
+        ICloudDriveOutputTextBox.Text = "";
+        ICloudFilesOutputTextBox.Text = "";
+        SyncDataOutputTextBox.Text = "";
 
         _httpFactory.Capture = _capture;
 
@@ -179,7 +182,7 @@ public partial class MainWindow : Window
 
         SyncDiskDumpFromUi();
         UpdateSessionUi(false);
-        ApplyUiWizardStage(UiWizardStage.LoginOnly);
+        ApplyUiWizardStage(UiWizardStage.CaseOnly);
     }
 
     private void WireToggleEvents()
@@ -203,6 +206,353 @@ public partial class MainWindow : Window
         Hook(IdmsaOtpSmsRadio, IdmsaOtpMethodRadio_Changed);
     }
 
+    private void WireOutputPathLostFocus()
+    {
+        void Hook(TextBox? box)
+        {
+            if (box is null)
+                return;
+            box.LostFocus += async (_, _) => await OnOutputPathLostFocusAsync(box).ConfigureAwait(true);
+        }
+
+        Hook(OutputFolderTextBox);
+        Hook(DecryptOutputTextBox);
+        Hook(WhatsAppOutputTextBox);
+        Hook(ICloudDriveOutputTextBox);
+        Hook(ICloudFilesOutputTextBox);
+        Hook(SyncDataOutputTextBox);
+    }
+
+    private void AppendCaseLog(string line) =>
+        AppendBoundedLog(CaseLogTextBox, line, "case");
+
+    private IkeCaseInfoDraft ReadCaseDraftFromUi() =>
+        new()
+        {
+            CaseId = CaseIdTextBox?.Text?.Trim() ?? "",
+            CaseName = CaseNameTextBox?.Text?.Trim() ?? "",
+            Examiner = CaseExaminerTextBox?.Text?.Trim() ?? "",
+            Agency = CaseAgencyTextBox?.Text?.Trim(),
+            Notes = CaseNotesTextBox?.Text?.Trim(),
+        };
+
+    private void FillCaseUiFromSession(IkeCaseSession session)
+    {
+        _suppressPathWarn = true;
+        try
+        {
+            CaseIdTextBox.Text = session.Info.CaseId;
+            CaseNameTextBox.Text = session.Info.CaseName;
+            CaseExaminerTextBox.Text = session.Info.Examiner;
+            CaseAgencyTextBox.Text = session.Info.Agency ?? "";
+            CaseNotesTextBox.Text = session.Info.Notes ?? "";
+            CaseDestinationTextBox.Text = session.RootPath;
+            OutputFolderTextBox.Text = session.BackupRoot;
+            DecryptOutputTextBox.Text = session.EscrowRoot;
+            WhatsAppOutputTextBox.Text = session.WhatsAppRoot;
+            ICloudDriveOutputTextBox.Text = session.DriveRoot;
+            ICloudFilesOutputTextBox.Text = session.FilesRoot;
+            SyncDataOutputTextBox.Text = session.SyncDataRoot;
+        }
+        finally
+        {
+            _suppressPathWarn = false;
+        }
+
+        if (SaveCaseMetadataButton is not null)
+            SaveCaseMetadataButton.IsEnabled = true;
+        CaseStatusText.Text =
+            $"Case open: {session.Info.CaseId} — {session.Info.CaseName} @ {session.RootPath}";
+        CaseLayoutHintText.Text =
+            $"Root: {session.RootPath}\n" +
+            $"logs/ · backup/ · escrow/ · whatsapp/ · drive/ · files/ · syncdata/ · mail/ · ops/ · report/\n" +
+            $"case.json · createdUtc={session.Info.CreatedAt:O}";
+    }
+
+    private void ActivateCaseSession(IkeCaseSession session)
+    {
+        _case = session;
+        FillCaseUiFromSession(session);
+        IkeUiSessionLog.RelocateToLogsRoot(session.LogsRoot);
+        _capture.TrySetLogsRoot(session.LogsRoot);
+        var uiDir = IkeUiSessionLog.SessionDirectory;
+        AppendCaseLog($"Case ready → {session.RootPath}");
+        AppendCaseLog($"  id={session.Info.CaseId} examiner={session.Info.Examiner}");
+        if (uiDir is not null)
+            AppendCaseLog($"UI logs → {uiDir}");
+        LogAuth($"Case open: {session.Info.CaseId} @ {session.RootPath}");
+        IkeCaseOpsJournal.Append(session, "case", "opened",
+            $"id={session.Info.CaseId}; examiner={session.Info.Examiner}");
+        ApplyUiWizardStage(UiWizardStage.LoginOnly);
+    }
+
+    private void AppendReportLog(string line) =>
+        AppendBoundedLog(ReportLogTextBox, line, "report");
+
+    private void RecordCaseOp(string area, string action, string? detail = null, string status = "ok") =>
+        IkeCaseOpsJournal.Append(_case, area, action, detail, status);
+
+    private byte[]? TryLoadReportLogoPng()
+    {
+        try
+        {
+            using var stream = Avalonia.Platform.AssetLoader.Open(
+                new Uri("avares://iCloudKitExtractor/Assets/ike.png"));
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            return ms.ToArray();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void GenerateReportButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_case is null)
+        {
+            ShowMessage("LE Report", "Create or open a case first.");
+            return;
+        }
+
+        try
+        {
+            AppendReportLog("Building CloudKit Report…");
+            var model = IkeCaseReportBuilder.Build(_case, TryLoadReportLogoPng());
+            var path = IkeCaseReportHtmlWriter.Write(_case, model);
+            _lastReportPath = path;
+            if (model.LogoPng is { Length: > 0 })
+            {
+                try
+                {
+                    File.WriteAllBytes(Path.Combine(_case.ReportRoot, "logo.png"), model.LogoPng);
+                }
+                catch { /* optional companion */ }
+            }
+
+            ReportStatusText.Text =
+                $"Report ready · {model.Operations.Count} ops · " +
+                $"{model.IntegrityManifests.Count} integrity manifests · {path}";
+            AppendReportLog($"Wrote {path}");
+            AppendReportLog(
+                $"  areas with data: {model.Areas.Count(a => a.FileCount > 0)} · " +
+                $"files={model.Areas.Sum(a => a.FileCount):N0}");
+            RecordCaseOp("report", "generated", Path.GetFileName(path));
+            ShowMessage("LE Report", "CloudKit Report generated.\n\n" + path);
+        }
+        catch (Exception ex)
+        {
+            AppendReportLog($"Generate failed: {ex.Message}");
+            ShowMessage("LE Report", ex.Message);
+        }
+    }
+
+    private void OpenReportButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var path = _lastReportPath;
+        if (string.IsNullOrWhiteSpace(path) && _case is not null)
+            path = Path.Combine(_case.ReportRoot, IkeCaseReportHtmlWriter.DefaultFileName);
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            ShowMessage("LE Report", "Generate the report first.");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+            AppendReportLog($"Opened {path}");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("LE Report", ex.Message);
+        }
+    }
+
+    private void RevealReportFolderButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_case is null)
+        {
+            ShowMessage("LE Report", "Create or open a case first.");
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(_case.ReportRoot);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _case.ReportRoot,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("LE Report", ex.Message);
+        }
+    }
+
+    private async void BrowseCaseDestination_Click(object? sender, RoutedEventArgs e)
+    {
+        var folder = await PickFolderAsync("Case destination folder", CaseDestinationTextBox.Text);
+        if (!string.IsNullOrEmpty(folder))
+            CaseDestinationTextBox.Text = folder;
+    }
+
+    private void CreateCaseButton_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var root = CaseDestinationTextBox?.Text?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                ShowMessage("Case", "Select a destination folder for the case package.");
+                return;
+            }
+
+            if (IkeCaseSession.TryFindCaseJson(root, out _))
+            {
+                ShowMessage(
+                    "Case",
+                    "A case.json already exists in that folder.\nUse \"Open existing\" instead of Create.");
+                return;
+            }
+
+            var draft = ReadCaseDraftFromUi();
+            var session = IkeCaseSession.Create(root, draft);
+            IkeCaseOpsJournal.Append(session, "case", "created",
+                $"id={session.Info.CaseId}; name={session.Info.CaseName}");
+            ActivateCaseSession(session);
+            AppendCaseLog("Created case.json and acquisition subfolders.");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Case", ex.Message);
+            AppendCaseLog($"Create failed: {ex.Message}");
+        }
+    }
+
+    private void OpenCaseButton_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var root = CaseDestinationTextBox?.Text?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                ShowMessage("Case", "Select the folder that contains case.json.");
+                return;
+            }
+
+            var session = IkeCaseSession.Open(root);
+            ActivateCaseSession(session);
+            AppendCaseLog("Opened existing case.json.");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Case", ex.Message);
+            AppendCaseLog($"Open failed: {ex.Message}");
+        }
+    }
+
+    private void SaveCaseMetadataButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_case is null)
+        {
+            ShowMessage("Case", "Create or open a case first.");
+            return;
+        }
+
+        try
+        {
+            _case.UpdateMetadata(ReadCaseDraftFromUi());
+            FillCaseUiFromSession(_case);
+            AppendCaseLog("case.json metadata updated.");
+            ShowMessage("Case", "Case metadata saved.");
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Case", ex.Message);
+            AppendCaseLog($"Save metadata failed: {ex.Message}");
+        }
+    }
+
+    private async Task<bool> ConfirmOutsideCaseAsync(string? path)
+    {
+        if (_suppressPathWarn || _case is null || string.IsNullOrWhiteSpace(path))
+            return true;
+        if (_case.IsUnderCaseRoot(path))
+            return true;
+
+        var confirm = await ShowYesNoAsync(
+            "The selected path is outside the case folder.\n" +
+            "Data saved there will not be part of the case package.\n\n" +
+            $"Case root: {_case.RootPath}\n" +
+            $"Selected: {path}\n\nContinue?",
+            "Path outside case");
+        if (confirm == MessageBoxResult.Yes)
+        {
+            AppendCaseLog($"WARNING: path outside case → {path}");
+            LogAuth($"WARNING: path outside case → {path}");
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task OnOutputPathLostFocusAsync(TextBox box)
+    {
+        if (_suppressPathWarn || _case is null)
+            return;
+        var path = box.Text?.Trim() ?? "";
+        if (string.IsNullOrEmpty(path) || _case.IsUnderCaseRoot(path))
+            return;
+        if (await ConfirmOutsideCaseAsync(path).ConfigureAwait(true))
+            return;
+
+        _suppressPathWarn = true;
+        try
+        {
+            box.Text = ResolveCaseDefaultForBox(box);
+        }
+        finally
+        {
+            _suppressPathWarn = false;
+        }
+    }
+
+    private string ResolveCaseDefaultForBox(TextBox box)
+    {
+        if (_case is null)
+            return box.Text ?? "";
+        if (ReferenceEquals(box, OutputFolderTextBox))
+            return _case.BackupRoot;
+        if (ReferenceEquals(box, DecryptOutputTextBox))
+            return _case.EscrowRoot;
+        if (ReferenceEquals(box, WhatsAppOutputTextBox))
+            return _case.WhatsAppRoot;
+        if (ReferenceEquals(box, ICloudDriveOutputTextBox))
+            return _case.DriveRoot;
+        if (ReferenceEquals(box, ICloudFilesOutputTextBox))
+            return _case.FilesRoot;
+        if (ReferenceEquals(box, SyncDataOutputTextBox))
+            return _case.SyncDataRoot;
+        return _case.RootPath;
+    }
+
+    private async Task ApplyBrowsedFolderAsync(TextBox box, string? folder)
+    {
+        if (string.IsNullOrEmpty(folder))
+            return;
+        if (!await ConfirmOutsideCaseAsync(folder).ConfigureAwait(true))
+            return;
+        box.Text = folder;
+    }
+
     private void TryLoadHeaderLogo()
     {
         try
@@ -219,29 +569,35 @@ public partial class MainWindow : Window
 
     private enum UiWizardStage
     {
-        /// <summary>Solo scheda Sign In.</summary>
-        LoginOnly = 0,
+        /// <summary>Solo scheda Case (nessun login finché il caso non è aperto).</summary>
+        CaseOnly = 0,
+        /// <summary>Caso aperto → Sign In (e tab sempre-on post-caso).</summary>
+        LoginOnly = 1,
         /// <summary>Login OK → Escrow abilitata e selezionata.</summary>
-        AfterLogin = 1,
+        AfterLogin = 2,
         /// <summary>Escrow OK → tutte le schede abilitate (resta su Escrow se già lì).</summary>
-        AfterEscrow = 2,
+        AfterEscrow = 3,
     }
 
     private void ApplyUiWizardStage(UiWizardStage stage, bool selectTab = true)
     {
-        if (MainTabControl is null || AccessTab is null)
+        if (MainTabControl is null || CaseTab is null || AccessTab is null)
             return;
 
-        AccessTab.IsEnabled = true;
+        CaseTab.IsEnabled = true;
+        var hasCase = stage >= UiWizardStage.LoginOnly;
+        AccessTab.IsEnabled = hasCase;
+        if (ReportTab is not null)
+            ReportTab.IsEnabled = hasCase;
         EscrowTab.IsEnabled = stage >= UiWizardStage.AfterLogin;
         // SharedStreams / KeyValue / Contacts / Find My People: post-login.
         if (ExploratoryServicesTab is not null)
             ExploratoryServicesTab.IsEnabled = stage >= UiWizardStage.AfterLogin;
-        // Dispositivi fidati / IMAP Mail: sempre (credenziali dedicate, anche senza Escrow).
+        // Trusted / IMAP: dopo caso (credenziali dedicate, anche senza Escrow).
         if (TrustedDevicesTab is not null)
-            TrustedDevicesTab.IsEnabled = true;
+            TrustedDevicesTab.IsEnabled = hasCase;
         if (ImapMailTab is not null)
-            ImapMailTab.IsEnabled = true;
+            ImapMailTab.IsEnabled = hasCase;
         PrefillImapUserFromSession();
         PrefillEscrowRecoverySaltFromSession();
         var rest = stage >= UiWizardStage.AfterEscrow;
@@ -251,11 +607,17 @@ public partial class MainWindow : Window
         ICloudFilesTab.IsEnabled = rest;
         SyncDataTab.IsEnabled = rest;
 
+        if (stage == UiWizardStage.AfterLogin)
+            RecordCaseOp("auth", "signed-in", "wizard → Escrow");
+        else if (stage == UiWizardStage.AfterEscrow)
+            RecordCaseOp("escrow", "unlocked", "wizard → acquisition tabs");
+
         if (!selectTab)
             return;
 
         MainTabControl.SelectedItem = stage switch
         {
+            UiWizardStage.CaseOnly => CaseTab,
             UiWizardStage.AfterLogin => EscrowTab,
             UiWizardStage.AfterEscrow => EscrowTab,
             _ => AccessTab,
@@ -1355,8 +1717,7 @@ public partial class MainWindow : Window
     private async void BrowseDecryptOutput_Click(object? sender, RoutedEventArgs e)
     {
         var folder = await PickFolderAsync("Select output folder", DecryptOutputTextBox.Text);
-        if (!string.IsNullOrEmpty(folder))
-            DecryptOutputTextBox.Text = folder;
+        await ApplyBrowsedFolderAsync(DecryptOutputTextBox, folder).ConfigureAwait(true);
     }
 
     private void EscrowSmsVariantCheckBox_Changed(object? sender, RoutedEventArgs e)
@@ -1975,8 +2336,7 @@ public partial class MainWindow : Window
     private async void BrowseWhatsAppOutput_Click(object? sender, RoutedEventArgs e)
     {
         var folder = await PickFolderAsync("Select output folder", WhatsAppOutputTextBox.Text);
-        if (!string.IsNullOrEmpty(folder))
-            WhatsAppOutputTextBox.Text = folder;
+        await ApplyBrowsedFolderAsync(WhatsAppOutputTextBox, folder).ConfigureAwait(true);
     }
 
     private async void WhatsAppProbeButton_Click(object? sender, RoutedEventArgs e)
@@ -2071,8 +2431,7 @@ public partial class MainWindow : Window
     private async void BrowseICloudDriveOutput_Click(object? sender, RoutedEventArgs e)
     {
         var folder = await PickFolderAsync("Select output folder", ICloudDriveOutputTextBox.Text);
-        if (!string.IsNullOrEmpty(folder))
-            ICloudDriveOutputTextBox.Text = folder;
+        await ApplyBrowsedFolderAsync(ICloudDriveOutputTextBox, folder).ConfigureAwait(true);
     }
 
     private async void ICloudDriveProbeButton_Click(object? sender, RoutedEventArgs e)
@@ -2180,8 +2539,7 @@ public partial class MainWindow : Window
     private async void BrowseICloudFilesOutput_Click(object? sender, RoutedEventArgs e)
     {
         var folder = await PickFolderAsync("Select output folder", ICloudFilesOutputTextBox.Text);
-        if (!string.IsNullOrEmpty(folder))
-            ICloudFilesOutputTextBox.Text = folder;
+        await ApplyBrowsedFolderAsync(ICloudFilesOutputTextBox, folder).ConfigureAwait(true);
     }
 
     private async void ICloudFilesProbeButton_Click(object? sender, RoutedEventArgs e)
@@ -2286,8 +2644,7 @@ public partial class MainWindow : Window
     private async void BrowseSyncDataOutput_Click(object? sender, RoutedEventArgs e)
     {
         var folder = await PickFolderAsync("Select output folder", SyncDataOutputTextBox.Text);
-        if (!string.IsNullOrEmpty(folder))
-            SyncDataOutputTextBox.Text = folder;
+        await ApplyBrowsedFolderAsync(SyncDataOutputTextBox, folder).ConfigureAwait(true);
     }
 
     private void AppendSyncDataLog(string line)
@@ -4121,13 +4478,19 @@ public partial class MainWindow : Window
 
     private async Task<string?> PickImapExportParentDirectoryAsync()
     {
-        var hint = OutputFolderTextBox?.Text?.Trim();
+        var hint = _case?.MailRoot ?? OutputFolderTextBox?.Text?.Trim();
         var start = !string.IsNullOrWhiteSpace(hint) && Directory.Exists(hint)
             ? hint
-            : Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                "iCloudBackups");
-        return await PickFolderAsync("Destination folder for mail export (.eml)", start);
+            : (_case?.MailRoot
+               ?? Path.Combine(
+                   Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                   "iCloudBackups"));
+        var folder = await PickFolderAsync("Destination folder for mail export (.eml)", start);
+        if (string.IsNullOrEmpty(folder))
+            return null;
+        if (!await ConfirmOutsideCaseAsync(folder).ConfigureAwait(true))
+            return _case?.MailRoot;
+        return folder;
     }
 
     private async void ImapExportSelectedButton_Click(object? sender, RoutedEventArgs e)
@@ -5909,8 +6272,7 @@ public partial class MainWindow : Window
     private async void BrowseOutput_Click(object? sender, RoutedEventArgs e)
     {
         var folder = await PickFolderAsync("Select output folder", OutputFolderTextBox.Text);
-        if (!string.IsNullOrEmpty(folder))
-            OutputFolderTextBox.Text = folder;
+        await ApplyBrowsedFolderAsync(OutputFolderTextBox, folder).ConfigureAwait(true);
     }
 
     private void CopyDownloadLog_Click(object? sender, RoutedEventArgs e)
@@ -6211,6 +6573,8 @@ public partial class MainWindow : Window
             var summary = completedDirs.Count == 1
                 ? $"Download saved to {completedDirs[0]}"
                 : $"Chain completed: {completedDirs.Count} snapshots under {outputRoot}";
+            RecordCaseOp("backup", "download-completed",
+                IkeCaseOpsJournal.Scrub($"{completedDirs.Count} snapshot(s) under {outputRoot}"));
             await Dispatcher.UIThread.InvokeAsync(() =>
                 ShowMessage("Download", summary));
 

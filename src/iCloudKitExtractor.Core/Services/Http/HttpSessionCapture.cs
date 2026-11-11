@@ -42,7 +42,7 @@ public sealed class HttpSessionCapture
     };
 
     private readonly object _lock = new();
-    private readonly string? _logsRoot;
+    private string? _logsRoot;
     private readonly List<HttpHarWriter.HarExchange> _harEntries = new();
     private int _seq;
     private bool _materialized;
@@ -77,6 +77,23 @@ public sealed class HttpSessionCapture
 
     public static HttpSessionCapture CreateNew(string? logsRoot = null) =>
         new(logsRoot);
+
+    /// <summary>
+    /// Redirect future <c>run_*</c> folders under <paramref name="logsRoot"/> (e.g. case <c>logs/</c>).
+    /// No-op if a run directory was already materialised.
+    /// </summary>
+    public bool TrySetLogsRoot(string? logsRoot)
+    {
+        lock (_lock)
+        {
+            if (_materialized)
+                return false;
+            _logsRoot = string.IsNullOrWhiteSpace(logsRoot)
+                ? null
+                : Path.GetFullPath(logsRoot.Trim());
+            return true;
+        }
+    }
 
     /// <summary>
     /// Crea <c>run_*</c> sotto AppData solo al primo write con persist ON.

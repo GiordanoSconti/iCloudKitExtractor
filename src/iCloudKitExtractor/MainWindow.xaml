@@ -112,8 +112,92 @@
 
             <TabControl x:Name="MainTabControl" Grid.Row="0" Grid.Column="0"
                         ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <!-- Case (required before Sign in) -->
+                <TabItem x:Name="CaseTab" Header="Case">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Case package" Style="{StaticResource SectionLabelStyle}"/>
+                                <TextBlock TextWrapping="Wrap" Margin="0,0,0,10" Opacity="0.85"
+                                           Text="Create or open a case before signing in. All acquisition output defaults to this folder. Changing a path later prompts a warning if it leaves the case root."/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Case ID *" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="CaseIdTextBox" Grid.Column="1" Margin="0,0,0,8"/>
+                                    <TextBlock Grid.Row="1" Text="Case name *" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="CaseNameTextBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8"/>
+                                    <TextBlock Grid.Row="2" Text="Examiner *" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="CaseExaminerTextBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8"
+                                             ToolTip="Examiner name (metadata only — not a digital signature)"/>
+                                    <TextBlock Grid.Row="3" Text="Agency / lab" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="CaseAgencyTextBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,8"/>
+                                    <TextBlock Grid.Row="4" Text="Notes" Style="{StaticResource FieldLabelStyle}"/>
+                                    <TextBox x:Name="CaseNotesTextBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8"
+                                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56"
+                                             VerticalScrollBarVisibility="Auto"/>
+                                    <TextBlock Grid.Row="5" Text="Destination *" Style="{StaticResource FieldLabelStyle}"/>
+                                    <Grid Grid.Row="5" Grid.Column="1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="CaseDestinationTextBox" Margin="0,0,10,0"/>
+                                        <Button Grid.Column="1" Content="Browse" Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="BrowseCaseDestination_Click"/>
+                                    </Grid>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button x:Name="CreateCaseButton" Content="Create case"
+                                            Style="{StaticResource PrimaryButtonStyle}" MinWidth="132" Margin="0,0,8,0"
+                                            Click="CreateCaseButton_Click"/>
+                                    <Button x:Name="OpenCaseButton" Content="Open existing"
+                                            Style="{StaticResource SecondaryButtonStyle}" MinWidth="132" Margin="0,0,8,0"
+                                            Click="OpenCaseButton_Click"/>
+                                    <Button x:Name="SaveCaseMetadataButton" Content="Save metadata"
+                                            Style="{StaticResource SecondaryButtonStyle}" MinWidth="132" IsEnabled="False"
+                                            Click="SaveCaseMetadataButton_Click"/>
+                                </StackPanel>
+                                <TextBlock x:Name="CaseStatusText" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Case layout" Style="{StaticResource SectionLabelStyle}"/>
+                                <TextBlock x:Name="CaseLayoutHintText" TextWrapping="Wrap" Opacity="0.85"
+                                           Text="After create/open: case.json, logs/, backup/, escrow/, whatsapp/, drive/, files/, syncdata/, mail/"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="2" Style="{StaticResource LogSectionCardStyle}">
+                            <DockPanel LastChildFill="True">
+                                <TextBlock DockPanel.Dock="Top" Text="Case log"
+                                           Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,4"/>
+                                <TextBox x:Name="CaseLogTextBox" Style="{StaticResource LogTextBoxStyle}"/>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
                 <!-- Accesso -->
-                <TabItem x:Name="AccessTab" Header="Sign in">
+                <TabItem x:Name="AccessTab" Header="Sign in" IsEnabled="False">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -725,7 +809,7 @@
                 </TabItem>
 
                 <!-- IMAP Posta iCloud (app-specific password, sola lettura) -->
-                <TabItem x:Name="ImapMailTab" Header="IMAP Mail" IsEnabled="True">
+                <TabItem x:Name="ImapMailTab" Header="IMAP Mail" IsEnabled="False">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -1160,7 +1244,7 @@
                 </TabItem>
 
                 <!-- Dispositivi fidati (post-login GrandSlam) — accanto a Servizi iCloud -->
-                <TabItem x:Name="TrustedDevicesTab" Header="Trusted devices (Work in progress)" IsEnabled="True">
+                <TabItem x:Name="TrustedDevicesTab" Header="Trusted devices (Work in progress)" IsEnabled="False">
                     <Grid>
                         <Grid.RowDefinitions>
                             <!-- Controlli alti: ScrollViewer con altezza * (come Escrow). -->
@@ -1460,6 +1544,42 @@
                                         </RichTextBox>
                                     </TabItem>
                                 </TabControl>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
+                <!-- LE Report -->
+                <TabItem x:Name="ReportTab" Header="LE Report" IsEnabled="False">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="iCloudKitExtractor — CloudKit Report" Style="{StaticResource SectionLabelStyle}"/>
+                                <TextBlock TextWrapping="Wrap" Margin="0,0,0,10" Opacity="0.85"
+                                           Text="Build a modern slide-style HTML report for this case: metadata, operation timeline, acquisition inventory, and SHA-256 integrity digests. Session tokens and credentials are never included."/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="GenerateReportButton" Content="Generate report"
+                                            Style="{StaticResource PrimaryButtonStyle}" MinWidth="140" Margin="0,0,8,0"
+                                            Click="GenerateReportButton_Click"/>
+                                    <Button x:Name="OpenReportButton" Content="Open report"
+                                            Style="{StaticResource SecondaryButtonStyle}" MinWidth="120" Margin="0,0,8,0"
+                                            Click="OpenReportButton_Click"/>
+                                    <Button x:Name="RevealReportFolderButton" Content="Reveal folder"
+                                            Style="{StaticResource SecondaryButtonStyle}" MinWidth="120"
+                                            Click="RevealReportFolderButton_Click"/>
+                                </StackPanel>
+                                <TextBlock x:Name="ReportStatusText" Margin="0,12,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Row="1" Style="{StaticResource LogSectionCardStyle}" Margin="0,12,0,0">
+                            <DockPanel LastChildFill="True">
+                                <TextBlock DockPanel.Dock="Top" Text="Report log"
+                                           Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,4"/>
+                                <TextBox x:Name="ReportLogTextBox" Style="{StaticResource LogTextBoxStyle}"/>
                             </DockPanel>
                         </Border>
                     </Grid>

@@ -15,6 +15,7 @@ public static class IkeUiSessionLog
     private static readonly object Gate = new();
     private static readonly ConcurrentDictionary<string, object> ChannelLocks = new(StringComparer.Ordinal);
     private static string? _sessionDirectory;
+    private static string? _preferredParentLogsRoot;
     private static int _enabled = -1; // -1 lazy
     private static int _announced;
 
@@ -24,6 +25,60 @@ public static class IkeUiSessionLog
         {
             EnsureSession();
             return Volatile.Read(ref _sessionDirectory);
+        }
+    }
+
+    /// <summary>
+    /// Redirect new UI log sessions under <paramref name="parentLogsRoot"/> (e.g. case <c>logs/</c>).
+    /// If a session already exists, moves subsequent writes by starting a nested <c>ui_*</c> there
+    /// only when no session was materialised yet; otherwise leaves the current session in place.
+    /// Call before first Append when opening a case.
+    /// </summary>
+    public static void SetPreferredLogsRoot(string? parentLogsRoot)
+    {
+        lock (Gate)
+        {
+            _preferredParentLogsRoot = string.IsNullOrWhiteSpace(parentLogsRoot)
+                ? null
+                : Path.GetFullPath(parentLogsRoot.Trim());
+            // Allow a fresh session under the case root if nothing written yet.
+            if (_sessionDirectory is null)
+                _announced = 0;
+        }
+    }
+
+    /// <summary>
+    /// Force UI logs into <paramref name="parentLogsRoot"/>/ui_* even if a prior AppData session existed.
+    /// Used when a case is created/opened mid-run.
+    /// </summary>
+    public static string? RelocateToLogsRoot(string parentLogsRoot)
+    {
+        if (!IsEnabled || string.IsNullOrWhiteSpace(parentLogsRoot))
+            return null;
+
+        lock (Gate)
+        {
+            try
+            {
+                var parent = Path.GetFullPath(parentLogsRoot.Trim());
+                Directory.CreateDirectory(parent);
+                _preferredParentLogsRoot = parent;
+                var dir = Path.Combine(parent, "ui_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(
+                    Path.Combine(dir, "manifest.txt"),
+                    $"startedUtc={DateTime.UtcNow:O}{Environment.NewLine}" +
+                    $"channels=auth,escrow,download,whatsapp,drive,files,syncdata,trusted,imap,exploratory,case{Environment.NewLine}" +
+                    $"combined=ui_all.log{Environment.NewLine}" +
+                    $"caseLogsRoot={parent}{Environment.NewLine}");
+                Volatile.Write(ref _sessionDirectory, dir);
+                _announced = 0;
+                return dir;
+            }
+            catch
+            {
+                return Volatile.Read(ref _sessionDirectory);
+            }
         }
     }
 
@@ -114,17 +169,18 @@ public static class IkeUiSessionLog
 
             try
             {
-                var root = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "iCloudKitExtractor",
-                    "logs");
+                var root = _preferredParentLogsRoot
+                           ?? Path.Combine(
+                               Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                               "iCloudKitExtractor",
+                               "logs");
                 Directory.CreateDirectory(root);
                 var dir = Path.Combine(root, "ui_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
                 Directory.CreateDirectory(dir);
                 File.WriteAllText(
                     Path.Combine(dir, "manifest.txt"),
                     $"startedUtc={DateTime.UtcNow:O}{Environment.NewLine}" +
-                    $"channels=auth,escrow,download,whatsapp,drive,files,syncdata,trusted,imap,exploratory{Environment.NewLine}" +
+                    $"channels=auth,escrow,download,whatsapp,drive,files,syncdata,trusted,imap,exploratory,case{Environment.NewLine}" +
                     $"combined=ui_all.log{Environment.NewLine}");
                 Volatile.Write(ref _sessionDirectory, dir);
                 return dir;

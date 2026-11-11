@@ -1,7 +1,7 @@
 <Window x:Class="iCloudKitExtractor.MessagesChatViewerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:sync="clr-namespace:iCloudKitExtractor.Services.SyncData"
+        xmlns:sync="clr-namespace:iCloudKitExtractor.Services.SyncData;assembly=iCloudKitExtractor.Core"
         Title="Messages"
         Height="820" Width="1180"
         MinHeight="560" MinWidth="860"
