@@ -252,10 +252,12 @@ Shared library: `src/iCloudKitExtractor.Core` (`net10.0`). UI clients:
 
 | OS | Anisette | iCloudKit Extractor |
 |----|----------|---------------------|
-| **Windows** | `AnisetteServer` (console) and/or `AnisetteServer.Mac` → **AnisetteMiddleware** (Avalonia) | `iCloudKitExtractor` (WPF, `net10.0-windows`) |
-| **macOS** | `AnisetteServer.Mac` → **AnisetteMiddleware** (Avalonia) | `iCloudKitExtractor.Desktop` (Avalonia, `net10.0`) |
+| **Windows** | `AnisetteServer` (console Frida) and/or `AnisetteServer.Mac` → **AnisetteMiddleware** (Avalonia) | `iCloudKitExtractor` (WPF, `net10.0-windows`) |
+| **macOS** | Same: `AnisetteServer` (console Frida) and/or `AnisetteServer.Mac` → **AnisetteMiddleware** (Avalonia; preferred when you want UI / Package-C / NAC relay) | `iCloudKitExtractor.Desktop` (Avalonia, `net10.0`) |
 
 Default local Anisette URL used below: `http://127.0.0.1:6971`.
+
+`AnisetteServer` is **not** Windows-only (`net10.0`). On Mac the Middleware is usually preferred for daily use; the console Frida server is still valid for a minimal local OTP gate.
 
 ### Windows
 
@@ -307,9 +309,26 @@ WPF targets `net10.0-windows` — build this project on Windows (or with Windows
 
 ### macOS
 
+#### AnisetteServer (console, Frida)
+
+Same project as on Windows — builds and runs on macOS:
+
+```bash
+export ANISETTE_SERVER_BACKEND=frida
+export ANISETTE_SERVER_PORT=6971
+export FRIDA_ANISETTE_HOST=127.0.0.1:27042
+export FRIDA_ANISETTE_PROCESS=akd
+export FRIDA_ANISETTE_PYTHON=python3
+export FRIDA_ANISETTE_LITE=1
+export FRIDA_ANISETTE_TIMEOUT=60
+
+dotnet build src/AnisetteServer/AnisetteServer.csproj -c Release
+dotnet run --project src/AnisetteServer/AnisetteServer.csproj -c Release -- --backend frida --port 6971
+```
+
 #### Anisette Middleware (Avalonia UI)
 
-Preferred on Mac (same binary name **AnisetteMiddleware**):
+Preferred on Mac when you want the desktop panel (license admin, Start/Stop, NAC relay). Same binary name **AnisetteMiddleware**:
 
 ```bash
 export ANISETTE_SERVER_BACKEND=frida
