@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/SECURITY.md
+    about: Do not file sensitive security reports as public issues — follow SECURITY.md.
+  - name: Documentation / GitHub Pages
+    url: https://giordanosconti.github.io/iCloudKitExtractor/
+    about: Project docs and lab diary.

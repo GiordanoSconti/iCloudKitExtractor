@@ -1,0 +1,96 @@
+name: Bug report
+description: Unexpected failure, crash, or protocol regression
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Do not paste tokens, passwords, Recovery Keys, or passcodes.**
+        Use only against Apple IDs / devices you are authorized to access.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong in one or two sentences?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. Redact secrets.
+      placeholder: |
+        1. Create / open case
+        2. Sign in…
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include non-sensitive log excerpts if useful.
+    validations:
+      required: true
+  - type: dropdown
+    id: app
+    attributes:
+      label: Client
+      options:
+        - Avalonia (macOS / Desktop)
+        - WPF (Windows)
+        - Core / scripts only
+        - Unsure
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: e.g. macOS 15.x / Windows 11
+    validations:
+      required: true
+  - type: input
+    id: dotnet
+    attributes:
+      label: .NET SDK / runtime
+      placeholder: e.g. .NET 10
+  - type: dropdown
+    id: anisette
+    attributes:
+      label: Anisette source
+      options:
+        - Local Frida / akd
+        - AnisetteServer / Middleware
+        - Remote preview / licensed
+        - Other / none
+        - Unsure
+  - type: dropdown
+    id: adp
+    attributes:
+      label: Advanced Data Protection (ADP)
+      options:
+        - Off
+        - On
+        - Unknown / N/A
+  - type: textarea
+    id: version
+    attributes:
+      label: Version
+      description: Release tag or commit SHA if known.
+  - type: checkboxes
+    id: auth
+    attributes:
+      label: Authorization
+      options:
+        - label: I am authorized to use the Apple ID / devices involved in this report
+          required: true
+        - label: This report does not contain secrets (tokens, passwords, RK, passcodes)
+          required: true

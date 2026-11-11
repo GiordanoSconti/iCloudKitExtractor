@@ -536,6 +536,8 @@ Apple’s internal APIs can change overnight — treat every build as experiment
 
 Contributions, careful PRs, and feedback are welcome. Prefer paid coding-agent models if you use them, **always review** generated code, and do not appropriate third-party code without consent. PRs are reviewed carefully.
 
+Community docs: [Code of Conduct](CODE_OF_CONDUCT.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
+
 **Email:** [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gruppoinformaticiforensi.it) · [giordano.sconti@gmail.com](mailto:giordano.sconti@gmail.com)
 
 If you want to buy a coffee, thank **Forensis-Lab** or another form of recognition instead.

@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest a lab / forensic capability within authorized-use scope
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature ideas should stay within **authorized** forensic / research use.
+        Requests aimed at unauthorized access will be closed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / need
+      description: What lab or workflow gap are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should IKE behave?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, other tools, or partial approaches.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Case / LE report
+        - Auth / Anisette
+        - Escrow / Octagon / PCS
+        - Device backup / MMCS
+        - Sync Data / Drive / Mail / WhatsApp
+        - Docs / DX
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope confirmation
+      options:
+        - label: This request assumes authorized use of the target Apple ID / devices
+          required: true
+        - label: I understand IKE is experimental research software, not a finished LE product
+          required: true
