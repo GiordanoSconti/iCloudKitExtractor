@@ -17,6 +17,9 @@ _verify*/
 *.swp
 Thumbs.db
 Desktop.ini
+._*
+**/._*
+.DS_Store
 
 ## Logs / temp / lab
 *.log
