@@ -58,7 +58,7 @@ Built by **Giordano Sconti**, who works with **Forensis-Lab** — the author **h
 | Area | Capability |
 |------|------------|
 | **Access** | Apple ID login, HSA2 / trusted devices, Anisette OTP (Frida/akd preferred) |
-| **Escrow & PCS** | EscrowProxy KeyBag / bottle PIN (HSM); or Recovery Key → Octagon TLKShares → Manatee/PCS (no Escrow RECOVER) |
+| **Escrow & PCS** | EscrowProxy: PCS Keybag (`dsid:dsid`) **or** iCDP bottle PIN (HSM); or Recovery Key → Octagon TLKShares (no Escrow RECOVER) |
 | **iCloud Keychain** | CKKS OpenVault → passwords / notes+OTP / Wi‑Fi / certs / keys / passkeys+subsystem catalog |
 | **Backup** | List device backups, MMCS download, iTunes-layout materialization |
 | **WhatsApp** | CloudKit / CloudDocs document crypto path |
@@ -148,9 +148,21 @@ Same account conditions where **Elcomsoft 11.0.5** returned *Access Denied* with
 
 ---
 
+## EscrowProxy doors: PCS Keybag vs iCDP vs Recovery Key
+
+EscrowProxy is a **shared transport**, not a single unlock. The label and SRP secret decide what you get — and whether you enter Octagon at all.
+
+| Door | Typical label | SRP secret | What you get | Octagon / Keychain? |
+|------|---------------|------------|--------------|---------------------|
+| **PCS legacy / Keybag** | `ProtectedCloudStorage` / SecureBackup | `dsid:dsid` | EscrowedKeys / BackupBagPassword | **No** |
+| **iCDP bottle** | `com.apple.icdp.record.*` | Device passcode (PIN) | `BottledPeerEntropy` → peer OTBottle (via Cuttlefish) | **Yes** (then TLK / OpenVault) |
+| **Recovery Key** | — (no Escrow `RECOVER`) | Recovery Key → peer `RK-…` | `fetchRecoverableTLKShares` → TLKs | **Yes** |
+
+`dsid:dsid` never substitutes for an iCDP PIN or a Recovery Key: it opens classic PCS Keybag material only. Octagon (and thus CKKS Keychain / modern Manatee) still needs the iCDP or RK door below.
+
 ## Recovery Key & Octagon
 
-Recovery Key unlock is an **Octagon / Cuttlefish** path, **not** EscrowProxy `RECOVER` / HSM bottle unlock (that path still needs the device Octagon PIN).
+Recovery Key unlock is an **Octagon / Cuttlefish** path, **not** EscrowProxy `RECOVER` / HSM bottle unlock (that path still needs the device Octagon PIN on an iCDP record).
 
 Flow in short:
 
