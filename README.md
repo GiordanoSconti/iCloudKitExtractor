@@ -59,6 +59,7 @@ Built by **Giordano Sconti**, who works with **Forensis-Lab** — the author **h
 |------|------------|
 | **Access** | Apple ID login, HSA2 / trusted devices, Anisette OTP (Frida/akd preferred) |
 | **Escrow & PCS** | EscrowProxy KeyBag / bottle PIN (HSM); or Recovery Key → Octagon TLKShares → Manatee/PCS (no Escrow RECOVER) |
+| **iCloud Keychain** | CKKS OpenVault → passwords / notes+OTP / Wi‑Fi / certs / keys / passkeys+subsystem catalog |
 | **Backup** | List device backups, MMCS download, iTunes-layout materialization |
 | **WhatsApp** | CloudKit / CloudDocs document crypto path |
 | **iCloud Drive** | Drive probe and file pull |
@@ -203,6 +204,64 @@ To mint a **fresh** iCDP / Octagon bottle for a specific device you control:
 5. In IKE: sign in again, **refresh the bottle list**, unlock with that device’s **current passcode**, then continue with peer keys / OpenVault / backup as usual.
 
 This is an **account + device** operation on hardware you are authorized to use—not something IKE can fabricate server-side. Prefer Recovery Key when the goal is only vault access and a healthy RK exists; use Sign out / Sign in when you need a **new PIN-bound bottle** for that device.
+
+## iCloud Keychain (CKKS) — developer reimplementation path
+
+Use this only on an **Apple ID you own / are authorized to examine**. Wrong bottle PIN burns irreversible HSM attempts.
+
+iCloud Keychain sync is **not** a single REST dump. Items live as encrypted CKKS records in per-view CloudKit zones under container `com.apple.security.keychain`. A reimplementer needs: (1) Octagon peer keys, (2) TLKs for the views of interest, (3) class-key unwrap + per-item AES decrypt, (4) SecItem attribute parse (`agrp` / `class` / `v_Data`), (5) domain-specific decode.
+
+### Prerequisites (same as OpenVault in IKE)
+
+1. Native **GrandSlam** session (PET / `mmeAuthToken` / CloudKit tokens) + Anisette.
+2. Octagon identity that can open user-controllable views:
+   - **Bottle PIN path:** Escrowproxy `get_records` → `SRP_INIT` / `RECOVER` on `com.apple.icdp.record.*` → `BottledPeerEntropy` → Cuttlefish `fetchViableBottles` → AES-GCM OTBottle → sponsor peer PKCS#8 + `peerId`; and/or
+   - **Recovery Key path:** `HKDF-SHA384(RK, altDSID)` → peer `RK-…` → `fetchRecoverableTLKShares(forPeer=RK-…)`.
+3. CloudKit **`ckAppInit`** on `com.apple.security.keychain` (bundle / cuttlefish routing as in IKE).
+
+### Protocol steps (independent of IKE UI)
+
+1. **Open each CKKS view** you care about with record sync (IKE default includes `Manatee`, `Engram`, `ProtectedCloudStorage`, `LimitedPeersAllowed`, `Passwords`, `WiFi`).
+2. Locate **`tlkshare`** records; ECIES-unwrap with the **peer encryption** private key (receiver must match your `peerId`, or use recoverable shares for that peer). Persist TLK per view.
+3. Unwrap **class keys** (synckey) with the TLK; for each **`item`** record unwrap the per-item key and decrypt `data` (AES-SIV / CKKS item path — see `CkksKeys` / `CkksVaultService` in Core).
+4. The plaintext item is a **plist** of SecItem attributes. Important short names:
+   - `class` — `inet` / `genp` / `cert` / `keys` / `idnt`
+   - `agrp` — access group (best type discriminator)
+   - `srvr` / `acct` / `labl` / `svce` / `desc` / `icmt`
+   - `v_Data` — secret or structured blob (UTF-8 password, bplist sidecar, X.509 DER, raw passkey bytes, …)
+5. **Classify by `agrp` (and view), then decode `v_Data`.** Do not force every blob through UTF-8.
+
+### Domains → how to recover them
+
+| Domain | How to find it | Decode `v_Data` | IKE outputs |
+|--------|----------------|-----------------|-------------|
+| **Web passwords** | View `Passwords`; `agrp` ≈ `com.apple.cfnetwork` / Safari; `class` `inet`/`genp` | Often UTF-8 password; merge Password Manager sidecar (`notes` / `totp` → `otpauth://`) on `(srvr,acct)` | `ckks_passwords.csv`, `ckks_notes_otp.csv` |
+| **Wi‑Fi** | View **`WiFi`** and/or `agrp`/`desc`/`svce` AirPort / Wi‑Fi | UTF-8 WPA passphrase; SSID from `acct` / `labl` / `svce` | `ckks_wifi.csv` |
+| **Credit cards** | `agrp` ≈ `com.apple.safari.credit-cards` | bplist (`cardNumber`, expiry, CVV, …) | `ckks_credit_cards.csv` |
+| **Certificates** | `class` = `cert` | X.509 DER → subject/issuer/PEM | `ckks_certs.csv` + `ckks_certs/*.pem` |
+| **Keys / identity** | `class` = `keys` / `idnt` | PKCS#8 / SEC1 / X9.63 when possible | `ckks_keys.csv` + `ckks_keys/*.pem` |
+| **Passkeys** | `agrp` ≈ `com.apple.webkit.webauthn` (often ~97 B point) | Surfaced as EC public / hex + RP hint — **not** a fillable password | `ckks_passkeys.csv`, `ckks_vdata/` |
+| **HomeKit / Rapport / SOS / app tokens / other `com.apple.*`** | `agrp` (`hap.pairing`, `rapport`, `security.sos`, `group.*`, team-id prefixes, …) | UTF-8 if any; else bplist→JSON flatten, ASN.1 sniff, raw `.bin` | `ckks_subsystem.csv`, `ckks_catalog.csv`, `ckks_vdata/` |
+| **PCS / Manatee material** | Views Manatee / Engram / PCS; PCS agrp | Separate PCS KeySet path (Messages / ADP), not a login CSV | `manatee_pcs_keys/` / session PCS pool |
+
+Raw inventory of every decrypted item: **`ckks_items.json`**. Run summary: **`ckks_vault_meta.json`** (`passwordItems`, `wifiItems`, `certItems`, `keyItems`, `passkeyItems`, `subsystemItems`, …).
+
+### Suggested reimplementation order
+
+1. Bottle or RK → peer PKCS#8 + `peerId`.
+2. TLK for **`Passwords`** → password CSV (prove the vault path).
+3. Add view **`WiFi`** → Wi‑Fi CSV.
+4. Cert / keys from `class`.
+5. Sidecar bplist (notes / TOTP) and credit-card plist.
+6. Full-item catalog + passkey / subsystem dumps for opaque material.
+
+Reference entry points in this tree: `CkksVaultService`, `CkksPasswordExport`, `CkksKeychainMaterialExport`, `CkksKeychainCatalogExport`, `CkksSecItemPayload` under `src/iCloudKitExtractor.Core/Services/Escrow/`. Protocol cross-checks (not vendored code): see [`NOTICE.md`](NOTICE.md).
+
+### Lab status (what “complete” means here)
+
+**Synced CKKS Keychain lab path:** OpenVault + domain exports above are in place for passwords, Wi‑Fi, certs/keys, passkeys/subsystem catalog, and structured `v_Data` where the format is known.
+
+**Still not a full Keychain product:** Sync Data UI category remains off; not every opaque blob is semantically decoded (HomeKit/rapport state, full WebAuthn ceremony material); no parity with device-backup `KeychainDomain`; no dedicated Keychain report tab. Missing TLK for a view ⇒ zero items for that domain (crypto gate, not CSV logic).
 
 ---
 

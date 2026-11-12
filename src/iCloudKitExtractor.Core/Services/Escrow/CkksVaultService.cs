@@ -331,6 +331,19 @@ public sealed class CkksVaultService
                 errors.Add("keychain-material-export: " + ex.Message);
             }
 
+            var catalog = new CkksKeychainCatalogExport.CatalogCounts(0, 0, 0, 0, 0, 0);
+            try
+            {
+                catalog = await CkksKeychainCatalogExport
+                    .WriteAsync(allItems, outputDirectory, log, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                log?.Report($"  Keychain catalog export skip: {ex.Message}");
+                errors.Add("keychain-catalog-export: " + ex.Message);
+            }
+
             var meta = JsonSerializer.Serialize(new
             {
                 success = totalClass > 0 || allItems.Count > 0,
@@ -345,6 +358,9 @@ public sealed class CkksVaultService
                 wifiItems = material.Wifi,
                 certItems = material.Certs,
                 keyItems = material.Keys,
+                passkeyItems = catalog.Passkeys,
+                subsystemItems = catalog.Subsystem,
+                vdataSummaries = catalog.WithSummary,
                 errors,
                 refImpl = "Laky-64/appleservices ckks OpenVault"
             }, new JsonSerializerOptions { WriteIndented = true });
@@ -356,6 +372,7 @@ public sealed class CkksVaultService
                 ? $"OK — items={allItems.Count} classKeys={totalClass} pcsKeys={pcsKeys.Count}"
                   + $" passwords={passwordRows}"
                   + $" wifi={material.Wifi} certs={material.Certs} keys={material.Keys}"
+                  + $" passkeys={catalog.Passkeys} subsystem={catalog.Subsystem}"
                   + (errors.Count > 0 ? $" (warn: {errors.Count})" : "")
                 : errors.Count > 0
                     ? string.Join("; ", errors.Take(3))

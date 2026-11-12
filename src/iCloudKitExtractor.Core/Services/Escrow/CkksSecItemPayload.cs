@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using iCloudKitExtractor.Protocol;
 
@@ -25,6 +26,12 @@ public static class CkksSecItemPayload
         Wifi,
         Certificate,
         KeyMaterial,
+        Passkey,
+        HomeKitPairing,
+        Rapport,
+        Sos,
+        AppToken,
+        Subsystem,
         BinaryPlist,
         Asn1,
         Binary,
@@ -54,7 +61,10 @@ public static class CkksSecItemPayload
         int? KeySizeBits,
         string? KeyPem,
         string DataKind,
-        int DataLen);
+        int DataLen,
+        string? Category = null,
+        string? SummaryJson = null,
+        string? HexPreview = null);
 
     public static Decoded Decode(CkksVaultItem item)
     {
@@ -215,7 +225,95 @@ public static class CkksSecItemPayload
                 KeySizeBits: null,
                 KeyPem: null,
                 DataKind: "bplist-card",
-                DataLen: len);
+                DataLen: len,
+                Category: "credit-card",
+                SummaryJson: FlattenToJson(card),
+                HexPreview: null);
+        }
+
+        var category = ClassifyAgrp(agrp, cls, item);
+        if (IsPasskeyAgrp(agrp) || category == "passkey")
+        {
+            // WebAuthn sync items: typically ~97 B raw (0x04||X||Y) or wrapped blob.
+            var hex = Convert.ToHexString(data);
+            string? summary = null;
+            if (data.Length is 65 or 97 && data[0] == 0x04)
+            {
+                summary = JsonSerializer.Serialize(new
+                {
+                    kind = "ec-x963-pub",
+                    curveBits = data.Length == 65 ? 256 : 384,
+                    pointHex = hex,
+                    rpHint = FirstNonEmpty(item.Srvr, item.Labl, svce),
+                    acct = item.Acct
+                });
+            }
+
+            return Empty("passkey", len) with
+            {
+                Kind = Kind.Passkey,
+                Title = labl,
+                Category = "passkey",
+                SummaryJson = summary,
+                HexPreview = TruncHex(data, 64),
+                KeyAlgorithm = data.Length is 65 or 97 && data[0] == 0x04 ? "EC-pub" : null,
+                KeySizeBits = data.Length == 65 ? 256 : data.Length == 97 ? 384 : null
+            };
+        }
+
+        if (category is "homekit" or "rapport" or "sos" or "app-token" or "subsystem")
+        {
+            var kind = category switch
+            {
+                "homekit" => Kind.HomeKitPairing,
+                "rapport" => Kind.Rapport,
+                "sos" => Kind.Sos,
+                "app-token" => Kind.AppToken,
+                _ => Kind.Subsystem
+            };
+            string? summaryJson = null;
+            string dataKind = "binary";
+            if (TryUtf8Secret(data, out var subUtf8))
+            {
+                dataKind = "utf8";
+                summaryJson = JsonSerializer.Serialize(new { text = subUtf8 });
+                return Empty(dataKind, len) with
+                {
+                    Kind = kind,
+                    Title = labl,
+                    Utf8Secret = subUtf8,
+                    Category = category,
+                    SummaryJson = summaryJson,
+                    HexPreview = TruncHex(data, 32),
+                    DataKind = dataKind
+                };
+            }
+
+            if (data.Length >= 8 && data.AsSpan(0, 8).SequenceEqual("bplist00"u8)
+                && AppleBinaryPlist.TryParse(data, out var root, out _)
+                && root is not null)
+            {
+                dataKind = "bplist";
+                summaryJson = FlattenToJson(root);
+            }
+            else if (data[0] == 0x30)
+            {
+                dataKind = "asn1";
+                summaryJson = JsonSerializer.Serialize(new
+                {
+                    asn1 = DescribeAsn1(data)
+                });
+            }
+
+            return Empty(dataKind, len) with
+            {
+                Kind = kind,
+                Title = labl,
+                Category = category,
+                SummaryJson = summaryJson,
+                HexPreview = TruncHex(data, 48),
+                DataKind = dataKind
+            };
         }
 
         if (TryUtf8Secret(data, out var utf8))
@@ -244,62 +342,158 @@ public static class CkksSecItemPayload
                 KeySizeBits: null,
                 KeyPem: null,
                 DataKind: "utf8",
-                DataLen: len);
+                DataLen: len,
+                Category: category,
+                SummaryJson: null,
+                HexPreview: null);
         }
 
         if (data.Length >= 8 && data.AsSpan(0, 8).SequenceEqual("bplist00"u8))
         {
-            // Generic bplist — surface notes/totp if present even outside password-manager agrp.
-            if (TryParseBplistDict(data, out var any)
-                && (any.ContainsKey("notes") || any.ContainsKey("totp") || any.ContainsKey("title")))
+            if (AppleBinaryPlist.TryParse(data, out var root, out _) && root is not null)
             {
-                var notes = AsUtf8Field(any, "notes");
-                var title = AsUtf8Field(any, "title") ?? labl;
-                string? otpAuth = null;
-                string? issuer = null;
-                string? account = null;
-                if (any.TryGetValue("totp", out var totpObj) && totpObj is Dictionary<string, object?> totp)
+                var flat = FlattenToJson(root);
+                // Generic bplist — surface notes/totp if present even outside password-manager agrp.
+                if (root is Dictionary<string, object?> any
+                    && (any.ContainsKey("notes") || any.ContainsKey("totp") || any.ContainsKey("title")))
                 {
-                    otpAuth = BuildOtpAuth(totp);
-                    issuer = AsString(totp, "issuer");
-                    account = AsString(totp, "accountName");
+                    var notes = AsUtf8Field(any, "notes");
+                    var title = AsUtf8Field(any, "title") ?? labl;
+                    string? otpAuth = null;
+                    string? issuer = null;
+                    string? account = null;
+                    if (any.TryGetValue("totp", out var totpObj) && totpObj is Dictionary<string, object?> totp)
+                    {
+                        otpAuth = BuildOtpAuth(totp);
+                        issuer = AsString(totp, "issuer");
+                        account = AsString(totp, "accountName");
+                    }
+
+                    return new Decoded(
+                        Kind.PasswordManagerSidecar,
+                        Utf8Secret: null,
+                        Notes: notes,
+                        Title: title,
+                        OtpAuth: otpAuth,
+                        TotpIssuer: issuer,
+                        TotpAccount: account,
+                        CardNumber: null,
+                        CardName: null,
+                        CardExpiry: null,
+                        CardCvv: null,
+                        WifiSsid: null,
+                        WifiPassword: null,
+                        CertSubject: null,
+                        CertIssuer: null,
+                        CertSerial: null,
+                        CertNotBefore: null,
+                        CertNotAfter: null,
+                        CertPem: null,
+                        KeyAlgorithm: null,
+                        KeySizeBits: null,
+                        KeyPem: null,
+                        DataKind: "bplist-sidecar",
+                        DataLen: len,
+                        Category: category,
+                        SummaryJson: flat,
+                        HexPreview: null);
                 }
 
-                return new Decoded(
-                    Kind.PasswordManagerSidecar,
-                    Utf8Secret: null,
-                    Notes: notes,
-                    Title: title,
-                    OtpAuth: otpAuth,
-                    TotpIssuer: issuer,
-                    TotpAccount: account,
-                    CardNumber: null,
-                    CardName: null,
-                    CardExpiry: null,
-                    CardCvv: null,
-                    WifiSsid: null,
-                    WifiPassword: null,
-                    CertSubject: null,
-                    CertIssuer: null,
-                    CertSerial: null,
-                    CertNotBefore: null,
-                    CertNotAfter: null,
-                    CertPem: null,
-                    KeyAlgorithm: null,
-                    KeySizeBits: null,
-                    KeyPem: null,
-                    DataKind: "bplist-sidecar",
-                    DataLen: len);
+                return Empty("bplist", len) with
+                {
+                    Kind = Kind.BinaryPlist,
+                    Title = labl,
+                    Category = category,
+                    SummaryJson = flat,
+                    HexPreview = TruncHex(data, 32)
+                };
             }
 
-            return Empty("bplist", len) with { Kind = Kind.BinaryPlist };
+            return Empty("bplist", len) with { Kind = Kind.BinaryPlist, Category = category };
         }
 
         if (data[0] == 0x30)
-            return Empty("asn1", len) with { Kind = Kind.Asn1 };
+        {
+            return Empty("asn1", len) with
+            {
+                Kind = Kind.Asn1,
+                Title = labl,
+                Category = category,
+                SummaryJson = JsonSerializer.Serialize(new { asn1 = DescribeAsn1(data) }),
+                HexPreview = TruncHex(data, 48)
+            };
+        }
 
-        return Empty("binary", len) with { Kind = Kind.Binary };
+        return Empty("binary", len) with
+        {
+            Kind = Kind.Binary,
+            Title = labl,
+            Category = category,
+            HexPreview = TruncHex(data, 48)
+        };
     }
+
+    /// <summary>Classifica item per <c>agrp</c> / class (catalogo forense).</summary>
+    public static string ClassifyAgrp(string? agrp, string? cls = null, CkksVaultItem? item = null)
+    {
+        agrp ??= "";
+        cls ??= item?.Class ?? "";
+        if (IsPasskeyAgrp(agrp)
+            || (item is not null
+                && (item.View?.Equals("AutoFillPasskey", StringComparison.OrdinalIgnoreCase) ?? false)))
+            return "passkey";
+        if (IsCreditCardAgrp(agrp))
+            return "credit-card";
+        if (IsPasswordManagerAgrp(agrp))
+            return "password-manager";
+        if (agrp.Contains("cfnetwork", StringComparison.OrdinalIgnoreCase)
+            || agrp.Contains("Safari", StringComparison.OrdinalIgnoreCase))
+            return "web-password";
+        if (item is not null && IsWifiItem(item))
+            return "wifi";
+        if (agrp.Contains("hap", StringComparison.OrdinalIgnoreCase)
+            || agrp.Contains("HomeKit", StringComparison.OrdinalIgnoreCase)
+            || agrp.Equals("hap.pairing", StringComparison.OrdinalIgnoreCase))
+            return "homekit";
+        if (agrp.Contains("rapport", StringComparison.OrdinalIgnoreCase))
+            return "rapport";
+        if (agrp.Contains("security.sos", StringComparison.OrdinalIgnoreCase)
+            || agrp.Equals("com.apple.security.sos", StringComparison.OrdinalIgnoreCase)
+            || agrp.Equals("com.apple.sbd", StringComparison.OrdinalIgnoreCase))
+            return "sos";
+        if (agrp.Contains("ProtectedCloudStorage", StringComparison.OrdinalIgnoreCase))
+            return "pcs";
+        if (agrp.Contains("bluetooth", StringComparison.OrdinalIgnoreCase)
+            || agrp.Contains("continuity", StringComparison.OrdinalIgnoreCase)
+            || agrp.Contains("sharing", StringComparison.OrdinalIgnoreCase)
+            || agrp.Contains("apsd", StringComparison.OrdinalIgnoreCase)
+            || agrp.Contains("FinanceKit", StringComparison.OrdinalIgnoreCase)
+            || agrp.Contains("photos", StringComparison.OrdinalIgnoreCase)
+            || agrp.Contains("Passbook", StringComparison.OrdinalIgnoreCase)
+            || agrp.Contains("networkserviceproxy", StringComparison.OrdinalIgnoreCase))
+            return "subsystem";
+        if (cls.Equals("cert", StringComparison.OrdinalIgnoreCase))
+            return "certificate";
+        if (cls.Equals("keys", StringComparison.OrdinalIgnoreCase)
+            || cls.Equals("idnt", StringComparison.OrdinalIgnoreCase))
+            return "key-material";
+        // Third-party / app access groups often look like TEAMID.* or group.*
+        if (agrp.StartsWith("group.", StringComparison.OrdinalIgnoreCase)
+            || (agrp.Length > 12 && char.IsDigit(agrp[0]) && agrp.Contains('.', StringComparison.Ordinal)))
+            return "app-token";
+        if (agrp.Equals("apple", StringComparison.OrdinalIgnoreCase))
+            return "apple-generic";
+        if (!string.IsNullOrEmpty(agrp) && agrp.StartsWith("com.apple.", StringComparison.OrdinalIgnoreCase))
+            return "subsystem";
+        if (!string.IsNullOrEmpty(agrp))
+            return "app-token";
+        return "unknown";
+    }
+
+    public static bool IsPasskeyAgrp(string agrp) =>
+        agrp.Contains("webauthn", StringComparison.OrdinalIgnoreCase)
+        || agrp.Contains("passkey", StringComparison.OrdinalIgnoreCase)
+        || agrp.Equals("com.apple.webkit.webauthn", StringComparison.OrdinalIgnoreCase);
 
     public static bool IsWifiItem(
         CkksVaultItem item,
@@ -704,6 +898,112 @@ public static class CkksSecItemPayload
         }
 
         return null;
+    }
+
+    public static string TruncHex(byte[] data, int maxBytes)
+    {
+        if (data.Length <= maxBytes)
+            return Convert.ToHexString(data);
+        return Convert.ToHexString(data.AsSpan(0, maxBytes)) + "…";
+    }
+
+    public static string? FlattenToJson(object? root)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(
+                ToJsonable(root, depth: 0),
+                new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static object? ToJsonable(object? value, int depth)
+    {
+        if (depth > 12 || value is null)
+            return null;
+        return value switch
+        {
+            string s => s,
+            bool b => b,
+            byte[] b => b.Length <= 256
+                ? Convert.ToHexString(b)
+                : Convert.ToHexString(b.AsSpan(0, 64)) + $"…({b.Length}B)",
+            sbyte or byte or short or ushort or int or uint or long or ulong or float or double
+                or decimal => value,
+            DateTime dt => dt.ToUniversalTime().ToString("O"),
+            DateTimeOffset dto => dto.ToUniversalTime().ToString("O"),
+            PlistUid uid => $"UID({uid.Value})",
+            Dictionary<string, object?> dict => dict.ToDictionary(
+                kv => kv.Key,
+                kv => ToJsonable(kv.Value, depth + 1)),
+            IDictionary<string, object?> idict => idict.ToDictionary(
+                kv => kv.Key,
+                kv => ToJsonable(kv.Value, depth + 1)),
+            object?[] arr => arr.Select(x => ToJsonable(x, depth + 1)).ToArray(),
+            System.Collections.IList list => list.Cast<object?>()
+                .Select(x => ToJsonable(x, depth + 1)).ToArray(),
+            _ => value.ToString()
+        };
+    }
+
+    public static string DescribeAsn1(byte[] data)
+    {
+        // Lightweight sniff: SEQUENCE + optional OID peek (not a full decoder).
+        if (data.Length < 2 || data[0] != 0x30)
+            return $"not-sequence len={data.Length}";
+        var oid = TryFindOidString(data);
+        return string.IsNullOrEmpty(oid)
+            ? $"SEQUENCE len={data.Length}"
+            : $"SEQUENCE len={data.Length} oid≈{oid}";
+    }
+
+    private static string? TryFindOidString(byte[] data)
+    {
+        // Look for tag 0x06 (OID) in the first 128 bytes.
+        var lim = Math.Min(data.Length - 2, 128);
+        for (var i = 0; i < lim; i++)
+        {
+            if (data[i] != 0x06)
+                continue;
+            var n = data[i + 1];
+            if (n is < 1 or > 32 || i + 2 + n > data.Length)
+                continue;
+            try
+            {
+                return FormatOid(data.AsSpan(i + 2, n));
+            }
+            catch
+            {
+                // next
+            }
+        }
+
+        return null;
+    }
+
+    private static string FormatOid(ReadOnlySpan<byte> body)
+    {
+        if (body.IsEmpty)
+            return "";
+        var first = body[0];
+        var parts = new List<int> { first / 40, first % 40 };
+        ulong acc = 0;
+        for (var i = 1; i < body.Length; i++)
+        {
+            var b = body[i];
+            acc = (acc << 7) | (b & 0x7Fu);
+            if ((b & 0x80) == 0)
+            {
+                parts.Add((int)acc);
+                acc = 0;
+            }
+        }
+
+        return string.Join('.', parts);
     }
 
     private static Decoded Empty(string kind, int len) => new(
