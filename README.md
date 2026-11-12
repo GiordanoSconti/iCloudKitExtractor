@@ -240,8 +240,9 @@ iCloud Keychain sync is **not** a single REST dump. Items live as encrypted CKKS
 | **Credit cards** | `agrp` ≈ `com.apple.safari.credit-cards` | bplist (`cardNumber`, expiry, CVV, …) | `ckks_credit_cards.csv` |
 | **Certificates** | `class` = `cert` | X.509 DER → subject/issuer/PEM | `ckks_certs.csv` + `ckks_certs/*.pem` |
 | **Keys / identity** | `class` = `keys` / `idnt` | PKCS#8 / SEC1 / X9.63 when possible | `ckks_keys.csv` + `ckks_keys/*.pem` |
-| **Passkeys** | `agrp` ≈ `com.apple.webkit.webauthn` (often ~97 B point) | Surfaced as EC public / hex + RP hint — **not** a fillable password | `ckks_passkeys.csv`, `ckks_vdata/` |
-| **HomeKit / Rapport / SOS / app tokens / other `com.apple.*`** | `agrp` (`hap.pairing`, `rapport`, `security.sos`, `group.*`, team-id prefixes, …) | UTF-8 if any; else bplist→JSON flatten, ASN.1 sniff, raw `.bin` | `ckks_subsystem.csv`, `ckks_catalog.csv`, `ckks_vdata/` |
+| **Passkeys** | `agrp` ≈ `com.apple.webkit.webauthn` (often ~97 B point) | EC X9.63 public / CBOR sniff / ASCII runs + RP hint — **not** a fillable password | `ckks_passkeys.csv`, `ckks_vdata/` |
+| **HomeKit** | `agrp` ≈ `hap.pairing` | `LTPK+LTSK` hex (Ed25519) or LTPK-only accessory; NSKeyedArchive when wrapped | `ckks_homekit.csv`, `ckks_subsystem.csv`, `ckks_vdata/` |
+| **Rapport / SOS / app tokens / other `com.apple.*`** | `agrp` (`rapport`, `security.sos`, `group.*`, team-id prefixes, …) | UTF-8 token / NSKeyedArchive resolve / nested bplist / protobuf sniff / ASN.1 | `ckks_subsystem.csv`, `ckks_catalog.csv`, `ckks_vdata/` |
 | **PCS / Manatee material** | Views Manatee / Engram / PCS; PCS agrp | Separate PCS KeySet path (Messages / ADP), not a login CSV | `manatee_pcs_keys/` / session PCS pool |
 
 Raw inventory of every decrypted item: **`ckks_items.json`**. Run summary: **`ckks_vault_meta.json`** (`passwordItems`, `wifiItems`, `certItems`, `keyItems`, `passkeyItems`, `subsystemItems`, …).
@@ -255,13 +256,13 @@ Raw inventory of every decrypted item: **`ckks_items.json`**. Run summary: **`ck
 5. Sidecar bplist (notes / TOTP) and credit-card plist.
 6. Full-item catalog + passkey / subsystem dumps for opaque material.
 
-Reference entry points in this tree: `CkksVaultService`, `CkksPasswordExport`, `CkksKeychainMaterialExport`, `CkksKeychainCatalogExport`, `CkksSecItemPayload` under `src/iCloudKitExtractor.Core/Services/Escrow/`. Protocol cross-checks (not vendored code): see [`NOTICE.md`](NOTICE.md).
+Reference entry points in this tree: `CkksVaultService`, `CkksPasswordExport`, `CkksKeychainMaterialExport`, `CkksKeychainCatalogExport`, `CkksSecItemPayload`, `CkksOpaqueBlobDecoder` under `src/iCloudKitExtractor.Core/Services/Escrow/`. Protocol cross-checks (not vendored code): see [`NOTICE.md`](NOTICE.md).
 
 ### Lab status (what “complete” means here)
 
-**Synced CKKS Keychain lab path:** OpenVault + domain exports above are in place for passwords, Wi‑Fi, certs/keys, passkeys/subsystem catalog, and structured `v_Data` where the format is known.
+**Synced CKKS Keychain lab path:** OpenVault + domain exports above are in place for passwords, Wi‑Fi, certs/keys, passkeys/subsystem/HomeKit catalog, and structured `v_Data` decode (including NSKeyedArchive flatten and HomeKit pairing strings).
 
-**Still not a full Keychain product:** Sync Data UI category remains off; not every opaque blob is semantically decoded (HomeKit/rapport state, full WebAuthn ceremony material); no parity with device-backup `KeychainDomain`; no dedicated Keychain report tab. Missing TLK for a view ⇒ zero items for that domain (crypto gate, not CSV logic).
+**Still not a full Keychain product:** Sync Data UI category remains off; some blobs remain best-effort (protobuf sniff / CBOR head / ASN.1 OID only — not full WebAuthn ceremony or Rapport session semantics); no parity with device-backup `KeychainDomain`; no dedicated Keychain report tab. Missing TLK for a view ⇒ zero items for that domain (crypto gate, not CSV logic).
 
 ---
 

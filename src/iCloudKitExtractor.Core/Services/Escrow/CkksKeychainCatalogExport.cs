@@ -6,7 +6,8 @@ namespace iCloudKitExtractor.Services.Escrow;
 
 /// <summary>
 /// Catalogo forense di tutti gli item CKKS: classificazione agrp, passkey,
-/// subsystem (HomeKit/rapport/sos/…), e decode v_Data (bplist JSON / ASN.1 sniff / hex).
+/// subsystem (HomeKit/rapport/sos/…), e decode v_Data (NSKeyedArchive / HomeKit
+/// LTPK·LTSK / passkey / protobuf sniff / ASN.1).
 /// </summary>
 public static class CkksKeychainCatalogExport
 {
@@ -14,6 +15,7 @@ public static class CkksKeychainCatalogExport
         int Total,
         int Passkeys,
         int Subsystem,
+        int HomeKit,
         int BplistDecoded,
         int Asn1Sniffed,
         int WithSummary);
@@ -34,15 +36,20 @@ public static class CkksKeychainCatalogExport
 
         var passkeyCsv = new StringBuilder();
         passkeyCsv.AppendLine(
-            "view,agrp,labl,srvr,acct,dataLen,keyBits,hexPreview,summaryFile,name");
+            "view,agrp,labl,srvr,acct,dataLen,keyBits,dataKind,hexPreview,summaryFile,name");
 
         var subsystemCsv = new StringBuilder();
         subsystemCsv.AppendLine(
             "view,class,agrp,category,kind,dataKind,dataLen,labl,acct,svce,summaryFile,hexPreview,name");
 
+        var homekitCsv = new StringBuilder();
+        homekitCsv.AppendLine(
+            "view,agrp,role,pairingId,accessoryId,ltpk,ltsk,curve,label,acct,dataKind,summaryFile,name");
+
         var catalogJson = new List<object>();
         var passkeyN = 0;
         var subsystemN = 0;
+        var homekitN = 0;
         var bplistN = 0;
         var asn1N = 0;
         var summaryN = 0;
@@ -63,14 +70,15 @@ public static class CkksKeychainCatalogExport
             if (!string.IsNullOrEmpty(decoded.SummaryJson))
             {
                 summaryN++;
-                if (decoded.DataKind.StartsWith("bplist", StringComparison.OrdinalIgnoreCase)
+                if (decoded.DataKind.Contains("bplist", StringComparison.OrdinalIgnoreCase)
+                    || decoded.DataKind.Contains("nskeyed", StringComparison.OrdinalIgnoreCase)
                     || decoded.Kind == CkksSecItemPayload.Kind.BinaryPlist)
                     bplistN++;
-                if (decoded.DataKind.Equals("asn1", StringComparison.OrdinalIgnoreCase)
+                if (decoded.DataKind.Contains("asn1", StringComparison.OrdinalIgnoreCase)
                     || decoded.Kind == CkksSecItemPayload.Kind.Asn1)
                     asn1N++;
 
-                summaryFile = $"vdata_{fileIndex:D5}_{Sanitize(category)}.json";
+                summaryFile = $"vdata_{fileIndex:D5}_{Sanitize(category)}_{Sanitize(decoded.DataKind)}.json";
                 await File.WriteAllTextAsync(
                         Path.Combine(vdataDir, summaryFile), decoded.SummaryJson, ct)
                     .ConfigureAwait(false);
@@ -159,6 +167,7 @@ public static class CkksKeychainCatalogExport
                     .Append(Csv(item.Acct)).Append(',')
                     .Append(decoded.DataLen).Append(',')
                     .Append(decoded.KeySizeBits?.ToString() ?? "").Append(',')
+                    .Append(Csv(decoded.DataKind)).Append(',')
                     .Append(Csv(decoded.HexPreview)).Append(',')
                     .Append(Csv(summaryFile)).Append(',')
                     .Append(Csv(item.Name))
@@ -188,6 +197,16 @@ public static class CkksKeychainCatalogExport
                     .Append(Csv(item.Name))
                     .AppendLine();
             }
+
+            if (category == "homekit"
+                || decoded.Kind == CkksSecItemPayload.Kind.HomeKitPairing
+                || decoded.DataKind.StartsWith("homekit", StringComparison.OrdinalIgnoreCase)
+                || decoded.DataKind.StartsWith("nskeyed-homekit", StringComparison.OrdinalIgnoreCase))
+            {
+                homekitN++;
+                TryAppendHomeKitRow(
+                    homekitCsv, item, agrp, decoded, summaryFile);
+            }
         }
 
         await File.WriteAllTextAsync(
@@ -199,6 +218,9 @@ public static class CkksKeychainCatalogExport
         await File.WriteAllTextAsync(
             Path.Combine(outputDirectory, "ckks_subsystem.csv"), subsystemCsv.ToString(), ct)
             .ConfigureAwait(false);
+        await File.WriteAllTextAsync(
+            Path.Combine(outputDirectory, "ckks_homekit.csv"), homekitCsv.ToString(), ct)
+            .ConfigureAwait(false);
 
         var jsonOpts = new JsonSerializerOptions { WriteIndented = true };
         await File.WriteAllTextAsync(
@@ -207,11 +229,63 @@ public static class CkksKeychainCatalogExport
 
         log?.Report(
             $"  Keychain catalog: total={items.Count} passkeys={passkeyN} subsystem={subsystemN} " +
-            $"bplistJson={bplistN} asn1={asn1N} summaries={summaryN} → " +
-            "ckks_catalog.csv / ckks_passkeys.csv / ckks_subsystem.csv / ckks_vdata/");
+            $"homekit={homekitN} bplistJson={bplistN} asn1={asn1N} summaries={summaryN} → " +
+            "ckks_catalog.csv / ckks_passkeys.csv / ckks_subsystem.csv / ckks_homekit.csv / ckks_vdata/");
 
-        return new CatalogCounts(items.Count, passkeyN, subsystemN, bplistN, asn1N, summaryN);
+        return new CatalogCounts(
+            items.Count, passkeyN, subsystemN, homekitN, bplistN, asn1N, summaryN);
     }
+
+    private static void TryAppendHomeKitRow(
+        StringBuilder csv,
+        CkksVaultItem item,
+        string agrp,
+        CkksSecItemPayload.Decoded decoded,
+        string? summaryFile)
+    {
+        string? role = null, pairingId = null, accessoryId = null, ltpk = null, ltsk = null, curve = null;
+        if (!string.IsNullOrEmpty(decoded.SummaryJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(decoded.SummaryJson);
+                var root = doc.RootElement;
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    role = Prop(root, "role");
+                    pairingId = Prop(root, "pairingId");
+                    accessoryId = Prop(root, "accessoryId");
+                    ltpk = Prop(root, "ltpk");
+                    ltsk = Prop(root, "ltsk");
+                    curve = Prop(root, "curve");
+                }
+            }
+            catch
+            {
+                // summary non-object
+            }
+        }
+
+        csv.Append(Csv(item.View)).Append(',')
+            .Append(Csv(agrp)).Append(',')
+            .Append(Csv(role)).Append(',')
+            .Append(Csv(pairingId)).Append(',')
+            .Append(Csv(accessoryId)).Append(',')
+            .Append(Csv(ltpk)).Append(',')
+            .Append(Csv(ltsk)).Append(',')
+            .Append(Csv(curve)).Append(',')
+            .Append(Csv(item.Labl)).Append(',')
+            .Append(Csv(item.Acct)).Append(',')
+            .Append(Csv(decoded.DataKind)).Append(',')
+            .Append(Csv(summaryFile)).Append(',')
+            .Append(Csv(item.Name))
+            .AppendLine();
+    }
+
+    private static string? Prop(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var p) && p.ValueKind != JsonValueKind.Null
+            ? p.ToString()
+            : null;
 
     private static string Sanitize(string category)
     {

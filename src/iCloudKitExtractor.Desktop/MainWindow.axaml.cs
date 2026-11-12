@@ -2375,7 +2375,8 @@ public partial class MainWindow : Window
                      {
                          "ckks_passwords.csv", "ckks_notes_otp.csv", "ckks_wifi.csv",
                          "ckks_certs.csv", "ckks_keys.csv", "ckks_credit_cards.csv",
-                         "ckks_catalog.csv", "ckks_passkeys.csv", "ckks_subsystem.csv"
+                         "ckks_catalog.csv", "ckks_passkeys.csv", "ckks_subsystem.csv",
+                         "ckks_homekit.csv"
                      })
             {
                 var p = Path.Combine(outputDir, name);

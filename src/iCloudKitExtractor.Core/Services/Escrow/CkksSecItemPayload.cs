@@ -234,30 +234,17 @@ public static class CkksSecItemPayload
         var category = ClassifyAgrp(agrp, cls, item);
         if (IsPasskeyAgrp(agrp) || category == "passkey")
         {
-            // WebAuthn sync items: typically ~97 B raw (0x04||X||Y) or wrapped blob.
-            var hex = Convert.ToHexString(data);
-            string? summary = null;
-            if (data.Length is 65 or 97 && data[0] == 0x04)
-            {
-                summary = JsonSerializer.Serialize(new
-                {
-                    kind = "ec-x963-pub",
-                    curveBits = data.Length == 65 ? 256 : 384,
-                    pointHex = hex,
-                    rpHint = FirstNonEmpty(item.Srvr, item.Labl, svce),
-                    acct = item.Acct
-                });
-            }
-
-            return Empty("passkey", len) with
+            var opaquePk = CkksOpaqueBlobDecoder.TryDecode(item, data, "passkey");
+            return Empty(opaquePk?.Format ?? "passkey", len) with
             {
                 Kind = Kind.Passkey,
                 Title = labl,
                 Category = "passkey",
-                SummaryJson = summary,
+                SummaryJson = opaquePk?.SummaryJson,
                 HexPreview = TruncHex(data, 64),
                 KeyAlgorithm = data.Length is 65 or 97 && data[0] == 0x04 ? "EC-pub" : null,
-                KeySizeBits = data.Length == 65 ? 256 : data.Length == 97 ? 384 : null
+                KeySizeBits = data.Length == 65 ? 256 : data.Length == 97 ? 384 : null,
+                DataKind = opaquePk?.Format ?? "passkey"
             };
         }
 
@@ -271,48 +258,29 @@ public static class CkksSecItemPayload
                 "app-token" => Kind.AppToken,
                 _ => Kind.Subsystem
             };
-            string? summaryJson = null;
-            string dataKind = "binary";
-            if (TryUtf8Secret(data, out var subUtf8))
+            var opaque = CkksOpaqueBlobDecoder.TryDecode(item, data, category);
+            if (opaque is not null)
             {
-                dataKind = "utf8";
-                summaryJson = JsonSerializer.Serialize(new { text = subUtf8 });
-                return Empty(dataKind, len) with
+                return Empty(opaque.Format, len) with
                 {
                     Kind = kind,
                     Title = labl,
-                    Utf8Secret = subUtf8,
+                    Utf8Secret = opaque.Utf8Secret,
                     Category = category,
-                    SummaryJson = summaryJson,
-                    HexPreview = TruncHex(data, 32),
-                    DataKind = dataKind
+                    SummaryJson = opaque.SummaryJson,
+                    HexPreview = TruncHex(data, 48),
+                    DataKind = opaque.Format
                 };
             }
 
-            if (data.Length >= 8 && data.AsSpan(0, 8).SequenceEqual("bplist00"u8)
-                && AppleBinaryPlist.TryParse(data, out var root, out _)
-                && root is not null)
-            {
-                dataKind = "bplist";
-                summaryJson = FlattenToJson(root);
-            }
-            else if (data[0] == 0x30)
-            {
-                dataKind = "asn1";
-                summaryJson = JsonSerializer.Serialize(new
-                {
-                    asn1 = DescribeAsn1(data)
-                });
-            }
-
-            return Empty(dataKind, len) with
+            return Empty("binary", len) with
             {
                 Kind = kind,
                 Title = labl,
                 Category = category,
-                SummaryJson = summaryJson,
+                SummaryJson = null,
                 HexPreview = TruncHex(data, 48),
-                DataKind = dataKind
+                DataKind = "binary"
             };
         }
 
@@ -352,7 +320,6 @@ public static class CkksSecItemPayload
         {
             if (AppleBinaryPlist.TryParse(data, out var root, out _) && root is not null)
             {
-                var flat = FlattenToJson(root);
                 // Generic bplist — surface notes/totp if present even outside password-manager agrp.
                 if (root is Dictionary<string, object?> any
                     && (any.ContainsKey("notes") || any.ContainsKey("totp") || any.ContainsKey("title")))
@@ -395,17 +362,20 @@ public static class CkksSecItemPayload
                         DataKind: "bplist-sidecar",
                         DataLen: len,
                         Category: category,
-                        SummaryJson: flat,
+                        SummaryJson: FlattenToJson(root),
                         HexPreview: null);
                 }
 
-                return Empty("bplist", len) with
+                // Prefer NSKeyedArchive / nested resolve over shallow flatten.
+                var opaqueBp = CkksOpaqueBlobDecoder.TryDecode(item, data, category);
+                return Empty(opaqueBp?.Format ?? "bplist", len) with
                 {
                     Kind = Kind.BinaryPlist,
                     Title = labl,
                     Category = category,
-                    SummaryJson = flat,
-                    HexPreview = TruncHex(data, 32)
+                    SummaryJson = opaqueBp?.SummaryJson ?? FlattenToJson(root),
+                    HexPreview = TruncHex(data, 32),
+                    DataKind = opaqueBp?.Format ?? "bplist"
                 };
             }
 
@@ -414,22 +384,28 @@ public static class CkksSecItemPayload
 
         if (data[0] == 0x30)
         {
-            return Empty("asn1", len) with
+            var opaqueAsn = CkksOpaqueBlobDecoder.TryDecode(item, data, category);
+            return Empty(opaqueAsn?.Format ?? "asn1", len) with
             {
                 Kind = Kind.Asn1,
                 Title = labl,
                 Category = category,
-                SummaryJson = JsonSerializer.Serialize(new { asn1 = DescribeAsn1(data) }),
-                HexPreview = TruncHex(data, 48)
+                SummaryJson = opaqueAsn?.SummaryJson
+                              ?? JsonSerializer.Serialize(new { asn1 = DescribeAsn1(data) }),
+                HexPreview = TruncHex(data, 48),
+                DataKind = opaqueAsn?.Format ?? "asn1"
             };
         }
 
-        return Empty("binary", len) with
+        var opaqueBin = CkksOpaqueBlobDecoder.TryDecode(item, data, category);
+        return Empty(opaqueBin?.Format ?? "binary", len) with
         {
             Kind = Kind.Binary,
             Title = labl,
             Category = category,
-            HexPreview = TruncHex(data, 48)
+            SummaryJson = opaqueBin?.SummaryJson,
+            HexPreview = TruncHex(data, 48),
+            DataKind = opaqueBin?.Format ?? "binary"
         };
     }
 

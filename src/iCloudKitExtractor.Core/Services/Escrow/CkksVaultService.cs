@@ -331,7 +331,7 @@ public sealed class CkksVaultService
                 errors.Add("keychain-material-export: " + ex.Message);
             }
 
-            var catalog = new CkksKeychainCatalogExport.CatalogCounts(0, 0, 0, 0, 0, 0);
+            var catalog = new CkksKeychainCatalogExport.CatalogCounts(0, 0, 0, 0, 0, 0, 0);
             try
             {
                 catalog = await CkksKeychainCatalogExport
@@ -360,6 +360,7 @@ public sealed class CkksVaultService
                 keyItems = material.Keys,
                 passkeyItems = catalog.Passkeys,
                 subsystemItems = catalog.Subsystem,
+                homekitItems = catalog.HomeKit,
                 vdataSummaries = catalog.WithSummary,
                 errors,
                 refImpl = "Laky-64/appleservices ckks OpenVault"
@@ -373,6 +374,7 @@ public sealed class CkksVaultService
                   + $" passwords={passwordRows}"
                   + $" wifi={material.Wifi} certs={material.Certs} keys={material.Keys}"
                   + $" passkeys={catalog.Passkeys} subsystem={catalog.Subsystem}"
+                  + $" homekit={catalog.HomeKit}"
                   + (errors.Count > 0 ? $" (warn: {errors.Count})" : "")
                 : errors.Count > 0
                     ? string.Join("; ", errors.Take(3))
