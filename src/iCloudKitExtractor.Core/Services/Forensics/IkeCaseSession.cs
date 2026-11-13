@@ -19,6 +19,7 @@ public sealed class IkeCaseSession
     public const string FilesFolder = "files";
     public const string SyncDataFolder = "syncdata";
     public const string MailFolder = "mail";
+    public const string LaboratoryFolder = "laboratory";
     public const string ReportFolder = "report";
     public const string OpsFolder = "ops";
 
@@ -32,6 +33,7 @@ public sealed class IkeCaseSession
         FilesFolder,
         SyncDataFolder,
         MailFolder,
+        LaboratoryFolder,
         ReportFolder,
         OpsFolder,
     ];
@@ -55,6 +57,7 @@ public sealed class IkeCaseSession
     public string FilesRoot => Path.Combine(RootPath, FilesFolder);
     public string SyncDataRoot => Path.Combine(RootPath, SyncDataFolder);
     public string MailRoot => Path.Combine(RootPath, MailFolder);
+    public string LaboratoryRoot => Path.Combine(RootPath, LaboratoryFolder);
     public string ReportRoot => Path.Combine(RootPath, ReportFolder);
     public string OpsRoot => Path.Combine(RootPath, OpsFolder);
 

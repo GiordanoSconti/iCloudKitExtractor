@@ -634,6 +634,380 @@ public partial class MainWindow : Window
         return _case.RootPath;
     }
 
+    private string? _laboratoryAtlasOutputDir;
+
+    private sealed class LaboratoryAtlasRow
+    {
+        public string ContainerId { get; init; } = "";
+        public string Label { get; init; } = "";
+        public string Kind { get; init; } = "";
+        public string Status { get; init; } = "";
+        public string CoreData { get; init; } = "";
+        public string Pcs { get; init; } = "";
+        public string Share { get; init; } = "";
+        public string Zones { get; init; } = "";
+        public string Catalog { get; init; } = "";
+    }
+
+    private async void LaboratoryAtlasButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_session is null)
+        {
+            ShowMessage("Laboratory", "Sign in first.");
+            return;
+        }
+
+        LaboratoryAtlasButton.IsEnabled = false;
+        LaboratoryAtlasOpenFolderButton.IsEnabled = false;
+        LaboratoryAtlasStatusText.Text = "Building atlas…";
+        LaboratoryAtlasLogTextBox.Text = "";
+        LaboratoryAtlasGrid.ItemsSource = null;
+        _laboratoryAtlasOutputDir = null;
+
+        var extrasRaw = LaboratoryAtlasExtraTextBox?.Text;
+        var outDir = _case is not null
+            ? Path.Combine(_case.LaboratoryRoot, "container_atlas")
+            : Path.Combine(Path.GetTempPath(), "ike-laboratory", "container_atlas");
+
+        try
+        {
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            var candidates = BuildCloudKitProbeCandidates(extrasRaw);
+            var progress = new Progress<string>(msg =>
+                Dispatcher.UIThread.Post(() =>
+                {
+                    LaboratoryAtlasStatusText.Text = TrimUiStatus(msg, 140);
+                    AppendLaboratoryAtlasLog(msg);
+                }));
+
+            var atlas = await new CloudKitContainerProbeService(Orchestrator, Http)
+                .ProbeAtlasAsync(_session, candidates, outDir, progress)
+                .ConfigureAwait(false);
+
+            _laboratoryAtlasOutputDir = atlas.OutputDirectory;
+            var rows = atlas.Hits
+                .OrderByDescending(h => h.StatusCode == 200)
+                .ThenBy(h => h.ContainerId, StringComparer.OrdinalIgnoreCase)
+                .Select(h => new LaboratoryAtlasRow
+                {
+                    ContainerId = h.ContainerId,
+                    Label = h.Label,
+                    Kind = h.Kind,
+                    Status = h.StatusCode < 0 ? "EX" : h.StatusCode.ToString(),
+                    CoreData = h.HasCoreDataCloudKitZone ? "yes" : "",
+                    Pcs = h.PcsLikely ? "yes" : "",
+                    Share = h.ShareZones is { Count: > 0 } ? h.ShareZones.Count.ToString() : "",
+                    Zones = h.Zones is { Count: > 0 } ? string.Join(" | ", h.Zones) : "",
+                    Catalog = h.InCatalog ? "yes" : "new?",
+                })
+                .ToList();
+
+            LaboratoryAtlasGrid.ItemsSource = rows;
+            LaboratoryAtlasOpenFolderButton.IsEnabled = !string.IsNullOrEmpty(_laboratoryAtlasOutputDir);
+            LaboratoryAtlasStatusText.Text =
+                $"OK={atlas.OkCount} CoreData={atlas.CoreDataCount} PCS≈{atlas.PcsLikelyCount} " +
+                $"share={atlas.ShareZoneContainers} 3p={atlas.ThirdPartyOk} → {atlas.OutputDirectory}";
+            AppendLaboratoryAtlasLog(atlas.ReportText);
+            RecordCaseOp("laboratory", "container-atlas",
+                $"ok={atlas.OkCount} coredata={atlas.CoreDataCount}");
+        }
+        catch (Exception ex)
+        {
+            LaboratoryAtlasStatusText.Text = "Failed: " + TrimUiStatus(ex.Message, 120);
+            AppendLaboratoryAtlasLog("ERROR: " + ex);
+            ShowMessage("Laboratory", "Container atlas failed:\n" + ex.Message);
+        }
+        finally
+        {
+            LaboratoryAtlasButton.IsEnabled = true;
+        }
+    }
+
+    private void LaboratoryAtlasOpenFolderButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_laboratoryAtlasOutputDir)
+            || !Directory.Exists(_laboratoryAtlasOutputDir))
+        {
+            ShowMessage("Laboratory", "No atlas output folder yet.");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _laboratoryAtlasOutputDir,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Laboratory", ex.Message);
+        }
+    }
+
+    private void AppendLaboratoryAtlasLog(string line)
+    {
+        if (LaboratoryAtlasLogTextBox is null)
+            return;
+        var cur = LaboratoryAtlasLogTextBox.Text;
+        if (string.IsNullOrEmpty(cur) || cur.StartsWith("Atlas log", StringComparison.Ordinal))
+            LaboratoryAtlasLogTextBox.Text = line;
+        else
+            LaboratoryAtlasLogTextBox.Text = cur + "\n" + line;
+    }
+
+    private string? _laboratoryShareOutputDir;
+    private string? _laboratoryTimelineOutputDir;
+    private string? _laboratoryThirdPartyOutputDir;
+
+    private sealed class LaboratoryShareRow
+    {
+        public string ContainerId { get; init; } = "";
+        public string Label { get; init; } = "";
+        public string Zone { get; init; } = "";
+        public string Participants { get; init; } = "";
+        public string Signals { get; init; } = "";
+    }
+
+    private sealed class LaboratoryTimelineRow
+    {
+        public string When { get; init; } = "";
+        public string ContainerId { get; init; } = "";
+        public string Zone { get; init; } = "";
+        public string Kind { get; init; } = "";
+        public string Detail { get; init; } = "";
+    }
+
+    private sealed class LaboratoryThirdPartyRow
+    {
+        public string ContainerId { get; init; } = "";
+        public string Label { get; init; } = "";
+        public string Source { get; init; } = "";
+        public string Status { get; init; } = "";
+        public string Zones { get; init; } = "";
+        public string Pcs { get; init; } = "";
+    }
+
+    private string LaboratoryOut(string leaf) =>
+        _case is not null
+            ? Path.Combine(_case.LaboratoryRoot, leaf)
+            : Path.Combine(Path.GetTempPath(), "ike-laboratory", leaf);
+
+    private async void LaboratoryShareButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_session is null)
+        {
+            ShowMessage("Laboratory", "Sign in first.");
+            return;
+        }
+
+        LaboratoryShareButton.IsEnabled = false;
+        LaboratoryShareOpenFolderButton.IsEnabled = false;
+        LaboratoryShareStatusText.Text = "Building share graph…";
+        LaboratoryShareLogTextBox.Text = "";
+        LaboratoryShareGrid.ItemsSource = null;
+        _laboratoryShareOutputDir = null;
+        try
+        {
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            var progress = new Progress<string>(msg =>
+                Dispatcher.UIThread.Post(() =>
+                {
+                    LaboratoryShareStatusText.Text = TrimUiStatus(msg, 140);
+                    AppendLabLog(LaboratoryShareLogTextBox, msg, "Share graph log");
+                }));
+            var result = await new CloudKitLaboratoryService(Orchestrator, Http)
+                .ProbeShareGraphAsync(_session, LaboratoryOut("share_graph"), progress)
+                .ConfigureAwait(false);
+            _laboratoryShareOutputDir = result.OutputDirectory;
+            LaboratoryShareGrid.ItemsSource = result.Edges.Select(e => new LaboratoryShareRow
+            {
+                ContainerId = e.ContainerId,
+                Label = e.Label,
+                Zone = e.Zone,
+                Participants = string.Join(" | ", e.Participants.Take(6)),
+                Signals = string.Join(" | ", e.Signals.Take(4)),
+            }).ToList();
+            LaboratoryShareOpenFolderButton.IsEnabled = !string.IsNullOrEmpty(_laboratoryShareOutputDir);
+            LaboratoryShareStatusText.Text =
+                $"containersOK={result.ContainersOk} edges={result.ShareZones} → {result.OutputDirectory}";
+            AppendLabLog(LaboratoryShareLogTextBox, result.ReportText, "Share graph log");
+            RecordCaseOp("laboratory", "share-graph", $"edges={result.ShareZones}");
+        }
+        catch (Exception ex)
+        {
+            LaboratoryShareStatusText.Text = "Failed: " + TrimUiStatus(ex.Message, 120);
+            AppendLabLog(LaboratoryShareLogTextBox, "ERROR: " + ex, "Share graph log");
+            ShowMessage("Laboratory", "Share graph failed:\n" + ex.Message);
+        }
+        finally
+        {
+            LaboratoryShareButton.IsEnabled = true;
+        }
+    }
+
+    private void LaboratoryShareOpenFolderButton_Click(object? sender, RoutedEventArgs e) =>
+        OpenLaboratoryFolder(_laboratoryShareOutputDir);
+
+    private async void LaboratoryTimelineButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_session is null)
+        {
+            ShowMessage("Laboratory", "Sign in first.");
+            return;
+        }
+
+        if (!int.TryParse(LaboratoryTimelineDaysTextBox?.Text?.Trim(), out var days) || days < 1)
+            days = 14;
+
+        LaboratoryTimelineButton.IsEnabled = false;
+        LaboratoryTimelineOpenFolderButton.IsEnabled = false;
+        LaboratoryTimelineStatusText.Text = "Sampling timeline…";
+        LaboratoryTimelineLogTextBox.Text = "";
+        LaboratoryTimelineGrid.ItemsSource = null;
+        _laboratoryTimelineOutputDir = null;
+        try
+        {
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            var progress = new Progress<string>(msg =>
+                Dispatcher.UIThread.Post(() =>
+                {
+                    LaboratoryTimelineStatusText.Text = TrimUiStatus(msg, 140);
+                    AppendLabLog(LaboratoryTimelineLogTextBox, msg, "Timeline log");
+                }));
+            var result = await new CloudKitLaboratoryService(Orchestrator, Http)
+                .ProbeTimelineAsync(_session, LaboratoryOut("change_timeline"), days, progress)
+                .ConfigureAwait(false);
+            _laboratoryTimelineOutputDir = result.OutputDirectory;
+            LaboratoryTimelineGrid.ItemsSource = result.Events
+                .OrderByDescending(ev => ev.WhenIso ?? "")
+                .Select(ev => new LaboratoryTimelineRow
+                {
+                    When = ev.WhenIso ?? "",
+                    ContainerId = ev.ContainerId,
+                    Zone = ev.Zone,
+                    Kind = ev.Kind,
+                    Detail = ev.Detail,
+                }).ToList();
+            LaboratoryTimelineOpenFolderButton.IsEnabled =
+                !string.IsNullOrEmpty(_laboratoryTimelineOutputDir);
+            LaboratoryTimelineStatusText.Text =
+                $"days={result.DaysWindow} ok={result.ContainersOk} zones={result.ZonesSampled} " +
+                $"events={result.Events.Count} tokens={result.Tokens.Count} → {result.OutputDirectory}";
+            AppendLabLog(LaboratoryTimelineLogTextBox, result.ReportText, "Timeline log");
+            RecordCaseOp("laboratory", "change-timeline",
+                $"days={result.DaysWindow} events={result.Events.Count}");
+        }
+        catch (Exception ex)
+        {
+            LaboratoryTimelineStatusText.Text = "Failed: " + TrimUiStatus(ex.Message, 120);
+            AppendLabLog(LaboratoryTimelineLogTextBox, "ERROR: " + ex, "Timeline log");
+            ShowMessage("Laboratory", "Timeline failed:\n" + ex.Message);
+        }
+        finally
+        {
+            LaboratoryTimelineButton.IsEnabled = true;
+        }
+    }
+
+    private void LaboratoryTimelineOpenFolderButton_Click(object? sender, RoutedEventArgs e) =>
+        OpenLaboratoryFolder(_laboratoryTimelineOutputDir);
+
+    private async void LaboratoryThirdPartyButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_session is null)
+        {
+            ShowMessage("Laboratory", "Sign in first.");
+            return;
+        }
+
+        LaboratoryThirdPartyButton.IsEnabled = false;
+        LaboratoryThirdPartyOpenFolderButton.IsEnabled = false;
+        LaboratoryThirdPartyStatusText.Text = "Probing third-party…";
+        LaboratoryThirdPartyLogTextBox.Text = "";
+        LaboratoryThirdPartyGrid.ItemsSource = null;
+        _laboratoryThirdPartyOutputDir = null;
+        try
+        {
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            var extras = (LaboratoryThirdPartyExtraTextBox?.Text ?? "")
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => s.Length > 0 && !s.StartsWith('#'))
+                .ToList();
+            var progress = new Progress<string>(msg =>
+                Dispatcher.UIThread.Post(() =>
+                {
+                    LaboratoryThirdPartyStatusText.Text = TrimUiStatus(msg, 140);
+                    AppendLabLog(LaboratoryThirdPartyLogTextBox, msg, "Third-party log");
+                }));
+            var result = await new CloudKitLaboratoryService(Orchestrator, Http)
+                .ProbeThirdPartyAsync(_session, LaboratoryOut("third_party"), extras, progress)
+                .ConfigureAwait(false);
+            _laboratoryThirdPartyOutputDir = result.OutputDirectory;
+            LaboratoryThirdPartyGrid.ItemsSource = result.Hits
+                .OrderByDescending(h => h.StatusCode == 200)
+                .Select(h => new LaboratoryThirdPartyRow
+                {
+                    ContainerId = h.ContainerId,
+                    Label = h.Label,
+                    Source = h.Source,
+                    Status = h.StatusCode < 0 ? "EX" : h.StatusCode.ToString(),
+                    Zones = string.Join(" | ", h.Zones),
+                    Pcs = h.PcsLikely ? "yes" : "",
+                }).ToList();
+            LaboratoryThirdPartyOpenFolderButton.IsEnabled =
+                !string.IsNullOrEmpty(_laboratoryThirdPartyOutputDir);
+            LaboratoryThirdPartyStatusText.Text =
+                $"OK={result.OkCount}/{result.Hits.Count} → {result.OutputDirectory}";
+            AppendLabLog(LaboratoryThirdPartyLogTextBox, result.ReportText, "Third-party log");
+            RecordCaseOp("laboratory", "third-party", $"ok={result.OkCount}");
+        }
+        catch (Exception ex)
+        {
+            LaboratoryThirdPartyStatusText.Text = "Failed: " + TrimUiStatus(ex.Message, 120);
+            AppendLabLog(LaboratoryThirdPartyLogTextBox, "ERROR: " + ex, "Third-party log");
+            ShowMessage("Laboratory", "Third-party probe failed:\n" + ex.Message);
+        }
+        finally
+        {
+            LaboratoryThirdPartyButton.IsEnabled = true;
+        }
+    }
+
+    private void LaboratoryThirdPartyOpenFolderButton_Click(object? sender, RoutedEventArgs e) =>
+        OpenLaboratoryFolder(_laboratoryThirdPartyOutputDir);
+
+    private void OpenLaboratoryFolder(string? dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+        {
+            ShowMessage("Laboratory", "No output folder yet.");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Laboratory", ex.Message);
+        }
+    }
+
+    private static void AppendLabLog(TextBox? box, string line, string emptyPrefix)
+    {
+        if (box is null)
+            return;
+        var cur = box.Text;
+        if (string.IsNullOrEmpty(cur) || cur.StartsWith(emptyPrefix, StringComparison.Ordinal))
+            box.Text = line;
+        else
+            box.Text = cur + "\n" + line;
+    }
+
     private async Task ApplyBrowsedFolderAsync(TextBox box, string? folder)
     {
         if (string.IsNullOrEmpty(folder))
@@ -680,7 +1054,9 @@ public partial class MainWindow : Window
         if (ReportTab is not null)
             ReportTab.IsEnabled = hasCase;
         EscrowTab.IsEnabled = stage >= UiWizardStage.AfterLogin;
-        // SharedStreams / KeyValue / Contacts / Find My People: post-login.
+        // Laboratory + exploratory CloudKit probes: post-login (ckAppInit only).
+        if (LaboratoryTab is not null)
+            LaboratoryTab.IsEnabled = stage >= UiWizardStage.AfterLogin;
         if (ExploratoryServicesTab is not null)
             ExploratoryServicesTab.IsEnabled = stage >= UiWizardStage.AfterLogin;
         // Trusted / IMAP: dopo caso (credenziali dedicate, anche senza Escrow).
@@ -1839,11 +2215,13 @@ public partial class MainWindow : Window
     /// <summary>iCSC dal campo Escrow; se vuoto → DSID (default).</summary>
     private string ResolveEscrowIcsc()
     {
-        var typed = EscrowPasswordBox.Text.Trim();
+        var typed = EscrowPasswordBox?.Text?.Trim() ?? "";
         if (!string.IsNullOrEmpty(typed))
             return typed;
         return _session?.Dsid?.Trim() ?? "";
     }
+
+    private static string UiText(TextBox? box) => box?.Text?.Trim() ?? "";
 
     /// <summary>
     /// Remint Anisette dopo operazioni lunghe Escrow/Octagon (OTP spesso morto).
@@ -1883,11 +2261,11 @@ public partial class MainWindow : Window
 
         var useSms = EscrowSmsVariantCheckBox.IsChecked == true;
         var iCsc = ResolveEscrowIcsc();
-        var iCscFromField = !string.IsNullOrWhiteSpace(EscrowPasswordBox.Text);
+        var iCscFromField = !string.IsNullOrWhiteSpace(EscrowPasswordBox?.Text);
 
-        var outputDir = DecryptOutputTextBox.Text.Trim();
+        var outputDir = UiText(DecryptOutputTextBox);
         if (string.IsNullOrEmpty(outputDir))
-            outputDir = OutputFolderTextBox.Text.Trim();
+            outputDir = UiText(OutputFolderTextBox);
         if (string.IsNullOrEmpty(outputDir))
         {
             ShowMessage("Unlock EscrowedKeys", "Select an output folder.");
@@ -2034,7 +2412,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var passcode = EscrowPasswordBox.Text.Trim();
+        var passcode = UiText(EscrowPasswordBox);
         if (string.IsNullOrEmpty(passcode))
         {
             ShowMessage("Unlock Octagon", "Enter the passcode of the device that created the bottle\n" +
@@ -2043,9 +2421,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        var outputDir = DecryptOutputTextBox.Text.Trim();
+        var outputDir = UiText(DecryptOutputTextBox);
         if (string.IsNullOrEmpty(outputDir))
-            outputDir = OutputFolderTextBox.Text.Trim();
+            outputDir = UiText(OutputFolderTextBox);
         if (string.IsNullOrEmpty(outputDir))
         {
             ShowMessage("Unlock Octagon", "Select an output folder.");
@@ -2487,7 +2865,7 @@ public partial class MainWindow : Window
 
             // Seed PCS (Escrow KeySet o Manatee) obbligatorio per basename + MMCS decrypt.
             var iCsc = ResolveEscrowIcsc();
-            if (string.IsNullOrEmpty(EscrowPasswordBox.Text.Trim()) && !string.IsNullOrEmpty(iCsc))
+            if (string.IsNullOrEmpty(UiText(EscrowPasswordBox)) && !string.IsNullOrEmpty(iCsc))
                 AppendWhatsAppLog($"iCSC empty → default DSID ({iCsc})");
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
@@ -2834,7 +3212,7 @@ public partial class MainWindow : Window
             Directory.CreateDirectory(pcsDir);
 
             var iCsc = ResolveEscrowIcsc();
-            if (string.IsNullOrEmpty(EscrowPasswordBox.Text.Trim()) && !string.IsNullOrEmpty(iCsc))
+            if (string.IsNullOrEmpty(UiText(EscrowPasswordBox)) && !string.IsNullOrEmpty(iCsc))
                 AppendSyncDataLog($"iCSC empty → default DSID ({iCsc})");
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
@@ -6534,7 +6912,7 @@ public partial class MainWindow : Window
                 OutputFolderTextBox.Text.Trim());
             Directory.CreateDirectory(pcsDir);
             var iCsc = ResolveEscrowIcsc();
-            if (string.IsNullOrEmpty(EscrowPasswordBox.Text.Trim()) && !string.IsNullOrEmpty(iCsc))
+            if (string.IsNullOrEmpty(UiText(EscrowPasswordBox)) && !string.IsNullOrEmpty(iCsc))
                 AppendDownloadLog($"iCSC empty → default DSID ({iCsc})");
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(

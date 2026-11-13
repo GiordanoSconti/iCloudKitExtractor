@@ -168,7 +168,8 @@ public static class CloudKitDelimitedRequest
         string cloudKitUserId,
         string zoneName,
         byte[]? syncContinuationToken = null,
-        CloudKitContainerBinding? container = null)
+        CloudKitContainerBinding? container = null,
+        bool newestFirst = false)
     {
         var inner = new ProtobufWriter();
         inner.WriteString(1, Guid.NewGuid().ToString());
@@ -190,7 +191,7 @@ public static class CloudKitDelimitedRequest
         var assets = new ProtobufWriter();
         assets.WriteVarint(1, 1); // allAssets
         changes.WriteBytes(6, assets.ToArray());
-        changes.WriteVarint(7, 0); // newestFirst = false
+        changes.WriteVarint(7, newestFirst ? 1UL : 0UL);
 
         var op = new ProtobufWriter();
         op.WriteBytes(1, BuildPlainHeader(

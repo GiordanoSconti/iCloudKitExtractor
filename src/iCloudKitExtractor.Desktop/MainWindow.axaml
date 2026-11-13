@@ -991,6 +991,407 @@
                 </TabItem>
 
                 <!-- Servizi forensi (probe dataclass) -->
+                <TabItem x:Name="LaboratoryTab" Header="Laboratory" IsEnabled="False">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top" Classes="section" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Classes="subtitle" Margin="0,0,0,4"
+                                           Text="CloudKit Laboratory — live account experiments"/>
+                                <TextBlock Classes="hint" TextWrapping="Wrap"
+                                           Text="Read-only CloudKit probes + device trust / APS / IDS lab tools. Session CloudKit tokens restored after probes. Outputs under case laboratory/."/>
+                            </StackPanel>
+                        </Border>
+                        <TabControl x:Name="LaboratoryInnerTabs">
+                            <TabItem Header="1 · Container atlas">
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="140"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Classes="section">
+                                        <StackPanel>
+                                            <TextBlock Classes="hint" Margin="0,0,0,8" TextWrapping="Wrap"
+                                                       Text="ckAppInit + zone/sync across catalog + candidates. Flags CoreData, PCS heuristics, share-like zones."/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                <Button x:Name="LaboratoryAtlasButton" Content="Build container atlas"
+                                                        Classes="primary" MinWidth="180" Margin="0,0,10,0"
+                                                        Click="LaboratoryAtlasButton_Click"/>
+                                                <Button x:Name="LaboratoryAtlasOpenFolderButton" Content="Open folder"
+                                                        Classes="secondary" MinWidth="110" Margin="0,0,10,0"
+                                                        IsEnabled="False" Click="LaboratoryAtlasOpenFolderButton_Click"/>
+                                                <TextBlock x:Name="LaboratoryAtlasStatusText" Classes="hint"
+                                                           VerticalAlignment="Center" Text="Ready."/>
+                                            </StackPanel>
+                                            <TextBox x:Name="LaboratoryAtlasExtraTextBox" MinHeight="40" MaxHeight="72"
+                                                     AcceptsReturn="True" TextWrapping="NoWrap"
+                                                     PlaceholderText="Optional extra containers (one per line)"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Classes="section" Margin="0,8,0,0" Padding="8">
+                                        <DataGrid x:Name="LaboratoryAtlasGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                                                  CanUserResizeColumns="True" CanUserSortColumns="True"
+                                                  GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="Container" Binding="{Binding ContainerId}" Width="240"/>
+                                                <DataGridTextColumn Header="Label" Binding="{Binding Label}" Width="140"/>
+                                                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="70"/>
+                                                <DataGridTextColumn Header="HTTP" Binding="{Binding Status}" Width="55"/>
+                                                <DataGridTextColumn Header="CoreData" Binding="{Binding CoreData}" Width="70"/>
+                                                <DataGridTextColumn Header="PCS≈" Binding="{Binding Pcs}" Width="50"/>
+                                                <DataGridTextColumn Header="Share" Binding="{Binding Share}" Width="50"/>
+                                                <DataGridTextColumn Header="Zones" Binding="{Binding Zones}" Width="*"/>
+                                                <DataGridTextColumn Header="Catalog" Binding="{Binding Catalog}" Width="70"/>
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </Border>
+                                    <Border Grid.Row="2" Classes="logCard" Margin="0,8,0,0">
+                                        <TextBox x:Name="LaboratoryAtlasLogTextBox" Classes="log" IsReadOnly="True"
+                                                 Text="Atlas log…"/>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
+                            <TabItem Header="2 · Share graph">
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="140"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Classes="section">
+                                        <StackPanel>
+                                            <TextBlock Classes="hint" Margin="0,0,0,8" TextWrapping="Wrap"
+                                                       Text="Notes / Drive / Photos / Home / Reminders / … — share-like zones + participant heuristics."/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button x:Name="LaboratoryShareButton" Content="Build share graph"
+                                                        Classes="primary" MinWidth="160" Margin="0,0,10,0"
+                                                        Click="LaboratoryShareButton_Click"/>
+                                                <Button x:Name="LaboratoryShareOpenFolderButton" Content="Open folder"
+                                                        Classes="secondary" MinWidth="110" Margin="0,0,10,0"
+                                                        IsEnabled="False" Click="LaboratoryShareOpenFolderButton_Click"/>
+                                                <TextBlock x:Name="LaboratoryShareStatusText" Classes="hint"
+                                                           VerticalAlignment="Center" Text="Ready."/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Classes="section" Margin="0,8,0,0" Padding="8">
+                                        <DataGrid x:Name="LaboratoryShareGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                                                  CanUserResizeColumns="True" CanUserSortColumns="True"
+                                                  GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="Container" Binding="{Binding ContainerId}" Width="220"/>
+                                                <DataGridTextColumn Header="Label" Binding="{Binding Label}" Width="120"/>
+                                                <DataGridTextColumn Header="Zone" Binding="{Binding Zone}" Width="160"/>
+                                                <DataGridTextColumn Header="Participants" Binding="{Binding Participants}" Width="*"/>
+                                                <DataGridTextColumn Header="Signals" Binding="{Binding Signals}" Width="180"/>
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </Border>
+                                    <Border Grid.Row="2" Classes="logCard" Margin="0,8,0,0">
+                                        <TextBox x:Name="LaboratoryShareLogTextBox" Classes="log" IsReadOnly="True"
+                                                 Text="Share graph log…"/>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
+                            <TabItem Header="3 · Change timeline">
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="140"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Classes="section">
+                                        <StackPanel>
+                                            <TextBlock Classes="hint" Margin="0,0,0,8" TextWrapping="Wrap"
+                                                       Text="Newest-first record/sync samples + syncContinuationToken baselines."/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Days" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                <TextBox x:Name="LaboratoryTimelineDaysTextBox" Width="56" Text="14" Margin="0,0,12,0"/>
+                                                <Button x:Name="LaboratoryTimelineButton" Content="Sample timeline"
+                                                        Classes="primary" MinWidth="150" Margin="0,0,10,0"
+                                                        Click="LaboratoryTimelineButton_Click"/>
+                                                <Button x:Name="LaboratoryTimelineOpenFolderButton" Content="Open folder"
+                                                        Classes="secondary" MinWidth="110" Margin="0,0,10,0"
+                                                        IsEnabled="False" Click="LaboratoryTimelineOpenFolderButton_Click"/>
+                                                <TextBlock x:Name="LaboratoryTimelineStatusText" Classes="hint"
+                                                           VerticalAlignment="Center" Text="Ready."/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Classes="section" Margin="0,8,0,0" Padding="8">
+                                        <DataGrid x:Name="LaboratoryTimelineGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                                                  CanUserResizeColumns="True" CanUserSortColumns="True"
+                                                  GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="When" Binding="{Binding When}" Width="180"/>
+                                                <DataGridTextColumn Header="Container" Binding="{Binding ContainerId}" Width="200"/>
+                                                <DataGridTextColumn Header="Zone" Binding="{Binding Zone}" Width="140"/>
+                                                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="90"/>
+                                                <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="*"/>
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </Border>
+                                    <Border Grid.Row="2" Classes="logCard" Margin="0,8,0,0">
+                                        <TextBox x:Name="LaboratoryTimelineLogTextBox" Classes="log" IsReadOnly="True"
+                                                 Text="Timeline log…"/>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
+                            <TabItem Header="4 · Third-party">
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="140"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Classes="section">
+                                        <StackPanel>
+                                            <TextBlock Classes="hint" Margin="0,0,0,8" TextWrapping="Wrap"
+                                                       Text="Non-Apple CloudKit containers + custom TEAMID.bundle / iCloud.com IDs."/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                <Button x:Name="LaboratoryThirdPartyButton" Content="Probe third-party"
+                                                        Classes="primary" MinWidth="160" Margin="0,0,10,0"
+                                                        Click="LaboratoryThirdPartyButton_Click"/>
+                                                <Button x:Name="LaboratoryThirdPartyOpenFolderButton" Content="Open folder"
+                                                        Classes="secondary" MinWidth="110" Margin="0,0,10,0"
+                                                        IsEnabled="False" Click="LaboratoryThirdPartyOpenFolderButton_Click"/>
+                                                <TextBlock x:Name="LaboratoryThirdPartyStatusText" Classes="hint"
+                                                           VerticalAlignment="Center" Text="Ready."/>
+                                            </StackPanel>
+                                            <TextBox x:Name="LaboratoryThirdPartyExtraTextBox" MinHeight="40" MaxHeight="72"
+                                                     AcceptsReturn="True" TextWrapping="NoWrap"
+                                                     PlaceholderText="Extra containers (one per line): TEAMID.bundle or iCloud.com…"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Classes="section" Margin="0,8,0,0" Padding="8">
+                                        <DataGrid x:Name="LaboratoryThirdPartyGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                                                  CanUserResizeColumns="True" CanUserSortColumns="True"
+                                                  GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="Container" Binding="{Binding ContainerId}" Width="260"/>
+                                                <DataGridTextColumn Header="Label" Binding="{Binding Label}" Width="140"/>
+                                                <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="90"/>
+                                                <DataGridTextColumn Header="HTTP" Binding="{Binding Status}" Width="55"/>
+                                                <DataGridTextColumn Header="Zones" Binding="{Binding Zones}" Width="*"/>
+                                                <DataGridTextColumn Header="PCS≈" Binding="{Binding Pcs}" Width="50"/>
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </Border>
+                                    <Border Grid.Row="2" Classes="logCard" Margin="0,8,0,0">
+                                        <TextBox x:Name="LaboratoryThirdPartyLogTextBox" Classes="log" IsReadOnly="True"
+                                                 Text="Third-party log…"/>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
+                            <TabItem x:Name="TrustedDevicesTab" Header="5 · Trusted devices">
+
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <!-- Controlli alti: ScrollViewer con altezza * (come Escrow). -->
+                                        <RowDefinition Height="3*" MinHeight="220"/>
+                                        <RowDefinition Height="2*" MinHeight="160"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Classes="section" Margin="0,0,0,8">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      Padding="0,0,4,0">
+                                        <StackPanel MinWidth="520">
+                                            <TextBlock Classes="subtitle" Margin="0,0,0,8"
+                                                       Text="Trust Apple ID / session token (after SRP GrandSlam login)."/>
+                                            <TextBlock Classes="hint" Margin="0,0,0,14"
+                                                       TextWrapping="Wrap"
+                                                       Text="Apple ID 2FA list (HSA2) ≠ IDS ≠ web TrustToken. If GSA does not prompt for 2FA, current ADI is already trusted: use New ADI identity then Register on 2FA list (e-mail/password below, not Sign in)."/>
+                                            <TextBlock Text="HSA2 credentials (2FA list only)" Classes="sectionLabel" Margin="0,0,0,6"/>
+                                            <Grid Margin="0,0,0,12">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Apple ID" VerticalAlignment="Center" Margin="0,0,12,8"/>
+                                                <TextBox x:Name="Hsa2AppleIdTextBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8"
+                                                         ToolTip.Tip="Apple ID e-mail for Register on 2FA list — independent from Sign in tab"/>
+                                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Password" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                                <TextBox PasswordChar="*" x:Name="Hsa2PasswordBox" Grid.Row="1" Grid.Column="1"
+                                                             ToolTip.Tip="Apple ID password (not PET). Required for HSA2 challenge."/>
+                                            </Grid>
+                                            <WrapPanel>
+                                                <Button x:Name="TrustedDevicesRefreshButton"
+                                                        Content="Refresh status"
+                                                        Classes="primary"
+                                                        MinWidth="140" Margin="0,0,10,8"
+                                                        Click="TrustedDevicesRefreshButton_Click"/>
+                                                <Button x:Name="ApsActivateButton"
+                                                        Content="Activate Albert"
+                                                        Classes="secondary"
+                                                        MinWidth="130" Margin="0,0,10,8"
+                                                        Click="ApsActivateButton_Click"
+                                                        ToolTip.Tip="Albert Windows → DeviceCertificate APS"/>
+                                                <Button x:Name="ApsConnectButton"
+                                                        Content="Connect APS"
+                                                        Classes="secondary"
+                                                        MinWidth="130" Margin="0,0,10,8"
+                                                        Click="ApsConnectButton_Click"
+                                                        ToolTip.Tip="Courier APS: connect + push token"/>
+                                                <Button x:Name="IdsEnrollButton"
+                                                        Content="Enroll IDS"
+                                                        Classes="primary"
+                                                        MinWidth="140" Margin="0,0,10,8"
+                                                        Click="IdsEnrollButton_Click"
+                                                        ToolTip.Tip="Delegate PET → authenticateDS → id-register (multiplex1/FMF). Requires APS token."/>
+                                                <Button x:Name="MadridEnrollButton"
+                                                        Content="Enroll Madrid"
+                                                        Classes="primary"
+                                                        MinWidth="140" Margin="0,0,10,8"
+                                                        Click="MadridEnrollButton_Click"
+                                                        ToolTip.Tip="id-register com.apple.madrid for iMessage. Lab Apple ID only — ban risk."/>
+                                                <Button x:Name="MadridLoadPersonaButton"
+                                                        Content="Load Mac persona"
+                                                        Classes="secondary"
+                                                        MinWidth="150" Margin="0,0,10,8"
+                                                        Click="MadridLoadPersonaButton_Click"
+                                                        ToolTip.Tip="Import Mac data.plist for NAC (serial/MLB/ROM). Capture on macOS with scripts/nac-pypush/capture_mac_persona.py. iPhone Frida ≠ NAC."/>
+                                                <Button x:Name="MadridLoadValidationButton"
+                                                        Content="Load validation-data"
+                                                        Classes="secondary"
+                                                        MinWidth="160" Margin="0,0,10,8"
+                                                        Click="MadridLoadValidationButton_Click"
+                                                        ToolTip.Tip="Import Frida-captured IDS validation-data (.b64 / JSON). scripts/ios_akd_probe/fetch_ids_validation.py"/>
+                                                <Button x:Name="Hsa2NewAdiButton"
+                                                        Content="New ADI identity"
+                                                        Classes="secondary"
+                                                        MinWidth="160" Margin="0,0,10,8"
+                                                        Click="Hsa2NewAdiButton_Click"
+                                                        ToolTip.Tip="Clears local UUID/ADI + MidService (POST /provision?newIdentity=1). Use if Apple no longer prompts for 2FA on this machine."/>
+                                                <Button x:Name="Hsa2RegisterButton"
+                                                        Content="Register on 2FA list"
+                                                        Classes="primary"
+                                                        MinWidth="180" Margin="0,0,10,8"
+                                                        Click="Hsa2RegisterButton_Click"
+                                                        ToolTip.Tip="Native GSA: HSA2 e-mail/password from this tab + ptkn → 2FA challenge → OTP"/>
+                                                <Button x:Name="ApsDisconnectButton"
+                                                        Content="Disconnect APS"
+                                                        Classes="ghost"
+                                                        MinWidth="130" Margin="0,0,10,8"
+                                                        Click="ApsDisconnectButton_Click"/>
+                                            </WrapPanel>
+                                            <TextBlock x:Name="MadridStatusText"
+                                                       Classes="hint"
+                                                       Margin="0,0,0,8"
+                                                       TextWrapping="Wrap"
+                                                       Text="Madrid: not enrolled."/>
+                                            <TextBlock Classes="hint" Margin="0,0,0,8"
+                                                       TextWrapping="Wrap" Foreground="#A15C00"
+                                                       Text="Lab Apple ID only. Unofficial IDS/Madrid enroll can trigger customer-code / account restrictions. Do not use a primary Apple ID."/>
+                                            <TextBlock x:Name="ApsTokenText"
+                                                       Classes="hint"
+                                                       Margin="0,4,0,8"
+                                                       TextWrapping="Wrap"
+                                                       FontFamily="Menlo, Consolas, monospace"
+                                                       Text="APS push token: (not connected)"/>
+                                            <Border x:Name="IdmsaOtpPanel" Margin="0,8,0,0" IsVisible="False"
+                                                    BorderBrush="#33000000" BorderThickness="1" CornerRadius="6" Padding="12">
+                                                <StackPanel>
+                                                    <TextBlock x:Name="IdmsaOtpTitleText"
+                                                               Text="HSA2 OTP — code from already trusted Apple device"
+                                                               Classes="sectionLabel" Margin="0,0,0,8"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                        <RadioButton x:Name="IdmsaOtpDeviceRadio" Content="Trusted device"
+                                                                     IsChecked="True" GroupName="IdmsaOtpMethod"/>
+                                                        <RadioButton x:Name="IdmsaOtpSmsRadio" Content="SMS"
+                                                                     GroupName="IdmsaOtpMethod" Margin="16,0,0,0"/>
+                                                    </StackPanel>
+                                                    <StackPanel x:Name="IdmsaOtpSmsPhonePanel" Orientation="Horizontal"
+                                                                Margin="0,0,0,8" IsVisible="False">
+                                                        <ComboBox x:Name="IdmsaOtpPhoneComboBox" Width="240" Margin="0,0,10,0"
+                                                                  DisplayMemberBinding="{Binding DisplayLabel}"/>
+                                                        <Button x:Name="IdmsaOtpRequestSmsButton" Content="Send SMS"
+                                                                Classes="secondary"
+                                                                Click="IdmsaOtpRequestSmsButton_Click"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBox x:Name="IdmsaOtpCodeTextBox" Width="140" Margin="0,0,10,0"
+                                                                 ToolTip.Tip="6-digit code from already trusted Apple device"/>
+                                                        <Button x:Name="IdmsaOtpSubmitButton" Content="Submit OTP"
+                                                                Classes="primary"
+                                                                Click="IdmsaOtpSubmitButton_Click"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                            <TextBlock x:Name="TrustedDevicesStatusText"
+                                                       Classes="hint" Margin="0,10,0,0"
+                                                       Text="Waiting — sign in first."/>
+                                            <Expander x:Name="MadridMessagesExpander" Header="Messages (iMessage / Madrid)"
+                                                      Margin="0,12,0,0" IsExpanded="False">
+                                                <StackPanel Margin="0,8,0,0">
+                                                <TextBlock Classes="hint" Margin="0,0,0,8"
+                                                           TextWrapping="Wrap"
+                                                           Text="Live RX needs APS Connect on the SAME push token used for Enroll Madrid (iPhone APS). Albert token ≠ Madrid token. Text MVP; history: Sync Data → Messages."/>
+                                                <Grid MinHeight="220">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="220"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <DockPanel Grid.Column="0" Margin="0,0,10,0">
+                                                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                                            <TextBlock Text="Resolve handle" Classes="sectionLabel" Margin="0,0,0,4"/>
+                                                            <DockPanel>
+                                                                <Button x:Name="MadridLookupButton" DockPanel.Dock="Right"
+                                                                        Content="Lookup" MinWidth="70" Margin="6,0,0,0"
+                                                                        Classes="secondary"
+                                                                        Click="MadridLookupButton_Click"/>
+                                                                <TextBox x:Name="MadridLookupHandleTextBox"
+                                                                         ToolTip.Tip="mailto:user@icloud.com or +phone"/>
+                                                            </DockPanel>
+                                                        </StackPanel>
+                                                        <ListBox x:Name="MadridConversationsListBox"
+                                                                 DisplayMemberBinding="{Binding PeerHandle}"
+                                                                 SelectionChanged="MadridConversationsListBox_SelectionChanged"/>
+                                                    </DockPanel>
+                                                    <DockPanel Grid.Column="1">
+                                                        <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                                                            <Button x:Name="MadridSendButton" DockPanel.Dock="Right"
+                                                                    Content="Send" MinWidth="80" Margin="8,0,0,0"
+                                                                    Classes="primary"
+                                                                    Click="MadridSendButton_Click"/>
+                                                            <TextBox x:Name="MadridComposeTextBox"
+                                                                     ToolTip.Tip="Plain text only (MVP)"/>
+                                                        </DockPanel>
+                                                        <TextBox x:Name="MadridThreadTextBox"
+                                                                 Classes="log"
+                                                                 IsReadOnly="True"
+                                                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                                 Text="Select a conversation or look up a handle, then compose."/>
+                                                    </DockPanel>
+                                                </Grid>
+                                                </StackPanel>
+                                            </Expander>
+                                        </StackPanel>
+                                        </ScrollViewer>
+                                    </Border>
+                                    <Border Grid.Row="1" Classes="logCard">
+                                        <DockPanel LastChildFill="True">
+                                            <TextBlock DockPanel.Dock="Top" Text="Trust status / APS log"
+                                                       Classes="sectionLabel"
+                                                       Margin="0,0,0,4"/>
+                                            <TextBox x:Name="TrustedDevicesResultTextBox"
+                                                     Classes="log"
+                                                     IsReadOnly="True"
+                                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                     Text="After sign-in, ADSID/PET/trust status will appear."/>
+                                        </DockPanel>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
+
+                        </TabControl>
+                    </DockPanel>
+                </TabItem>
+
                 <TabItem x:Name="ExploratoryServicesTab" Header="iCloud services (Work in progress)" IsEnabled="False">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -1177,210 +1578,7 @@
                 </TabItem>
 
                 <!-- Dispositivi fidati (post-login GrandSlam) — accanto a Servizi iCloud -->
-                <TabItem x:Name="TrustedDevicesTab" Header="Trusted devices (Work in progress)" IsEnabled="False">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <!-- Controlli alti: ScrollViewer con altezza * (come Escrow). -->
-                            <RowDefinition Height="3*" MinHeight="220"/>
-                            <RowDefinition Height="2*" MinHeight="160"/>
-                        </Grid.RowDefinitions>
-                        <Border Classes="section" Margin="0,0,0,8">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled"
-                                          Padding="0,0,4,0">
-                            <StackPanel MinWidth="520">
-                                <TextBlock Classes="subtitle" Margin="0,0,0,8"
-                                           Text="Trust Apple ID / session token (after SRP GrandSlam login)."/>
-                                <TextBlock Classes="hint" Margin="0,0,0,14"
-                                           TextWrapping="Wrap"
-                                           Text="Apple ID 2FA list (HSA2) ≠ IDS ≠ web TrustToken. If GSA does not prompt for 2FA, current ADI is already trusted: use New ADI identity then Register on 2FA list (e-mail/password below, not Sign in)."/>
-                                <TextBlock Text="HSA2 credentials (2FA list only)" Classes="sectionLabel" Margin="0,0,0,6"/>
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Apple ID" VerticalAlignment="Center" Margin="0,0,12,8"/>
-                                    <TextBox x:Name="Hsa2AppleIdTextBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8"
-                                             ToolTip.Tip="Apple ID e-mail for Register on 2FA list — independent from Sign in tab"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Password" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                                    <TextBox PasswordChar="*" x:Name="Hsa2PasswordBox" Grid.Row="1" Grid.Column="1"
-                                                 ToolTip.Tip="Apple ID password (not PET). Required for HSA2 challenge."/>
-                                </Grid>
-                                <WrapPanel>
-                                    <Button x:Name="TrustedDevicesRefreshButton"
-                                            Content="Refresh status"
-                                            Classes="primary"
-                                            MinWidth="140" Margin="0,0,10,8"
-                                            Click="TrustedDevicesRefreshButton_Click"/>
-                                    <Button x:Name="ApsActivateButton"
-                                            Content="Activate Albert"
-                                            Classes="secondary"
-                                            MinWidth="130" Margin="0,0,10,8"
-                                            Click="ApsActivateButton_Click"
-                                            ToolTip.Tip="Albert Windows → DeviceCertificate APS"/>
-                                    <Button x:Name="ApsConnectButton"
-                                            Content="Connect APS"
-                                            Classes="secondary"
-                                            MinWidth="130" Margin="0,0,10,8"
-                                            Click="ApsConnectButton_Click"
-                                            ToolTip.Tip="Courier APS: connect + push token"/>
-                                    <Button x:Name="IdsEnrollButton"
-                                            Content="Enroll IDS"
-                                            Classes="primary"
-                                            MinWidth="140" Margin="0,0,10,8"
-                                            Click="IdsEnrollButton_Click"
-                                            ToolTip.Tip="Delegate PET → authenticateDS → id-register (multiplex1/FMF). Requires APS token."/>
-                                    <Button x:Name="MadridEnrollButton"
-                                            Content="Enroll Madrid"
-                                            Classes="primary"
-                                            MinWidth="140" Margin="0,0,10,8"
-                                            Click="MadridEnrollButton_Click"
-                                            ToolTip.Tip="id-register com.apple.madrid for iMessage. Lab Apple ID only — ban risk."/>
-                                    <Button x:Name="MadridLoadPersonaButton"
-                                            Content="Load Mac persona"
-                                            Classes="secondary"
-                                            MinWidth="150" Margin="0,0,10,8"
-                                            Click="MadridLoadPersonaButton_Click"
-                                            ToolTip.Tip="Import Mac data.plist for NAC (serial/MLB/ROM). Capture on macOS with scripts/nac-pypush/capture_mac_persona.py. iPhone Frida ≠ NAC."/>
-                                    <Button x:Name="MadridLoadValidationButton"
-                                            Content="Load validation-data"
-                                            Classes="secondary"
-                                            MinWidth="160" Margin="0,0,10,8"
-                                            Click="MadridLoadValidationButton_Click"
-                                            ToolTip.Tip="Import Frida-captured IDS validation-data (.b64 / JSON). scripts/ios_akd_probe/fetch_ids_validation.py"/>
-                                    <Button x:Name="Hsa2NewAdiButton"
-                                            Content="New ADI identity"
-                                            Classes="secondary"
-                                            MinWidth="160" Margin="0,0,10,8"
-                                            Click="Hsa2NewAdiButton_Click"
-                                            ToolTip.Tip="Clears local UUID/ADI + MidService (POST /provision?newIdentity=1). Use if Apple no longer prompts for 2FA on this machine."/>
-                                    <Button x:Name="Hsa2RegisterButton"
-                                            Content="Register on 2FA list"
-                                            Classes="primary"
-                                            MinWidth="180" Margin="0,0,10,8"
-                                            Click="Hsa2RegisterButton_Click"
-                                            ToolTip.Tip="Native GSA: HSA2 e-mail/password from this tab + ptkn → 2FA challenge → OTP"/>
-                                    <Button x:Name="ApsDisconnectButton"
-                                            Content="Disconnect APS"
-                                            Classes="ghost"
-                                            MinWidth="130" Margin="0,0,10,8"
-                                            Click="ApsDisconnectButton_Click"/>
-                                </WrapPanel>
-                                <TextBlock x:Name="MadridStatusText"
-                                           Classes="hint"
-                                           Margin="0,0,0,8"
-                                           TextWrapping="Wrap"
-                                           Text="Madrid: not enrolled."/>
-                                <TextBlock Classes="hint" Margin="0,0,0,8"
-                                           TextWrapping="Wrap" Foreground="#A15C00"
-                                           Text="Lab Apple ID only. Unofficial IDS/Madrid enroll can trigger customer-code / account restrictions. Do not use a primary Apple ID."/>
-                                <TextBlock x:Name="ApsTokenText"
-                                           Classes="hint"
-                                           Margin="0,4,0,8"
-                                           TextWrapping="Wrap"
-                                           FontFamily="Menlo, Consolas, monospace"
-                                           Text="APS push token: (not connected)"/>
-                                <Border x:Name="IdmsaOtpPanel" Margin="0,8,0,0" IsVisible="False"
-                                        BorderBrush="#33000000" BorderThickness="1" CornerRadius="6" Padding="12">
-                                    <StackPanel>
-                                        <TextBlock x:Name="IdmsaOtpTitleText"
-                                                   Text="HSA2 OTP — code from already trusted Apple device"
-                                                   Classes="sectionLabel" Margin="0,0,0,8"/>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                            <RadioButton x:Name="IdmsaOtpDeviceRadio" Content="Trusted device"
-                                                         IsChecked="True" GroupName="IdmsaOtpMethod"/>
-                                            <RadioButton x:Name="IdmsaOtpSmsRadio" Content="SMS"
-                                                         GroupName="IdmsaOtpMethod" Margin="16,0,0,0"/>
-                                        </StackPanel>
-                                        <StackPanel x:Name="IdmsaOtpSmsPhonePanel" Orientation="Horizontal"
-                                                    Margin="0,0,0,8" IsVisible="False">
-                                            <ComboBox x:Name="IdmsaOtpPhoneComboBox" Width="240" Margin="0,0,10,0"
-                                                      DisplayMemberBinding="{Binding DisplayLabel}"/>
-                                            <Button x:Name="IdmsaOtpRequestSmsButton" Content="Send SMS"
-                                                    Classes="secondary"
-                                                    Click="IdmsaOtpRequestSmsButton_Click"/>
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBox x:Name="IdmsaOtpCodeTextBox" Width="140" Margin="0,0,10,0"
-                                                     ToolTip.Tip="6-digit code from already trusted Apple device"/>
-                                            <Button x:Name="IdmsaOtpSubmitButton" Content="Submit OTP"
-                                                    Classes="primary"
-                                                    Click="IdmsaOtpSubmitButton_Click"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-                                <TextBlock x:Name="TrustedDevicesStatusText"
-                                           Classes="hint" Margin="0,10,0,0"
-                                           Text="Waiting — sign in first."/>
-                                <Expander x:Name="MadridMessagesExpander" Header="Messages (iMessage / Madrid)"
-                                          Margin="0,12,0,0" IsExpanded="False">
-                                    <StackPanel Margin="0,8,0,0">
-                                    <TextBlock Classes="hint" Margin="0,0,0,8"
-                                               TextWrapping="Wrap"
-                                               Text="Live RX needs APS Connect on the SAME push token used for Enroll Madrid (iPhone APS). Albert token ≠ Madrid token. Text MVP; history: Sync Data → Messages."/>
-                                    <Grid MinHeight="220">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="220"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <DockPanel Grid.Column="0" Margin="0,0,10,0">
-                                            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                                <TextBlock Text="Resolve handle" Classes="sectionLabel" Margin="0,0,0,4"/>
-                                                <DockPanel>
-                                                    <Button x:Name="MadridLookupButton" DockPanel.Dock="Right"
-                                                            Content="Lookup" MinWidth="70" Margin="6,0,0,0"
-                                                            Classes="secondary"
-                                                            Click="MadridLookupButton_Click"/>
-                                                    <TextBox x:Name="MadridLookupHandleTextBox"
-                                                             ToolTip.Tip="mailto:user@icloud.com or +phone"/>
-                                                </DockPanel>
-                                            </StackPanel>
-                                            <ListBox x:Name="MadridConversationsListBox"
-                                                     DisplayMemberBinding="{Binding PeerHandle}"
-                                                     SelectionChanged="MadridConversationsListBox_SelectionChanged"/>
-                                        </DockPanel>
-                                        <DockPanel Grid.Column="1">
-                                            <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                                                <Button x:Name="MadridSendButton" DockPanel.Dock="Right"
-                                                        Content="Send" MinWidth="80" Margin="8,0,0,0"
-                                                        Classes="primary"
-                                                        Click="MadridSendButton_Click"/>
-                                                <TextBox x:Name="MadridComposeTextBox"
-                                                         ToolTip.Tip="Plain text only (MVP)"/>
-                                            </DockPanel>
-                                            <TextBox x:Name="MadridThreadTextBox"
-                                                     Classes="log"
-                                                     IsReadOnly="True"
-                                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                                     Text="Select a conversation or look up a handle, then compose."/>
-                                        </DockPanel>
-                                    </Grid>
-                                    </StackPanel>
-                                </Expander>
-                            </StackPanel>
-                            </ScrollViewer>
-                        </Border>
-                        <Border Grid.Row="1" Classes="logCard">
-                            <DockPanel LastChildFill="True">
-                                <TextBlock DockPanel.Dock="Top" Text="Trust status / APS log"
-                                           Classes="sectionLabel"
-                                           Margin="0,0,0,4"/>
-                                <TextBox x:Name="TrustedDevicesResultTextBox"
-                                         Classes="log"
-                                         IsReadOnly="True"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                         Text="After sign-in, ADSID/PET/trust status will appear."/>
-                            </DockPanel>
-                        </Border>
-                    </Grid>
-                </TabItem>
-
+                
                 <!-- Sync Data -->
                 <TabItem x:Name="SyncDataTab" Header="iCloud Sync Data (Work in progress)" IsEnabled="False">
                     <Grid>
