@@ -671,7 +671,8 @@ public partial class MainWindow : Window
 
         try
         {
-            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            // Stay on UI thread after awaits — Avalonia controls are not cross-thread safe.
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(true);
             var candidates = BuildCloudKitProbeCandidates(extrasRaw);
             var progress = new Progress<string>(msg =>
                 Dispatcher.UIThread.Post(() =>
@@ -682,7 +683,7 @@ public partial class MainWindow : Window
 
             var atlas = await new CloudKitContainerProbeService(Orchestrator, Http)
                 .ProbeAtlasAsync(_session, candidates, outDir, progress)
-                .ConfigureAwait(false);
+                .ConfigureAwait(true);
 
             _laboratoryAtlasOutputDir = atlas.OutputDirectory;
             var rows = atlas.Hits
@@ -810,7 +811,7 @@ public partial class MainWindow : Window
         _laboratoryShareOutputDir = null;
         try
         {
-            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(true);
             var progress = new Progress<string>(msg =>
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -819,7 +820,7 @@ public partial class MainWindow : Window
                 }));
             var result = await new CloudKitLaboratoryService(Orchestrator, Http)
                 .ProbeShareGraphAsync(_session, LaboratoryOut("share_graph"), progress)
-                .ConfigureAwait(false);
+                .ConfigureAwait(true);
             _laboratoryShareOutputDir = result.OutputDirectory;
             LaboratoryShareGrid.ItemsSource = result.Edges.Select(e => new LaboratoryShareRow
             {
@@ -869,7 +870,7 @@ public partial class MainWindow : Window
         _laboratoryTimelineOutputDir = null;
         try
         {
-            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(true);
             var progress = new Progress<string>(msg =>
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -878,7 +879,7 @@ public partial class MainWindow : Window
                 }));
             var result = await new CloudKitLaboratoryService(Orchestrator, Http)
                 .ProbeTimelineAsync(_session, LaboratoryOut("change_timeline"), days, progress)
-                .ConfigureAwait(false);
+                .ConfigureAwait(true);
             _laboratoryTimelineOutputDir = result.OutputDirectory;
             LaboratoryTimelineGrid.ItemsSource = result.Events
                 .OrderByDescending(ev => ev.WhenIso ?? "")
@@ -930,7 +931,7 @@ public partial class MainWindow : Window
         _laboratoryThirdPartyOutputDir = null;
         try
         {
-            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(true);
             var extras = (LaboratoryThirdPartyExtraTextBox?.Text ?? "")
                 .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
                 .Select(s => s.Trim())
@@ -944,7 +945,7 @@ public partial class MainWindow : Window
                 }));
             var result = await new CloudKitLaboratoryService(Orchestrator, Http)
                 .ProbeThirdPartyAsync(_session, LaboratoryOut("third_party"), extras, progress)
-                .ConfigureAwait(false);
+                .ConfigureAwait(true);
             _laboratoryThirdPartyOutputDir = result.OutputDirectory;
             LaboratoryThirdPartyGrid.ItemsSource = result.Hits
                 .OrderByDescending(h => h.StatusCode == 200)
@@ -2202,26 +2203,34 @@ public partial class MainWindow : Window
 
     private void EscrowSmsVariantCheckBox_Changed(object? sender, RoutedEventArgs e)
     {
-        var on = EscrowSmsVariantCheckBox.IsChecked == true;
-        EscrowSmsCodeLabel.IsVisible = on;
-        EscrowSmsCodeBox.IsVisible = on;
-        EscrowRequestSmsCheckBox.IsVisible = on;
-        EscrowSecretLabel.Text = "iCSC:";
-        EscrowSecretHint.Text = on
-            ? "(SMS — empty = DSID; SRP uses dsid)"
-            : "(empty = DSID)";
+        var on = EscrowSmsVariantCheckBox?.IsChecked == true;
+        if (EscrowSmsCodeLabel is not null) EscrowSmsCodeLabel.IsVisible = on;
+        if (EscrowSmsCodeBox is not null) EscrowSmsCodeBox.IsVisible = on;
+        if (EscrowRequestSmsCheckBox is not null) EscrowRequestSmsCheckBox.IsVisible = on;
+        if (EscrowSecretLabel is not null) EscrowSecretLabel.Text = "iCSC:";
+        if (EscrowSecretHint is not null)
+            EscrowSecretHint.Text = on
+                ? "(SMS — empty = DSID; SRP uses dsid)"
+                : "(empty = DSID)";
     }
 
     /// <summary>iCSC dal campo Escrow; se vuoto → DSID (default).</summary>
     private string ResolveEscrowIcsc()
     {
-        var typed = EscrowPasswordBox?.Text?.Trim() ?? "";
+        var typed = UiText(EscrowPasswordBox);
         if (!string.IsNullOrEmpty(typed))
             return typed;
-        return _session?.Dsid?.Trim() ?? "";
+        return (_session?.Dsid ?? "").Trim();
     }
 
-    private static string UiText(TextBox? box) => box?.Text?.Trim() ?? "";
+    private static string UiText(TextBox? box)
+    {
+        if (box is null)
+            return "";
+        // Avalonia TextBox.Text may be null until first edit / PasswordChar boxes.
+        var raw = box.Text;
+        return string.IsNullOrWhiteSpace(raw) ? "" : raw.Trim();
+    }
 
     /// <summary>
     /// Remint Anisette dopo operazioni lunghe Escrow/Octagon (OTP spesso morto).
@@ -2259,9 +2268,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        var useSms = EscrowSmsVariantCheckBox.IsChecked == true;
+        var useSms = EscrowSmsVariantCheckBox?.IsChecked == true;
         var iCsc = ResolveEscrowIcsc();
-        var iCscFromField = !string.IsNullOrWhiteSpace(EscrowPasswordBox?.Text);
+        var iCscFromField = !string.IsNullOrEmpty(UiText(EscrowPasswordBox));
 
         var outputDir = UiText(DecryptOutputTextBox);
         if (string.IsNullOrEmpty(outputDir))
@@ -2278,7 +2287,8 @@ public partial class MainWindow : Window
         string? resetDetail = null;
         try
         {
-            EscrowPcsUnlockButton.IsEnabled = false;
+            if (EscrowPcsUnlockButton is not null)
+                EscrowPcsUnlockButton.IsEnabled = false;
             AppendDecryptLog($"Unlock EscrowedKeys (SRP recover + PCS) → {outputDir}");
             AppendDecryptLog(
                 $"SRP: inner=SHA256(\"{_session.Dsid}:\" + dsid), x=SHA256(salt||inner)");
@@ -2295,8 +2305,8 @@ public partial class MainWindow : Window
             EscrowSmsOptions? sms = useSms
                 ? new EscrowSmsOptions(
                     Enabled: true,
-                    SmsChallengeCode: EscrowSmsCodeBox.Text,
-                    RequestSmsChallenge: EscrowRequestSmsCheckBox.IsChecked == true)
+                    SmsChallengeCode: UiText(EscrowSmsCodeBox),
+                    RequestSmsChallenge: EscrowRequestSmsCheckBox?.IsChecked == true)
                 : null;
             var result = await recovery.FetchEncryptedKeyBagKeyAsync(
                 _session, iCsc, outputDir, log, sms);
@@ -2346,7 +2356,8 @@ public partial class MainWindow : Window
             await RemintAnisetteAfterSensitiveOpAsync("Escrow Unlock").ConfigureAwait(true);
             if (resetLoginAfter401)
                 ResetWizardToLoginAfterEscrowAuthFailure(resetDetail ?? "HTTP 401");
-            EscrowPcsUnlockButton.IsEnabled = true;
+            if (EscrowPcsUnlockButton is not null)
+                EscrowPcsUnlockButton.IsEnabled = true;
         }
     }
 
@@ -2358,9 +2369,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        var outputDir = DecryptOutputTextBox.Text.Trim();
+        var outputDir = UiText(DecryptOutputTextBox);
         if (string.IsNullOrEmpty(outputDir))
-            outputDir = OutputFolderTextBox.Text.Trim();
+            outputDir = UiText(OutputFolderTextBox);
         if (string.IsNullOrEmpty(outputDir))
         {
             ShowMessage("Lista bottle iCDP", "Select an output folder.");
@@ -2491,26 +2502,26 @@ public partial class MainWindow : Window
             return;
         }
 
-        var rk = EscrowRecoveryKeyBox.Text;
+        var rk = UiText(EscrowRecoveryKeyBox);
         if (string.IsNullOrWhiteSpace(rk))
         {
             ShowMessage("Octagon RK", "Enter the iCloud Recovery Key (XXXX-XXXX-…).");
             return;
         }
 
-        var outputDir = DecryptOutputTextBox.Text.Trim();
+        var outputDir = UiText(DecryptOutputTextBox);
         if (string.IsNullOrEmpty(outputDir))
-            outputDir = OutputFolderTextBox.Text.Trim();
+            outputDir = UiText(OutputFolderTextBox);
         if (string.IsNullOrEmpty(outputDir))
         {
             ShowMessage("Octagon RK", "Select an output folder.");
             return;
         }
 
-        var salt = EscrowRecoverySaltBox.Text?.Trim() ?? "";
+        var salt = UiText(EscrowRecoverySaltBox);
         if (string.IsNullOrWhiteSpace(salt))
             salt = _session.Adsid?.Trim() ?? "";
-        if (!string.IsNullOrWhiteSpace(salt))
+        if (!string.IsNullOrWhiteSpace(salt) && EscrowRecoverySaltBox is not null)
             EscrowRecoverySaltBox.Text = salt;
 
         var rkDir = Path.Combine(outputDir, "octagon_rk");
@@ -2574,9 +2585,9 @@ public partial class MainWindow : Window
         var outputDir = _session.OctagonKeysDirectory;
         if (string.IsNullOrWhiteSpace(outputDir))
         {
-            outputDir = DecryptOutputTextBox.Text.Trim();
+            outputDir = UiText(DecryptOutputTextBox);
             if (string.IsNullOrEmpty(outputDir))
-                outputDir = OutputFolderTextBox.Text.Trim();
+                outputDir = UiText(OutputFolderTextBox);
         }
 
         if (_session.OctagonBottledPeerEntropy is not { Length: > 0 })
@@ -2687,9 +2698,9 @@ public partial class MainWindow : Window
         var outputDir = _session.OctagonKeysDirectory;
         if (string.IsNullOrWhiteSpace(outputDir))
         {
-            outputDir = DecryptOutputTextBox.Text.Trim();
+            outputDir = UiText(DecryptOutputTextBox);
             if (string.IsNullOrEmpty(outputDir))
-                outputDir = OutputFolderTextBox.Text.Trim();
+                outputDir = UiText(OutputFolderTextBox);
         }
 
         if (string.IsNullOrWhiteSpace(outputDir))
@@ -2841,7 +2852,7 @@ public partial class MainWindow : Window
 
         var outputDir = WhatsAppOutputTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
-            outputDir = OutputFolderTextBox.Text.Trim();
+            outputDir = UiText(OutputFolderTextBox);
         if (string.IsNullOrEmpty(outputDir))
         {
             ShowMessage("WhatsApp CloudKit", "Select an output folder.");
@@ -2856,7 +2867,7 @@ public partial class MainWindow : Window
             AppendWhatsAppLog($"Probe WhatsApp (CK + Documents) → {outputDir}");
 
             var pcsDir = EscrowPcsSession.ResolvePcsKeysDirectory(
-                DecryptOutputTextBox.Text.Trim(),
+                UiText(DecryptOutputTextBox),
                 _session.OctagonKeysDirectory,
                 _session.PcsKeysDirectory,
                 outputDir);
@@ -2870,7 +2881,7 @@ public partial class MainWindow : Window
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
                     Enabled: true,
-                    SmsChallengeCode: EscrowSmsCodeBox.Text,
+                    SmsChallengeCode: UiText(EscrowSmsCodeBox),
                     RequestSmsChallenge: EscrowRequestSmsCheckBox.IsChecked == true)
                 : null;
             var ensureLog = new Progress<string>(msg => Dispatcher.UIThread.Invoke(() => AppendWhatsAppLog(msg)));
@@ -2936,7 +2947,7 @@ public partial class MainWindow : Window
 
         var outputDir = ICloudDriveOutputTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
-            outputDir = OutputFolderTextBox.Text.Trim();
+            outputDir = UiText(OutputFolderTextBox);
         if (string.IsNullOrEmpty(outputDir))
         {
             ShowMessage("iCloud Drive", "Select an output folder.");
@@ -2953,7 +2964,7 @@ public partial class MainWindow : Window
             AppendICloudDriveLog($"iCloud Drive → {outputDir}");
 
             var pcsDir = EscrowPcsSession.ResolvePcsKeysDirectory(
-                DecryptOutputTextBox.Text.Trim(),
+                UiText(DecryptOutputTextBox),
                 _session.OctagonKeysDirectory,
                 _session.PcsKeysDirectory,
                 outputDir);
@@ -2964,7 +2975,7 @@ public partial class MainWindow : Window
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
                     Enabled: true,
-                    SmsChallengeCode: EscrowSmsCodeBox.Text,
+                    SmsChallengeCode: UiText(EscrowSmsCodeBox),
                     RequestSmsChallenge: EscrowRequestSmsCheckBox.IsChecked == true)
                 : null;
             var ensureLog = new Progress<string>(msg => Dispatcher.UIThread.Invoke(() => AppendICloudDriveLog(msg)));
@@ -3044,7 +3055,7 @@ public partial class MainWindow : Window
 
         var outputDir = ICloudFilesOutputTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
-            outputDir = OutputFolderTextBox.Text.Trim();
+            outputDir = UiText(OutputFolderTextBox);
         if (string.IsNullOrEmpty(outputDir))
         {
             ShowMessage("iCloud Files", "Select an output folder.");
@@ -3061,7 +3072,7 @@ public partial class MainWindow : Window
             AppendICloudFilesLog($"iCloud Files  → {outputDir}");
 
             var pcsDir = EscrowPcsSession.ResolvePcsKeysDirectory(
-                DecryptOutputTextBox.Text.Trim(),
+                UiText(DecryptOutputTextBox),
                 _session.OctagonKeysDirectory,
                 _session.PcsKeysDirectory,
                 outputDir);
@@ -3072,7 +3083,7 @@ public partial class MainWindow : Window
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
                     Enabled: true,
-                    SmsChallengeCode: EscrowSmsCodeBox.Text,
+                    SmsChallengeCode: UiText(EscrowSmsCodeBox),
                     RequestSmsChallenge: EscrowRequestSmsCheckBox.IsChecked == true)
                 : null;
             var ensureLog = new Progress<string>(msg => Dispatcher.UIThread.Invoke(() => AppendICloudFilesLog(msg)));
@@ -3184,7 +3195,7 @@ public partial class MainWindow : Window
 
         var outputDir = SyncDataOutputTextBox.Text.Trim();
         if (string.IsNullOrEmpty(outputDir))
-            outputDir = OutputFolderTextBox.Text.Trim();
+            outputDir = UiText(OutputFolderTextBox);
         if (string.IsNullOrEmpty(outputDir))
         {
             ShowMessage("iCloud Sync Data", "Select an output folder.");
@@ -3206,7 +3217,7 @@ public partial class MainWindow : Window
             AppendSyncDataLog($"Sync Data → {outputDir}");
 
 
-            var pcsDir = DecryptOutputTextBox.Text.Trim();
+            var pcsDir = UiText(DecryptOutputTextBox);
             if (string.IsNullOrEmpty(pcsDir))
                 pcsDir = outputDir;
             Directory.CreateDirectory(pcsDir);
@@ -3217,7 +3228,7 @@ public partial class MainWindow : Window
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
                     Enabled: true,
-                    SmsChallengeCode: EscrowSmsCodeBox.Text,
+                    SmsChallengeCode: UiText(EscrowSmsCodeBox),
                     RequestSmsChallenge: EscrowRequestSmsCheckBox.IsChecked == true)
                 : null;
 
@@ -6854,7 +6865,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var outputRoot = OutputFolderTextBox.Text.Trim();
+        var outputRoot = UiText(OutputFolderTextBox);
         AppendDownloadLog(
             chainAll
                 ? $"Snapshot chain: {snapshotsToDownload.Count} (oldest to newest)"
@@ -6906,10 +6917,10 @@ public partial class MainWindow : Window
                 outputRoot, device, snapshotsToDownload[0]);
             Directory.CreateDirectory(firstOut);
             var pcsDir = EscrowPcsSession.ResolvePcsKeysDirectory(
-                DecryptOutputTextBox.Text.Trim(),
+                UiText(DecryptOutputTextBox),
                 _session.PcsKeysDirectory,
                 firstOut,
-                OutputFolderTextBox.Text.Trim());
+                UiText(OutputFolderTextBox));
             Directory.CreateDirectory(pcsDir);
             var iCsc = ResolveEscrowIcsc();
             if (string.IsNullOrEmpty(UiText(EscrowPasswordBox)) && !string.IsNullOrEmpty(iCsc))
@@ -6917,7 +6928,7 @@ public partial class MainWindow : Window
             EscrowSmsOptions? sms = EscrowSmsVariantCheckBox.IsChecked == true
                 ? new EscrowSmsOptions(
                     Enabled: true,
-                    SmsChallengeCode: EscrowSmsCodeBox.Text,
+                    SmsChallengeCode: UiText(EscrowSmsCodeBox),
                     RequestSmsChallenge: EscrowRequestSmsCheckBox.IsChecked == true)
                 : null;
 

@@ -323,7 +323,7 @@
                                     <TextBlock x:Name="EscrowSecretLabel" Text="iCSC / passcode"
                                                Classes="fieldLabel"/>
                                     <TextBox PasswordChar="*" x:Name="EscrowPasswordBox" Grid.Column="1" Margin="0,0,12,0"
-                                                 MinWidth="140" HorizontalAlignment="Stretch"/>
+                                                 Text="" MinWidth="140" HorizontalAlignment="Stretch"/>
                                     <TextBlock x:Name="EscrowSecretHint" Grid.Column="2"
                                                Text="(PCS SRP=DSID · Octagon bottle: passcode device)"
                                                Classes="hint"

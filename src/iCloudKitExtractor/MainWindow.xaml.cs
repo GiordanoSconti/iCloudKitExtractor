@@ -721,7 +721,7 @@ public partial class MainWindow : Window
 
         try
         {
-            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(true);
             var candidates = BuildCloudKitProbeCandidates(extrasRaw);
             var progress = new Progress<string>(msg =>
                 Dispatcher.Invoke(() =>
@@ -732,7 +732,7 @@ public partial class MainWindow : Window
 
             var atlas = await new CloudKitContainerProbeService(Orchestrator, Http)
                 .ProbeAtlasAsync(_session, candidates, outDir, progress)
-                .ConfigureAwait(false);
+                .ConfigureAwait(true);
 
             _laboratoryAtlasOutputDir = atlas.OutputDirectory;
             var rows = atlas.Hits
@@ -860,7 +860,7 @@ public partial class MainWindow : Window
         _laboratoryShareOutputDir = null;
         try
         {
-            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(true);
             var progress = new Progress<string>(msg =>
                 Dispatcher.Invoke(() =>
                 {
@@ -869,7 +869,7 @@ public partial class MainWindow : Window
                 }));
             var result = await new CloudKitLaboratoryService(Orchestrator, Http)
                 .ProbeShareGraphAsync(_session, LaboratoryOut("share_graph"), progress)
-                .ConfigureAwait(false);
+                .ConfigureAwait(true);
             _laboratoryShareOutputDir = result.OutputDirectory;
             LaboratoryShareGrid.ItemsSource = result.Edges.Select(edge => new LaboratoryShareRow
             {
@@ -919,7 +919,7 @@ public partial class MainWindow : Window
         _laboratoryTimelineOutputDir = null;
         try
         {
-            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(true);
             var progress = new Progress<string>(msg =>
                 Dispatcher.Invoke(() =>
                 {
@@ -928,7 +928,7 @@ public partial class MainWindow : Window
                 }));
             var result = await new CloudKitLaboratoryService(Orchestrator, Http)
                 .ProbeTimelineAsync(_session, LaboratoryOut("change_timeline"), days, progress)
-                .ConfigureAwait(false);
+                .ConfigureAwait(true);
             _laboratoryTimelineOutputDir = result.OutputDirectory;
             LaboratoryTimelineGrid.ItemsSource = result.Events
                 .OrderByDescending(ev => ev.WhenIso ?? "")
@@ -980,7 +980,7 @@ public partial class MainWindow : Window
         _laboratoryThirdPartyOutputDir = null;
         try
         {
-            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(false);
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(true);
             var extras = (LaboratoryThirdPartyExtraTextBox?.Text ?? "")
                 .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
                 .Select(s => s.Trim())
@@ -994,7 +994,7 @@ public partial class MainWindow : Window
                 }));
             var result = await new CloudKitLaboratoryService(Orchestrator, Http)
                 .ProbeThirdPartyAsync(_session, LaboratoryOut("third_party"), extras, progress)
-                .ConfigureAwait(false);
+                .ConfigureAwait(true);
             _laboratoryThirdPartyOutputDir = result.OutputDirectory;
             LaboratoryThirdPartyGrid.ItemsSource = result.Hits
                 .OrderByDescending(h => h.StatusCode == 200)
@@ -2266,10 +2266,10 @@ public partial class MainWindow : Window
     /// <summary>iCSC dal campo Escrow; se vuoto → DSID (default).</summary>
     private string ResolveEscrowIcsc()
     {
-        var typed = EscrowPasswordBox.Password.Trim();
+        var typed = (EscrowPasswordBox?.Password ?? "").Trim();
         if (!string.IsNullOrEmpty(typed))
             return typed;
-        return _session?.Dsid?.Trim() ?? "";
+        return (_session?.Dsid ?? "").Trim();
     }
 
     /// <summary>
