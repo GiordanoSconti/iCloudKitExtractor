@@ -15,8 +15,13 @@ public sealed record ContactEntry(
     string? Uid,
     string? Etag,
     string? PhotoUrl,
-    string? Rev)
+    string? Rev,
+    IReadOnlyList<string>? Emails = null,
+    IReadOnlyList<string>? Phones = null)
 {
+    public IReadOnlyList<string> EmailList => Emails ?? Array.Empty<string>();
+    public IReadOnlyList<string> PhoneList => Phones ?? Array.Empty<string>();
+
     public override string ToString() =>
         string.IsNullOrWhiteSpace(Fn) ? (Uid ?? Href) : Fn!;
 }
@@ -241,6 +246,10 @@ public sealed class ContactsCardDavClient
                 sb.AppendLine($"  etag: {c.Etag}");
             if (!string.IsNullOrEmpty(c.Fn))
                 sb.AppendLine($"  FN: {c.Fn}");
+            if (c.EmailList.Count > 0)
+                sb.AppendLine($"  EMAIL: {string.Join(" | ", c.EmailList)}");
+            if (c.PhoneList.Count > 0)
+                sb.AppendLine($"  TEL: {string.Join(" | ", c.PhoneList)}");
             if (!string.IsNullOrEmpty(c.Uid))
                 sb.AppendLine($"  UID: {c.Uid}");
             if (!string.IsNullOrEmpty(c.Rev))
@@ -352,7 +361,9 @@ public sealed class ContactsCardDavClient
                 Uid: MatchVcardLine(vcard, "UID"),
                 Etag: etag,
                 PhotoUrl: ExtractPhotoUrl(vcard),
-                Rev: MatchVcardLine(vcard, "REV")));
+                Rev: MatchVcardLine(vcard, "REV"),
+                Emails: MatchVcardLines(vcard, "EMAIL"),
+                Phones: MatchVcardLines(vcard, "TEL")));
         }
 
         return list;
@@ -464,5 +475,31 @@ public sealed class ContactsCardDavClient
             return null;
         var v = m.Groups[1].Value.Trim().TrimEnd('\r');
         return string.IsNullOrWhiteSpace(v) ? null : v;
+    }
+
+    private static IReadOnlyList<string> MatchVcardLines(string vcard, string key)
+    {
+        var unfolded = UnfoldVcard(vcard);
+        var list = new List<string>();
+        foreach (Match m in Regex.Matches(
+                     unfolded,
+                     $@"(?im)^{Regex.Escape(key)}(?:;[^:\r\n]*)?:(.*)$"))
+        {
+            var v = m.Groups[1].Value.Trim().TrimEnd('\r');
+            // Strip common TEL/EMAIL type prefixes like "TYPE=CELL:" already handled by regex.
+            if (v.Contains(':', StringComparison.Ordinal))
+            {
+                var idx = v.LastIndexOf(':');
+                if (idx >= 0 && idx < v.Length - 1)
+                    v = v[(idx + 1)..].Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(v))
+                continue;
+            if (!list.Contains(v, StringComparer.OrdinalIgnoreCase))
+                list.Add(v);
+        }
+
+        return list;
     }
 }

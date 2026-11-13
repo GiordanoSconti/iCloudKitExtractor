@@ -23,7 +23,33 @@ public sealed class FindMyFriendsClient
 
     public FindMyFriendsClient(HttpClient http) => _http = http;
 
+    /// <summary>Friend / follower node from FMF JSON (own-account People share).</summary>
+    public sealed record FmfPersonNode(
+        string Id,
+        string Role,
+        string? FirstName,
+        string? LastName,
+        bool SecureLocationsCapable,
+        string? RawSnippet);
+
+    public sealed record FmfFriendsGraph(
+        string? MyFirstName,
+        string? MeDeviceId,
+        IReadOnlyList<FmfPersonNode> People,
+        IReadOnlyList<string> DeviceIds,
+        string ReportText,
+        string? RawJson);
+
     public async Task<string> FetchFriendsTextAsync(
+        ICloudSession session,
+        CancellationToken ct = default)
+    {
+        var graph = await FetchFriendsGraphAsync(session, ct).ConfigureAwait(false);
+        return graph.ReportText;
+    }
+
+    /// <summary>Structured FMF friends/followers for Laboratory people-graph.</summary>
+    public async Task<FmfFriendsGraph> FetchFriendsGraphAsync(
         ICloudSession session,
         CancellationToken ct = default)
     {
@@ -87,7 +113,8 @@ public sealed class FindMyFriendsClient
                     log.AppendLine($"OK via {label} HTTP {status}");
                     log.AppendLine();
                     log.Append(FormatResponse(url, text));
-                    return log.ToString();
+                    var parsed = ParseFriendsGraph(text, log.ToString());
+                    return parsed;
                 }
 
                 last = new InvalidOperationException(
@@ -105,6 +132,67 @@ public sealed class FindMyFriendsClient
             (last?.Message ?? "FMF: tutte le varianti fallite.")
             + Environment.NewLine + log);
     }
+
+    private static FmfFriendsGraph ParseFriendsGraph(string json, string reportText)
+    {
+        var people = new List<FmfPersonNode>();
+        var devices = new List<string>();
+        string? myFirst = null;
+        string? meDevice = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("myInfo", out var my) && my.ValueKind == JsonValueKind.Object)
+            {
+                myFirst = GetStr(my, "firstName");
+                meDevice = GetStr(my, "meDeviceId");
+                if (string.IsNullOrWhiteSpace(myFirst)) myFirst = null;
+                if (string.IsNullOrWhiteSpace(meDevice)) meDevice = null;
+            }
+
+            void AddRole(string prop, string role)
+            {
+                if (!root.TryGetProperty(prop, out var arr) || arr.ValueKind != JsonValueKind.Array)
+                    return;
+                foreach (var item in arr.EnumerateArray())
+                {
+                    var id = GetStr(item, "id");
+                    if (string.IsNullOrWhiteSpace(id))
+                        continue;
+                    people.Add(new FmfPersonNode(
+                        id,
+                        role,
+                        NullIfEmpty(GetStr(item, "firstName")),
+                        NullIfEmpty(GetStr(item, "lastName")),
+                        GetBool(item, "secureLocationsCapable"),
+                        Trim(item.ToString(), 200)));
+                }
+            }
+
+            AddRole("following", "following");
+            AddRole("followers", "follower");
+
+            if (root.TryGetProperty("devices", out var devArr) && devArr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in devArr.EnumerateArray())
+                {
+                    var ids = GetStr(item, "idsDeviceId");
+                    if (!string.IsNullOrWhiteSpace(ids))
+                        devices.Add(ids);
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // report still useful
+        }
+
+        return new FmfFriendsGraph(myFirst, meDevice, people, devices, reportText, json);
+    }
+
+    private static string? NullIfEmpty(string s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s;
 
     private async Task<(int Status, string Body, string? ModelVersion)> SendFriendsAsync(
         ICloudSession session,

@@ -1456,6 +1456,48 @@
                                     </Border>
                                 </Grid>
                             </TabItem>
+                            <TabItem Header="6 · People graph">
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="140"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Style="{StaticResource SectionCardStyle}">
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource HintTextStyle}" Margin="0,0,0,8" TextWrapping="Wrap"
+                                                       Text="Own-account recon: session IDs + Find My People friend ids + CardDAV emails/phones + CloudKit share participant heuristics. FMF needs Albert→APS (Trusted devices)."/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button x:Name="LaboratoryPeopleButton" Content="Build people graph"
+                                                        Style="{StaticResource PrimaryButtonStyle}" MinWidth="170" Margin="0,0,10,0"
+                                                        Click="LaboratoryPeopleButton_Click"/>
+                                                <Button x:Name="LaboratoryPeopleOpenFolderButton" Content="Open folder"
+                                                        Style="{StaticResource SecondaryButtonStyle}" MinWidth="110" Margin="0,0,10,0"
+                                                        IsEnabled="False" Click="LaboratoryPeopleOpenFolderButton_Click"/>
+                                                <TextBlock x:Name="LaboratoryPeopleStatusText" Style="{StaticResource HintTextStyle}"
+                                                           VerticalAlignment="Center" Text="Ready."/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Style="{StaticResource SectionCardStyle}" Margin="0,8,0,0" Padding="8">
+                                        <DataGrid x:Name="LaboratoryPeopleGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                                                  CanUserResizeColumns="True" CanUserSortColumns="True"
+                                                  GridLinesVisibility="Horizontal" HeadersVisibility="Column">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="90"/>
+                                                <DataGridTextColumn Header="Display" Binding="{Binding Display}" Width="160"/>
+                                                <DataGridTextColumn Header="Primary ID" Binding="{Binding PrimaryId}" Width="200"/>
+                                                <DataGridTextColumn Header="Aliases" Binding="{Binding Aliases}" Width="*"/>
+                                                <DataGridTextColumn Header="Sources" Binding="{Binding Sources}" Width="140"/>
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </Border>
+                                    <Border Grid.Row="2" Style="{StaticResource LogSectionCardStyle}" Margin="0,8,0,0">
+                                        <TextBox x:Name="LaboratoryPeopleLogTextBox" Style="{StaticResource LogTextBoxStyle}" IsReadOnly="True"
+                                                 Text="People graph log…"/>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
 
                         </TabControl>
                     </DockPanel>

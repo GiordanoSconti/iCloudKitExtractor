@@ -1029,6 +1029,76 @@ public partial class MainWindow : Window
     private void LaboratoryThirdPartyOpenFolderButton_Click(object sender, RoutedEventArgs e) =>
         OpenLaboratoryFolder(_laboratoryThirdPartyOutputDir);
 
+    private string? _laboratoryPeopleOutputDir;
+
+    private sealed class LaboratoryPeopleRow
+    {
+        public string Kind { get; init; } = "";
+        public string Display { get; init; } = "";
+        public string PrimaryId { get; init; } = "";
+        public string Aliases { get; init; } = "";
+        public string Sources { get; init; } = "";
+    }
+
+    private async void LaboratoryPeopleButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session is null)
+        {
+            ShowMessage("Laboratory", "Sign in first.");
+            return;
+        }
+
+        LaboratoryPeopleButton.IsEnabled = false;
+        LaboratoryPeopleOpenFolderButton.IsEnabled = false;
+        LaboratoryPeopleStatusText.Text = "Building people graph…";
+        LaboratoryPeopleLogTextBox.Text = "";
+        LaboratoryPeopleGrid.ItemsSource = null;
+        _laboratoryPeopleOutputDir = null;
+        try
+        {
+            await TryRefreshAnisetteForExploratoryAsync(_session).ConfigureAwait(true);
+            var progress = new Progress<string>(msg =>
+                Dispatcher.Invoke(() =>
+                {
+                    LaboratoryPeopleStatusText.Text = TrimUiStatus(msg, 140);
+                    AppendLabLog(LaboratoryPeopleLogTextBox, msg, "People graph log");
+                }));
+            var result = await new CloudKitLaboratoryService(Orchestrator, Http)
+                .ProbePeopleGraphAsync(_session, LaboratoryOut("people_graph"), progress)
+                .ConfigureAwait(true);
+            _laboratoryPeopleOutputDir = result.OutputDirectory;
+            LaboratoryPeopleGrid.ItemsSource = result.Nodes.Select(n => new LaboratoryPeopleRow
+            {
+                Kind = n.Kind,
+                Display = n.Display,
+                PrimaryId = n.PrimaryId,
+                Aliases = string.Join(" | ", n.Aliases.Take(8)),
+                Sources = string.Join(" | ", n.Sources),
+            }).ToList();
+            LaboratoryPeopleOpenFolderButton.IsEnabled =
+                !string.IsNullOrEmpty(_laboratoryPeopleOutputDir);
+            LaboratoryPeopleStatusText.Text =
+                $"self={result.SelfCount} fmf={result.FmfCount} contact={result.ContactCount} " +
+                $"share={result.ShareCount} → {result.OutputDirectory}";
+            AppendLabLog(LaboratoryPeopleLogTextBox, result.ReportText, "People graph log");
+            RecordCaseOp("laboratory", "people-graph",
+                $"fmf={result.FmfCount} contact={result.ContactCount} share={result.ShareCount}");
+        }
+        catch (Exception ex)
+        {
+            LaboratoryPeopleStatusText.Text = "Failed: " + TrimUiStatus(ex.Message, 120);
+            AppendLabLog(LaboratoryPeopleLogTextBox, "ERROR: " + ex, "People graph log");
+            ShowMessage("Laboratory", "People graph failed:\n" + ex.Message);
+        }
+        finally
+        {
+            LaboratoryPeopleButton.IsEnabled = true;
+        }
+    }
+
+    private void LaboratoryPeopleOpenFolderButton_Click(object sender, RoutedEventArgs e) =>
+        OpenLaboratoryFolder(_laboratoryPeopleOutputDir);
+
     private void OpenLaboratoryFolder(string? dir)
     {
         if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))

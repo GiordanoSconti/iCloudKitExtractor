@@ -6,6 +6,8 @@ using System.Text.RegularExpressions;
 using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Protocol;
 using iCloudKitExtractor.Services.Backup;
+using iCloudKitExtractor.Services.Contacts;
+using iCloudKitExtractor.Services.FindMy;
 using iCloudKitExtractor.Services.WhatsApp;
 
 namespace iCloudKitExtractor.Services.CloudKit;
@@ -400,6 +402,321 @@ public sealed class CloudKitLaboratoryService
         return new ThirdPartyResult(hits, ok, report, outDir, json, csv);
     }
 
+    // ─── People / identity graph (own-account recon) ─────────────────────────
+
+    /// <summary>
+    /// Identity node visible from your signed-in account (self, FMF, CardDAV, CK share heuristics).
+    /// </summary>
+    public sealed record PeopleNode(
+        string Kind,
+        string Display,
+        string PrimaryId,
+        IReadOnlyList<string> Aliases,
+        IReadOnlyList<string> Sources,
+        string? Note);
+
+    public sealed record PeopleGraphResult(
+        IReadOnlyList<PeopleNode> Nodes,
+        string ReportText,
+        string? OutputDirectory,
+        string? JsonPath,
+        string? CsvPath,
+        int SelfCount,
+        int FmfCount,
+        int ContactCount,
+        int ShareCount);
+
+    /// <summary>
+    /// Fun own-account recon: merge session IDs + Find My People IDs + CardDAV emails/phones
+    /// + CloudKit share participant strings you already have access to.
+    /// </summary>
+    public async Task<PeopleGraphResult> ProbePeopleGraphAsync(
+        ICloudSession session,
+        string outputDirectory,
+        IProgress<string>? log = null,
+        CancellationToken ct = default)
+    {
+        EnsureSession(session);
+        var nodes = new List<PeopleNode>();
+        var notes = new List<string>();
+
+        // 1) Self
+        log?.Report("People graph — self (session)…");
+        var selfAliases = new List<string>();
+        void AddSelfAlias(string? v, string label)
+        {
+            if (string.IsNullOrWhiteSpace(v))
+                return;
+            selfAliases.Add($"{label}:{v.Trim()}");
+        }
+
+        AddSelfAlias(session.AppleId, "appleId");
+        AddSelfAlias(session.Dsid, "dsid");
+        AddSelfAlias(session.Adsid, "adsid");
+        AddSelfAlias(session.CloudKitUserId, "ckUser");
+        nodes.Add(new PeopleNode(
+            "self",
+            string.IsNullOrWhiteSpace(session.AppleId) ? "(you)" : session.AppleId.Trim(),
+            string.IsNullOrWhiteSpace(session.Dsid) ? session.AppleId : session.Dsid.Trim(),
+            selfAliases,
+            ["session"],
+            "Signed-in Apple ID / DSID / CloudKit userRecordName"));
+        log?.Report($"  self aliases={selfAliases.Count}");
+
+        // 2) Find My People (needs APS + mmeFMFAppToken)
+        log?.Report("People graph — Find My People…");
+        try
+        {
+            var fmf = await new FindMyFriendsClient(_http)
+                .FetchFriendsGraphAsync(session, ct)
+                .ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(fmf.MyFirstName) || !string.IsNullOrWhiteSpace(fmf.MeDeviceId))
+            {
+                var meAliases = new List<string>();
+                if (!string.IsNullOrWhiteSpace(fmf.MyFirstName))
+                    meAliases.Add("firstName:" + fmf.MyFirstName);
+                if (!string.IsNullOrWhiteSpace(fmf.MeDeviceId))
+                    meAliases.Add("meDeviceId:" + fmf.MeDeviceId);
+                foreach (var d in fmf.DeviceIds.Take(8))
+                    meAliases.Add("idsDeviceId:" + d);
+                nodes.Add(new PeopleNode(
+                    "self-fmf",
+                    fmf.MyFirstName ?? "(me / FMF)",
+                    fmf.MeDeviceId ?? session.Dsid,
+                    meAliases,
+                    ["fmf.myInfo"],
+                    "Find My People myInfo"));
+            }
+
+            foreach (var p in fmf.People)
+            {
+                var aliases = new List<string> { "fmfId:" + p.Id, "role:" + p.Role };
+                if (!string.IsNullOrWhiteSpace(p.FirstName))
+                    aliases.Add("firstName:" + p.FirstName);
+                if (!string.IsNullOrWhiteSpace(p.LastName))
+                    aliases.Add("lastName:" + p.LastName);
+                if (p.SecureLocationsCapable)
+                    aliases.Add("secureLocations:yes");
+                var display = string.Join(' ', new[] { p.FirstName, p.LastName }
+                    .Where(static s => !string.IsNullOrWhiteSpace(s))).Trim();
+                if (string.IsNullOrWhiteSpace(display))
+                    display = p.Id;
+                nodes.Add(new PeopleNode(
+                    "fmf",
+                    display,
+                    p.Id,
+                    aliases,
+                    ["fmf." + p.Role],
+                    "Find My People internal id (prsId-style) — not always an email"));
+            }
+
+            log?.Report($"  FMF people={fmf.People.Count} devices={fmf.DeviceIds.Count}");
+        }
+        catch (Exception ex)
+        {
+            notes.Add("FMF skipped: " + Trunc(ex.Message, 160));
+            log?.Report("  FMF skipped: " + Trunc(ex.Message, 120));
+        }
+
+        // 3) CardDAV contacts (emails / phones / vCard UID)
+        log?.Report("People graph — CardDAV contacts…");
+        try
+        {
+            var book = await new ContactsCardDavClient(_http)
+                .FetchAddressbookAsync(session, ct)
+                .ConfigureAwait(false);
+            var contactNodes = 0;
+            foreach (var c in book.Contacts)
+            {
+                var aliases = new List<string>();
+                if (!string.IsNullOrWhiteSpace(c.Uid))
+                    aliases.Add("vcardUid:" + c.Uid);
+                foreach (var em in c.EmailList)
+                    aliases.Add("email:" + em);
+                foreach (var tel in c.PhoneList)
+                    aliases.Add("tel:" + tel);
+                if (aliases.Count == 0 && string.IsNullOrWhiteSpace(c.Fn))
+                    continue;
+                var primary = c.EmailList.FirstOrDefault()
+                              ?? c.PhoneList.FirstOrDefault()
+                              ?? c.Uid
+                              ?? c.Href;
+                nodes.Add(new PeopleNode(
+                    "contact",
+                    string.IsNullOrWhiteSpace(c.Fn) ? primary : c.Fn!,
+                    primary,
+                    aliases,
+                    ["carddav"],
+                    "Address book vCard — Apple-internal IDs usually absent here"));
+                contactNodes++;
+            }
+
+            log?.Report($"  contacts={contactNodes} (book={book.Contacts.Count})");
+        }
+        catch (Exception ex)
+        {
+            notes.Add("CardDAV skipped: " + Trunc(ex.Message, 160));
+            log?.Report("  CardDAV skipped: " + Trunc(ex.Message, 120));
+        }
+
+        // 4) CloudKit share participants (heuristic strings from share-like zones)
+        log?.Report("People graph — CloudKit share participants…");
+        try
+        {
+            var shareDir = Path.Combine(EnsureDir(outputDirectory), "_share_probe");
+            var share = await ProbeShareGraphAsync(session, shareDir, log, ct).ConfigureAwait(false);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var edge in share.Edges)
+            {
+                foreach (var raw in edge.Participants)
+                {
+                    var cleaned = NormalizeParticipant(raw);
+                    if (string.IsNullOrWhiteSpace(cleaned))
+                        continue;
+                    var key = cleaned;
+                    if (!seen.Add(key))
+                        continue;
+                    var kind = cleaned.Contains('@') ? "share-email"
+                        : cleaned.StartsWith('_') ? "share-userid"
+                        : "share";
+                    nodes.Add(new PeopleNode(
+                        kind,
+                        cleaned,
+                        cleaned,
+                        [$"zone:{edge.ContainerId}/{edge.Zone}"],
+                        ["ck-share:" + edge.Label],
+                        "Heuristic from share zone record/sync — may be CKShare participant / ownerName / _userRecordName"));
+                }
+            }
+
+            log?.Report($"  share participant strings unique≈{seen.Count}");
+        }
+        catch (Exception ex)
+        {
+            notes.Add("Share graph skipped: " + Trunc(ex.Message, 160));
+            log?.Report("  Share graph skipped: " + Trunc(ex.Message, 120));
+        }
+
+        var selfCount = nodes.Count(static n => n.Kind.StartsWith("self", StringComparison.OrdinalIgnoreCase));
+        var fmfCount = nodes.Count(static n => n.Kind.Equals("fmf", StringComparison.OrdinalIgnoreCase));
+        var contactCount = nodes.Count(static n => n.Kind.Equals("contact", StringComparison.OrdinalIgnoreCase));
+        var shareCount = nodes.Count(static n => n.Kind.StartsWith("share", StringComparison.OrdinalIgnoreCase));
+
+        var report = FormatPeopleReport(nodes, notes, selfCount, fmfCount, contactCount, shareCount);
+        var outDir = EnsureDir(outputDirectory);
+        var json = Path.Combine(outDir, "people_graph.json");
+        var csv = Path.Combine(outDir, "people_graph.csv");
+        await File.WriteAllTextAsync(json, JsonSerializer.Serialize(new
+        {
+            generatedAt = DateTimeOffset.UtcNow,
+            appleId = session.AppleId,
+            dsid = session.Dsid,
+            cloudKitUserId = session.CloudKitUserId,
+            counts = new { selfCount, fmfCount, contactCount, shareCount, total = nodes.Count },
+            notes,
+            nodes
+        }, JsonOpts), ct).ConfigureAwait(false);
+        await File.WriteAllTextAsync(csv, BuildPeopleCsv(nodes), ct).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(outDir, "people_graph.txt"), report, ct)
+            .ConfigureAwait(false);
+        log?.Report($"  people graph → {outDir}");
+
+        return new PeopleGraphResult(
+            nodes, report, outDir, json, csv, selfCount, fmfCount, contactCount, shareCount);
+    }
+
+    private static string NormalizeParticipant(string raw)
+    {
+        var s = raw.Trim();
+        // Drop noisy prefixes from heuristic extraction
+        foreach (var prefix in new[] { "participant:", "ownerName:", "owner:", "CKShare:" })
+        {
+            if (s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                s = s[prefix.Length..].Trim();
+        }
+
+        return Trunc(s, 120);
+    }
+
+    private static string FormatPeopleReport(
+        IReadOnlyList<PeopleNode> nodes,
+        IReadOnlyList<string> notes,
+        int selfCount,
+        int fmfCount,
+        int contactCount,
+        int shareCount)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("=== CloudKit Laboratory — People / identity graph ===");
+        sb.AppendLine("Own-account recon only: session + FMF + CardDAV + CK share heuristics.");
+        sb.AppendLine(
+            $"Nodes: total={nodes.Count}  self={selfCount}  fmf={fmfCount}  contact={contactCount}  share={shareCount}");
+        sb.AppendLine();
+        if (notes.Count > 0)
+        {
+            sb.AppendLine("--- notes ---");
+            foreach (var n in notes)
+                sb.AppendLine("  · " + n);
+            sb.AppendLine();
+        }
+
+        foreach (var g in nodes.GroupBy(static n => n.Kind, StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(static g => KindOrder(g.Key)))
+        {
+            sb.AppendLine($"— {g.Key} ({g.Count()}) —");
+            foreach (var n in g.Take(80))
+            {
+                sb.AppendLine($"  {n.Display}");
+                sb.AppendLine($"    id: {n.PrimaryId}");
+                if (n.Aliases.Count > 0)
+                    sb.AppendLine($"    aliases: {string.Join(" | ", n.Aliases.Take(10))}");
+                sb.AppendLine($"    via: {string.Join(", ", n.Sources)}");
+            }
+
+            if (g.Count() > 80)
+                sb.AppendLine($"  … +{g.Count() - 80} more");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("Tips:");
+        sb.AppendLine("  · FMF `id` = Apple People/internal friend id (often opaque).");
+        sb.AppendLine("  · share-userid `_…` ≈ CloudKit userRecordName from a share you own/joined.");
+        sb.AppendLine("  · contact emails are seeds for IDS/Madrid lookup (Trusted devices tab).");
+        sb.AppendLine("  · Empty FMF → Activate Albert + Connect APS, then re-run.");
+        return sb.ToString().TrimEnd();
+    }
+
+    private static int KindOrder(string kind) => kind.ToLowerInvariant() switch
+    {
+        "self" => 0,
+        "self-fmf" => 1,
+        "fmf" => 2,
+        "share-email" => 3,
+        "share-userid" => 4,
+        "share" => 5,
+        "contact" => 6,
+        _ => 9,
+    };
+
+    private static string BuildPeopleCsv(IReadOnlyList<PeopleNode> nodes)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("kind,display,primaryId,aliases,sources,note");
+        foreach (var n in nodes)
+        {
+            static string Esc(string? s) =>
+                "\"" + (s ?? "").Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+            sb.Append(Esc(n.Kind)).Append(',')
+                .Append(Esc(n.Display)).Append(',')
+                .Append(Esc(n.PrimaryId)).Append(',')
+                .Append(Esc(string.Join(" | ", n.Aliases))).Append(',')
+                .Append(Esc(string.Join(" | ", n.Sources))).Append(',')
+                .Append(Esc(n.Note)).AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
     // ─── Internals ───────────────────────────────────────────────────────────
 
     private async Task<bool> SampleZoneTimelineAsync(
@@ -676,10 +993,12 @@ public sealed class CloudKitLaboratoryService
                 s.Contains('@')
                 || s.Contains("participant", StringComparison.OrdinalIgnoreCase)
                 || s.Contains("ownerName", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("userRecordName", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("hashedLookupInfo", StringComparison.OrdinalIgnoreCase)
                 || (s.StartsWith('_') && s.Length > 8))
             .Select(static s => Trunc(s, 80))
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(20)
+            .Take(24)
             .ToList();
 
     private static string GuessBundle(string containerId)
