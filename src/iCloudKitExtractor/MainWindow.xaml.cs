@@ -7531,5 +7531,9 @@ public partial class MainWindow : Window
             RequestSmsButton.IsEnabled = true;
         }
     }
+
+    /// <summary>Desktop-compatible helper (title, message) used by Laboratory handlers.</summary>
+    private void ShowMessage(string title, string message) =>
+        MessageBox.Show(this, message, title, MessageBoxButton.OK, MessageBoxImage.Information);
 }
 
