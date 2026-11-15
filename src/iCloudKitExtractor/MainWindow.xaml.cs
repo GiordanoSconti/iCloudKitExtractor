@@ -154,6 +154,7 @@ public partial class MainWindow : Window
         SyncQuietLogFromUi();
         SyncPersistRunLogsFromUi();
         SyncFullHarCaptureFromUi();
+        SyncFgObserveFromUi();
         if (IkeLogOptions.FullHarCapture)
         {
             LogAuth(
@@ -1165,11 +1166,28 @@ public partial class MainWindow : Window
     private void FullHarCaptureCheckBox_Changed(object sender, RoutedEventArgs e) =>
         SyncFullHarCaptureFromUi();
 
+    private void FgObserveCheckBox_Changed(object sender, RoutedEventArgs e) =>
+        SyncFgObserveFromUi();
+
     private void SyncQuietLogFromUi()
     {
         // Checkbox ha priorità sull'env dopo il load UI.
         if (QuietLogCheckBox is not null)
             IkeLogOptions.SetQuiet(QuietLogCheckBox.IsChecked == true);
+    }
+
+    private void SyncFgObserveFromUi()
+    {
+        if (FgObserveCheckBox is not null)
+            IkeLogOptions.SetObserveForegroundMmcs(FgObserveCheckBox.IsChecked == true);
+        if (ForegroundMmcsText is not null)
+        {
+            ForegroundMmcsText.Visibility = IkeLogOptions.ObserveForegroundMmcs
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            if (!IkeLogOptions.ObserveForegroundMmcs)
+                ForegroundMmcsText.Text = "FG MMCS: — (enable FG observe)";
+        }
     }
 
     private void SyncPersistRunLogsFromUi()
@@ -1959,13 +1977,22 @@ public partial class MainWindow : Window
     {
         if (ForegroundMmcsText is null)
             return;
+        if (!IkeLogOptions.ObserveForegroundMmcs)
+        {
+            ForegroundMmcsText.Visibility = Visibility.Collapsed;
+            ForegroundMmcsText.Text = "FG MMCS: — (enable FG observe)";
+            return;
+        }
+
+        ForegroundMmcsText.Visibility = Visibility.Visible;
         ForegroundMmcsText.Text = "FG MMCS: in probe… (wait for zones / D: / S: / mbs)";
     }
 
     private void UpdateForegroundMmcsUiFromLog(string line)
     {
-        if (ForegroundMmcsText is null)
+        if (ForegroundMmcsText is null || !IkeLogOptions.ObserveForegroundMmcs)
             return;
+        ForegroundMmcsText.Visibility = Visibility.Visible;
 
         var text = line.Trim();
         if (text.StartsWith("FG observe summary:", StringComparison.Ordinal))
@@ -7194,6 +7221,7 @@ public partial class MainWindow : Window
 
             IkeLogOptions.SetQuiet(QuietLogCheckBox.IsChecked == true);
             SyncPersistRunLogsFromUi();
+            SyncFgObserveFromUi();
             SyncDiskDumpFromUi();
             WireOrchestratorCallbacks(Orchestrator);
             var maxAssets = int.TryParse(MaxAssetsTextBox.Text.Trim(), out var max) && max > 0 ? max : (int?)null;

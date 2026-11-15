@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using iCloudKitExtractor.Protocol;
+using iCloudKitExtractor.Services;
 using iCloudKitExtractor.Services.Http;
 
 namespace iCloudKitExtractor.Models;
@@ -80,17 +81,13 @@ public sealed class RestoreSessionState
         IProgress<string>? log = null,
         bool logMisses = true)
     {
+        var observe = IkeLogOptions.ObserveForegroundMmcs;
         if (payload is not { Length: > 64 })
         {
-            if (logMisses && log is not null && !string.IsNullOrWhiteSpace(source))
-            {
+            if (!string.IsNullOrWhiteSpace(source))
                 ObservedForegroundMissCount++;
+            if (observe && logMisses && log is not null && !string.IsNullOrWhiteSpace(source))
                 log.Report($"  FG observe [{source}]: MISS (payload vuoto/corto)");
-            }
-            else if (!string.IsNullOrWhiteSpace(source))
-            {
-                ObservedForegroundMissCount++;
-            }
 
             return false;
         }
@@ -98,7 +95,7 @@ public sealed class RestoreSessionState
         var extracted = ForegroundRestorePlistExtractor.Extract(payload);
         if (extracted is not null)
         {
-            NoteObservedForeground(extracted, source, log);
+            NoteObservedForeground(extracted, source, observe ? log : null);
             var captured = ForegroundRestorePlistBuilder.BuildCapturedAuth(
                 anisette: null,
                 mmeClientInfoFromResponse: extracted.MmeClientInfo);
@@ -110,7 +107,7 @@ public sealed class RestoreSessionState
         else if (!string.IsNullOrWhiteSpace(source))
         {
             ObservedForegroundMissCount++;
-            if (logMisses && log is not null)
+            if (observe && logMisses && log is not null)
                 log.Report($"  FG observe [{source}]: MISS ({payload.Length:N0} B) — no hw/sha MMCS");
         }
 
@@ -146,9 +143,12 @@ public sealed class RestoreSessionState
             ForegroundIsSynthetic = false;
         }
 
-        log?.Report(
-            $"  FG seed (IKE static → request): hw={Foreground.HardwareIdHex} " +
-            $"sha={Foreground.PlistSha256Base64}");
+        if (IkeLogOptions.ObserveForegroundMmcs)
+        {
+            log?.Report(
+                $"  FG seed (IKE static → request): hw={Foreground.HardwareIdHex} " +
+                $"sha={Foreground.PlistSha256Base64}");
+        }
     }
 
     /// <summary>Riga di riepilogo probe FG (HIT/MISS sulle risposte early).</summary>

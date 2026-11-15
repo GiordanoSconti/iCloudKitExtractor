@@ -17,6 +17,7 @@ public static class IkeLogOptions
     private static int _quiet = -1; // -1 = lazy from env
     private static int _persistRunLogs = -1; // -1 = lazy from env
     private static int _fullHarCapture = -1; // -1 = lazy from env
+    private static int _observeForegroundMmcs = -1; // -1 = lazy from env
 
     /// <summary>
     /// True = solo errori (veloce). Override UI tramite <see cref="SetQuiet"/>.
@@ -90,13 +91,34 @@ public static class IkeLogOptions
             SetPersistRunLogs(true);
     }
 
+    /// <summary>
+    /// True = log HIT/MISS hw/sha FG sulle risposte early restore.
+    /// Restore usa comunque lo seed statico. Env: <c>IKE_FG_OBSERVE=1</c>; default off.
+    /// </summary>
+    public static bool ObserveForegroundMmcs
+    {
+        get
+        {
+            var v = Volatile.Read(ref _observeForegroundMmcs);
+            if (v >= 0)
+                return v != 0;
+            var env = Environment.GetEnvironmentVariable("IKE_FG_OBSERVE");
+            var on = !string.IsNullOrWhiteSpace(env) && IsTruthy(env);
+            Volatile.Write(ref _observeForegroundMmcs, on ? 1 : 0);
+            return on;
+        }
+    }
+
+    public static void SetObserveForegroundMmcs(bool enabled) =>
+        Volatile.Write(ref _observeForegroundMmcs, enabled ? 1 : 0);
+
     /// <summary>UI / <c>IProgress&lt;string&gt;</c>: emetti solo se errore, o se non-quiet.</summary>
     public static bool ShouldEmitUi(string? line)
     {
         if (!Quiet)
             return true;
-        // Probe FG hw/sha: pochi messaggi, utili anche in Quiet (UI + log Informazioni).
-        if (IsForegroundMmcsProbeLine(line))
+        // Probe FG: solo se esplicitamente abilitato (anche in Quiet).
+        if (ObserveForegroundMmcs && IsForegroundMmcsProbeLine(line))
             return true;
         return IsErrorLine(line);
     }

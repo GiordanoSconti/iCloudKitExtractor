@@ -1,5 +1,6 @@
 using iCloudKitExtractor.Models;
 using iCloudKitExtractor.Protocol;
+using iCloudKitExtractor.Services;
 
 namespace iCloudKitExtractor.Services.Backup;
 
@@ -38,7 +39,8 @@ public sealed class CloudKitPreAuthService
         restore.TryAbsorbFromPayload(mbsPayload, "preAuth mbs", log);
         restore.TryAbsorbFromPayload(lockPayload, "preAuth Lock", log);
         restore.EnsureForeground(session, device, log);
-        log?.Report("  " + restore.FormatObservedSummary());
+        if (IkeLogOptions.ObserveForegroundMmcs)
+            log?.Report("  " + restore.FormatObservedSummary());
 
         var foreground = restore.Foreground!;
         log?.Report(

@@ -594,6 +594,12 @@
                                           VerticalAlignment="Center" Margin="0,0,12,6"
                                           IsChecked="False"
                                           ToolTip="Writes kalama_records/query_*.bin (KA/LA/MA records; wrap already in RAM). Env: IKE_DUMP_KALAMA=1"/>
+                                <CheckBox x:Name="FgObserveCheckBox" Content="FG observe"
+                                          VerticalAlignment="Center" Margin="0,0,12,6"
+                                          IsChecked="False"
+                                          Checked="FgObserveCheckBox_Changed"
+                                          Unchecked="FgObserveCheckBox_Changed"
+                                          ToolTip="Log/probe Hardware-Id + x-apple-mmcs-plist-sha256 on early restore responses. Off by default. Env: IKE_FG_OBSERVE=1"/>
                                 <ProgressBar x:Name="DownloadProgressBar" Width="160" Height="10" Margin="0,4,12,6"
                                              VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0"
                                              ToolTip="Overall progress (completed files)"/>
@@ -608,11 +614,12 @@
                                        FontFamily="Consolas, Cascadia Mono, Courier New"
                                        FontSize="11.5"
                                        TextWrapping="Wrap"
-                                       Text="FG MMCS: — (probe on restore startup)"
+                                       Visibility="Collapsed"
+                                       Text="FG MMCS: — (enable FG observe)"
                                        ToolTip="Hardware-Id (f22) and x-apple-mmcs-plist-sha256 observed in early responses (zones / BackupAccount / D: / S: / mbs / Lock). Distinct from static values used in requests."/>
                             <WrapPanel>
                                 <TextBlock Text="Downloaded" Style="{StaticResource FieldLabelStyle}"
-                                           Width="72" VerticalAlignment="Center"/>
+                                           MinWidth="88" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                 <ProgressBar x:Name="DownloadFilesProgressBar" Width="140" Height="10"
                                              VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0"
                                              ToolTip="Files downloaded out of total"/>
@@ -621,7 +628,7 @@
                                            Style="{StaticResource HintTextStyle}"
                                            Text="0 / 0"/>
                                 <TextBlock Text="Decrypted" Style="{StaticResource FieldLabelStyle}"
-                                           Width="72" VerticalAlignment="Center"/>
+                                           MinWidth="88" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                 <ProgressBar x:Name="DecryptFilesProgressBar" Width="140" Height="10"
                                              VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0"
                                              ToolTip="Files decrypted out of total"/>

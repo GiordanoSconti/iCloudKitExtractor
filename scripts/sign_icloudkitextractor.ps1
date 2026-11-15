@@ -32,19 +32,22 @@ function Get-OrCreateCert {
 }
 
 function Trust-Cert([System.Security.Cryptography.X509Certificates.X509Certificate2]$cert) {
-    foreach ($storeName in @("TrustedPublisher", "Root")) {
-        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store($storeName, "CurrentUser")
-        $store.Open("ReadWrite")
-        try {
-            $have = $store.Certificates | Where-Object { $_.Thumbprint -eq $cert.Thumbprint }
-            if (-not $have) {
-                $store.Add($cert)
+    # Root often refuses Import-Certificate / X509Store without UI; certutil -user works headless.
+    $cer = Join-Path $env:TEMP ("ike-codesign-{0}.cer" -f $cert.Thumbprint)
+    try {
+        Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+        foreach ($storeName in @("TrustedPublisher", "Root")) {
+            $out = & certutil -user -addstore $storeName $cer 2>&1 | Out-String
+            if ($LASTEXITCODE -eq 0) {
                 Write-Host "Trusted in CurrentUser\$storeName ($($cert.Thumbprint))"
             }
+            else {
+                Write-Host ("certutil {0}: {1}" -f $storeName, $out)
+            }
         }
-        finally {
-            $store.Close()
-        }
+    }
+    finally {
+        Remove-Item $cer -Force -ErrorAction SilentlyContinue
     }
 }
 

@@ -100,6 +100,8 @@ public sealed class BackupDownloadService
     private readonly object _mmcsMastersGate = new();
     private int _mmcsKekOkLog;
     private int _mmcsKekFailLog;
+    /// <summary>Una sola riga «PCS seed: manatee=…» per snapshot (Collect per-asset spam).</summary>
+    private bool _pcsSeedLogged;
     /// <summary>
     /// Scope per-FL: ogni ProcessOneDomainAsync crea la propria sessione MMCS.
     /// AsyncLocal evita race con domainParallelism&gt;1 sul campo globale.
@@ -303,6 +305,7 @@ public sealed class BackupDownloadService
         _cachedShareBootstrapZones = null;
         _mmcsKekOkLog = 0;
         _mmcsKekFailLog = 0;
+        _pcsSeedLogged = false;
         _missingRetryBag.Clear();
         _pendingDecryptTasks.Clear();
         _uiFilesDownloaded = 0;
@@ -639,6 +642,8 @@ public sealed class BackupDownloadService
         var stagedChunks = 0;
         var mmcsOk = 0;
         var fileDecryptOk = 0;
+        // Non-null solo nel branch else classic-M (modern/hybrid lasciano null).
+        BackupAssetMetadataDecryptor.ClassicMetaZoneCache? classicMetaForEa = null;
 
         async Task<bool> ProcessOneAsync(
             BackupAsset asset,
@@ -671,22 +676,43 @@ public sealed class BackupDownloadService
                 uiAssetTotal,
                 progress,
                 log,
-                ct).ConfigureAwait(false);
+                ct,
+                classicMetaForEa).ConfigureAwait(false);
 
             if (!one.Ok && !one.QueuedDecrypt)
             {
-                if (!one.PendingChunks)
+                if (one.PendingChunks)
                 {
-                    NoteSyncOrQueuedOutcome(one, "fl_asset");
-                    if (overallTotal is int otFail && otFail > 0)
-                        ReportFilesDoneProgress(progress, overallCompleted ?? Volatile.Read(ref writtenSharded), otFail, Volatile.Read(ref totalBytes));
+                    // Classic: PendingChunks altrimenti lascia Scaricati/Decifrati a 0.
+                    if (classicMetaForEa is not null)
+                    {
+                        NoteClassicAssetOutcome(one, asset.RecordName);
+                        if (overallTotal is int otPend && otPend > 0)
+                            ReportFilesDoneProgress(
+                                progress,
+                                overallCompleted ?? Volatile.Read(ref writtenSharded),
+                                otPend,
+                                Volatile.Read(ref totalBytes));
+                    }
+
+                    return false;
                 }
+
+                if (classicMetaForEa is not null)
+                    NoteClassicAssetOutcome(one, asset.RecordName);
+                else
+                    NoteSyncOrQueuedOutcome(one, "fl_asset");
+                if (overallTotal is int otFail && otFail > 0)
+                    ReportFilesDoneProgress(progress, overallCompleted ?? Volatile.Read(ref writtenSharded), otFail, Volatile.Read(ref totalBytes));
                 return false;
             }
 
             if (one.QueuedDecrypt)
             {
-                NoteSyncOrQueuedOutcome(one, "fl_asset");
+                if (classicMetaForEa is not null)
+                    NoteClassicAssetOutcome(one, asset.RecordName);
+                else
+                    NoteSyncOrQueuedOutcome(one, "fl_asset");
                 if (overallTotal is int otQ && otQ > 0)
                     ReportFilesDoneProgress(progress, overallCompleted ?? Volatile.Read(ref writtenSharded), otQ, Volatile.Read(ref totalBytes));
                 return true;
@@ -697,7 +723,11 @@ public sealed class BackupDownloadService
             if (one.StagedChunks) Interlocked.Increment(ref stagedChunks);
             if (one.MmcsDecrypted) Interlocked.Increment(ref mmcsOk);
             if (one.FileDecrypted) Interlocked.Increment(ref fileDecryptOk);
-            NoteSyncOrQueuedOutcome(one, "fl_asset");
+            if (classicMetaForEa is not null)
+                NoteClassicAssetOutcome(one, asset.RecordName);
+            else
+                NoteSyncOrQueuedOutcome(one, "fl_asset");
+
             if (overallTotal is int ot && ot > 0)
                 ReportFilesDoneProgress(progress, overallCompleted ?? Volatile.Read(ref writtenSharded), ot, Volatile.Read(ref totalBytes));
             return true;
@@ -2889,9 +2919,35 @@ public sealed class BackupDownloadService
         else
         {
             // Path classico M:/KA:: stesso per-asset decrypt, senza fasi FL.
+            // Donkey: zone mbksync PI → record PI → encryptedAttributes (solo questo branch).
             var classicTotal = assets.Count;
+            classicMetaForEa = new BackupAssetMetadataDecryptor.ClassicMetaZoneCache();
+            // workDir (non null): ricarica mbksync_zones da snapshot se la sessione ha perso il payload.
+            _assets.EnsureZoneMastersCached(session, workDir, session.PcsKeysDirectory, log);
+            if (_assets.BootstrapZonesPayload is not { Length: > 64 })
+            {
+                log?.Report(
+                    "  classic EA WARN: BootstrapZonesPayload missing after EnsureZoneMastersCached — " +
+                    "encryptedAttributes likely to fail (no zone ShareProtection)");
+            }
+            else
+            {
+                log?.Report(
+                    $"  classic EA: zones payload {_assets.BootstrapZonesPayload.Length:N0} B ready");
+            }
+            long classicBytesPlan = 0;
+            foreach (var a in assets)
+            {
+                if (a.SizeBytes is > 0 and var sz)
+                    classicBytesPlan += sz;
+            }
+
+            if (classicBytesPlan > 0)
+                Interlocked.Add(ref _uiBytesTotal, classicBytesPlan);
+            ReportFilesDoneProgress(progress, 0, classicTotal, 0);
             log?.Report(
-                $"Download per-asset: payload→meta→authorizeGet→edge→MMCS→class-key ×{classicTotal}");
+                $"Download per-asset: payload→meta→authorizeGet→edge→MMCS→class-key ×{classicTotal}" +
+                (classicBytesPlan > 0 ? $" (planBytes={classicBytesPlan:N0})" : ""));
             var classicIndex = 0;
             foreach (var asset in assets)
             {
@@ -3430,6 +3486,57 @@ public sealed class BackupDownloadService
 
     private void NoteFileDuplicated() =>
         Interlocked.Increment(ref _uiFilesDuplicated);
+
+    /// <summary>
+    /// Contatori UI solo path classic-M (FL moderno resta su <see cref="NoteSyncOrQueuedOutcome"/>).
+    /// Staging .chunks / EA miss → Scaricati + Falliti; Backup/ → Scaricati + Decifrati.
+    /// </summary>
+    private void NoteClassicAssetOutcome(AssetDownloadOutcome one, string? recordName)
+    {
+        if (one.CountersApplied)
+            return;
+
+        if (one.QueuedDecrypt)
+            return;
+
+        if (one.PendingChunks)
+        {
+            NoteFileDownloaded("classic_pending", recordName);
+            return;
+        }
+
+        if (!one.Ok)
+        {
+            NoteFileDownloaded("classic_fail", recordName);
+            NoteDecryptFailed(
+                "classic_fail",
+                recordName,
+                emitUiError: true,
+                detail: "classic download/decrypt fail");
+            return;
+        }
+
+        if (one.WrittenSharded)
+        {
+            NoteFileDownloaded("classic_written", recordName);
+            if (one.FileDecrypted || one.MmcsDecrypted)
+                NoteFileDecrypted("classic_written", recordName);
+            else
+                NoteDecryptFailed(
+                    "classic_written_cipher",
+                    recordName,
+                    emitUiError: false,
+                    detail: "Backup/ without file AES");
+            return;
+        }
+
+        NoteFileDownloaded("classic_staged", recordName);
+        NoteDecryptFailed(
+            "classic_staged",
+            recordName,
+            emitUiError: false,
+            detail: "staged .chunks — missing Domain/path/EncryptionKey");
+    }
 
     /// <summary>
     /// Contatori UI — Scaricati è la base (primo, indipendente):
@@ -4291,14 +4398,24 @@ public sealed class BackupDownloadService
         int assetTotal,
         IProgress<DownloadProgressReport>? progress,
         IProgress<string>? log,
-        CancellationToken ct)
+        CancellationToken ct,
+        BackupAssetMetadataDecryptor.ClassicMetaZoneCache? classicMetaZones = null)
     {
         await EnsureAssetRecordPayloadAsync(session, asset, log, ct).ConfigureAwait(false);
 
         await Task.Run(() =>
         {
+            // classicMetaZones non-null solo dal branch classic-M; modern lascia default null.
             var meta = BackupAssetMetadataDecryptor.TryDecrypt(
-                asset, asset.RecordPayload, session, fileKeyCtx.ClassicKeybag, log);
+                asset,
+                asset.RecordPayload,
+                session,
+                fileKeyCtx.ClassicKeybag,
+                log,
+                classicMbksyncZonesPayload: classicMetaZones is null
+                    ? null
+                    : _assets.BootstrapZonesPayload,
+                classicZoneCache: classicMetaZones);
             BackupAssetMetadataDecryptor.Apply(asset, meta);
             if (!meta.Success)
             {
@@ -7145,7 +7262,12 @@ public sealed class BackupDownloadService
             if (PcsSessionSeedKeys.HasEscrowKeySet(session))
                 seeds = PcsDer.ParseKeySetPrivateKeys(session.PcsEscrowedKeySet!);
             else
-                seeds = PcsSessionSeedKeys.Collect(session, log);
+            {
+                // Collect logga il pool: una volta sola, non × asset (MMCS KEK).
+                IProgress<string>? seedLog = _pcsSeedLogged ? null : log;
+                seeds = PcsSessionSeedKeys.Collect(session, seedLog);
+                _pcsSeedLogged = true;
+            }
         }
         catch (Exception ex)
         {

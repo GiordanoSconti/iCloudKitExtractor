@@ -51,7 +51,8 @@
     <Style Selector="TextBlock.fieldLabel">
       <Setter Property="VerticalAlignment" Value="Center"/>
       <Setter Property="Foreground" Value="#5F6368"/>
-      <Setter Property="Margin" Value="0,0,10,10"/>
+      <!-- No bottom margin: inline labels next to ProgressBar must not overlap. -->
+      <Setter Property="Margin" Value="0,0,8,0"/>
     </Style>
 
     <Style Selector="TextBox.log">

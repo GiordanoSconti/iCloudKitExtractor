@@ -14,6 +14,52 @@ namespace iCloudKitExtractor.Services.Backup;
 public static class BackupAssetMetadataDecryptor
 {
     public const string EncryptedAttributesField = "encryptedAttributes";
+    private static int _classicEaFailLogged;
+
+    /// <summary>
+    /// Cache zone ShareProtection per snapshot classic-only (Donkey: base→zone PI→record PI).
+    /// Null sul path moderno: nessun bootstrap.
+    /// </summary>
+    public sealed class ClassicMetaZoneCache
+    {
+        private readonly object _gate = new();
+        public List<ProtectionZoneKeys> Zones { get; } = new();
+        public List<PcsCompactPrivateKey> Pool { get; private set; } = new();
+        public bool Bootstrapped { get; private set; }
+
+        public void EnsureBootstrapped(
+            byte[]? zonesPayload,
+            List<PcsCompactPrivateKey> seedKeys,
+            ICloudSession session,
+            IProgress<string>? log)
+        {
+            lock (_gate)
+            {
+                if (Bootstrapped)
+                    return;
+
+                Pool = new List<PcsCompactPrivateKey>(seedKeys);
+                if (zonesPayload is { Length: > 64 })
+                {
+                    var zoneKeys = PcsProtectionZone.TryUnwrapAllIterative(
+                        zonesPayload, seedKeys, includeLight: false);
+                    Zones.AddRange(zoneKeys);
+                    Pool = PcsProtectionZone.MergeKeys(seedKeys, zoneKeys);
+                    if (zoneKeys.Count > 0 && PcsSessionSeedKeys.IsManateePrimary(session))
+                        PcsSessionSeedKeys.RememberFromZones(session, zoneKeys, seedKeys);
+                    log?.Report(
+                        $"  classic EA: zone ShareProtection → {zoneKeys.Count} master, " +
+                        $"pool={Pool.Count}");
+                }
+                else
+                {
+                    log?.Report("  classic EA: zone payload missing — record PI only");
+                }
+
+                Bootstrapped = true;
+            }
+        }
+    }
 
     public sealed record Result(
         bool Success,
@@ -25,13 +71,16 @@ public static class BackupAssetMetadataDecryptor
 
     /// <summary>
     /// Tenta di arricchire <paramref name="asset"/> con identity filesystem + EncryptionKey.
+    /// <paramref name="classicZoneCache"/> non-null attiva la catena Donkey zone→record (solo classic-M).
     /// </summary>
     public static Result TryDecrypt(
         BackupAsset asset,
         byte[]? recordPayload,
         ICloudSession session,
         IosKeybag? unlockedKeybag,
-        IProgress<string>? log = null)
+        IProgress<string>? log = null,
+        byte[]? classicMbksyncZonesPayload = null,
+        ClassicMetaZoneCache? classicZoneCache = null)
     {
         _ = unlockedKeybag;
 
@@ -109,33 +158,38 @@ public static class BackupAssetMetadataDecryptor
             return Pending("metadata decrypt pending — KeySet without private keys");
 
         var ct = BackupKeybagPcsUnlock.ExtractEncryptedBytesValue(rawCt);
-        // Mai light: per-asset × Escrow seed su ciphertext = ECDH inutili in serie.
-        var zones = BuildDecryptZones(payload, asset, seedKeys, includeLight: false);
+        // Classic-M: Donkey PZFactory — zone PI → MergeKeys → record PI → GCM.
+        // Modern leave classicZoneCache null → BuildDecryptZones legacy (identity già da flist).
+        var classic = classicZoneCache is not null;
+        var zones = classic
+            ? BuildDecryptZonesClassic(
+                payload, asset, seedKeys, session, classicMbksyncZonesPayload, classicZoneCache!, log)
+            : BuildDecryptZones(payload, asset, seedKeys, includeLight: false);
 
-        byte[]? plain = null;
-        foreach (var zone in zones)
-        {
-            plain = PcsProtectionZone.TryDecryptField(
-                zone, ct, EncryptedAttributesField, "EncryptedAttributes");
-            if (plain is { Length: > 0 })
-                break;
-        }
+        // Donkey ProtectionZone.decrypt prova tutte le decryptKeys; expanded solo classic.
+        byte[]? plain = TryDecryptEaWithZones(zones, ct, rawCt, expanded: classic);
 
-        if (plain is null)
+        if (plain is null && !classic)
         {
             var embedded = PcsProtectionZone.TryUnwrapAll(
                 ct, seedKeys, includeLight: false);
-            foreach (var zone in embedded)
-            {
-                plain = PcsProtectionZone.TryDecryptField(
-                    zone, ct, EncryptedAttributesField, "EncryptedAttributes");
-                if (plain is { Length: > 0 })
-                    break;
-            }
+            plain = TryDecryptEaWithZones(embedded, ct, rawCt, expanded: false);
         }
 
         if (plain is not { Length: > 0 })
+        {
+            if (classic && Volatile.Read(ref _classicEaFailLogged) < 3)
+            {
+                Interlocked.Increment(ref _classicEaFailLogged);
+                log?.Report(
+                    $"  classic EA GCM miss: zones={zones.Count}, " +
+                    $"bootstrap={(classicMbksyncZonesPayload?.Length ?? 0):N0} B, " +
+                    $"cacheZones={classicZoneCache!.Zones.Count}, " +
+                    $"ct={ct.Length} B, record={asset.RecordName}");
+            }
+
             return Pending("metadata decrypt failed — PCS GCM encryptedAttributes");
+        }
 
         if (!AssetEncryptedAttributesParser.TryParse(plain, out var attrs, out var parseErr)
             || attrs is null)
@@ -179,6 +233,110 @@ public static class BackupAssetMetadataDecryptor
         asset.EnsureFileId();
     }
 
+    private static byte[]? TryDecryptEaWithZones(
+        IReadOnlyList<ProtectionZoneKeys> zones,
+        byte[] ct,
+        byte[] rawCt,
+        bool expanded)
+    {
+        foreach (var zone in zones)
+        {
+            var plain = expanded
+                ? PcsProtectionZone.TryDecryptFieldExpanded(
+                    zone, ct, EncryptedAttributesField, "EncryptedAttributes")
+                : PcsProtectionZone.TryDecryptField(
+                    zone, ct, EncryptedAttributesField, "EncryptedAttributes");
+            if (plain is { Length: > 0 })
+                return plain;
+        }
+
+        // Retry outer Value wrapper (come keybag) se strip ha fallito.
+        if (!ct.AsSpan().SequenceEqual(rawCt))
+        {
+            foreach (var zone in zones)
+            {
+                var plain = expanded
+                    ? PcsProtectionZone.TryDecryptFieldExpanded(
+                        zone, rawCt, EncryptedAttributesField, "EncryptedAttributes")
+                    : PcsProtectionZone.TryDecryptField(
+                        zone, rawCt, EncryptedAttributesField, "EncryptedAttributes");
+                if (plain is { Length: > 0 })
+                    return plain;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Catena InflatableDonkey / BP: zone masters → pool → record PI candidates → decrypt keys.
+    /// Solo con <see cref="ClassicMetaZoneCache"/>.
+    /// </summary>
+    private static List<ProtectionZoneKeys> BuildDecryptZonesClassic(
+        byte[] payload,
+        BackupAsset asset,
+        List<PcsCompactPrivateKey> seedKeys,
+        ICloudSession session,
+        byte[]? zonesPayload,
+        ClassicMetaZoneCache cache,
+        IProgress<string>? log)
+    {
+        cache.EnsureBootstrapped(zonesPayload, seedKeys, session, log);
+
+        var zones = new List<ProtectionZoneKeys>();
+        var pool = new List<PcsCompactPrivateKey>(cache.Pool);
+        // Zone DecryptKeys in testa (Donkey: latest protection zone first).
+        zones.AddRange(cache.Zones);
+
+        void ConsiderDer(byte[] der, string source)
+        {
+            var zone = PcsProtectionZone.TryUnwrap(der, pool);
+            if (zone is not null)
+            {
+                zones.Insert(0, zone);
+                if (zone.NestedPrivateKeys.Count > 0)
+                    pool = PcsProtectionZone.MergeKeys(pool, [zone]);
+                return;
+            }
+
+            foreach (var z in PcsProtectionZone.TryUnwrapAll(der, pool, includeLight: false))
+            {
+                zones.Insert(0, z);
+                if (z.NestedPrivateKeys.Count > 0)
+                    pool = PcsProtectionZone.MergeKeys(pool, [z]);
+            }
+        }
+
+        if (asset.RecordProtectionInfoDerHex is { Length: > 0 } hex)
+        {
+            try
+            {
+                ConsiderDer(Convert.FromHexString(hex), "record-PI-hex");
+            }
+            catch
+            {
+                // hex malformato
+            }
+        }
+
+        // Candidati ≥64 senza cap 900 (record PI classico può superare ~900 B).
+        foreach (var der in PcsProtectionZone.TryExtractProtectionInfoCandidates(payload))
+            ConsiderDer(der, "record-PI-cand");
+
+        var fromPayload = PcsProtectionZone.TryUnwrapAll(payload, pool, includeLight: false);
+        if (fromPayload.Count > 0)
+        {
+            zones.AddRange(fromPayload);
+            pool = PcsProtectionZone.MergeKeys(pool, fromPayload);
+        }
+
+        if (zones.Count == 0)
+            log?.Report("  classic EA: no ProtectionZone unwrapped (zone/record PI?)");
+
+        return DedupZones(zones);
+    }
+
+    /// <summary>Path legacy (call site modern / senza cache): invariato.</summary>
     private static List<ProtectionZoneKeys> BuildDecryptZones(
         byte[] payload,
         BackupAsset asset,
@@ -211,6 +369,20 @@ public static class BackupAssetMetadataDecryptor
         }
 
         return zones;
+    }
+
+    private static List<ProtectionZoneKeys> DedupZones(List<ProtectionZoneKeys> zones)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<ProtectionZoneKeys>(zones.Count);
+        foreach (var z in zones)
+        {
+            var id = Convert.ToHexString(z.MasterKey);
+            if (seen.Add(id))
+                result.Add(z);
+        }
+
+        return result;
     }
 
     private static Result Pending(string message) =>

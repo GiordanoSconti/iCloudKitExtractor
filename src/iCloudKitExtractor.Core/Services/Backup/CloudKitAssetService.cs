@@ -538,6 +538,9 @@ public sealed class CloudKitAssetService
         // domainParallel × decryptWorkers chiamano questo in parallelo: un solo harvest.
         lock (_zoneMastersGate)
         {
+            // Sempre: se manca il payload zone in RAM, prova mbksync_zones.bin da snapshot/PCS dir.
+            TryLoadMbksyncZonesFromDisk(outputDirectory, pcsKeysDirectory, log);
+
             if (_zoneMastersHarvestDone && _cachedZoneMasters.Count > 0)
             {
                 PcsSessionSeedKeys.RememberKeyIdHexes(
@@ -2444,7 +2447,8 @@ public sealed class CloudKitAssetService
             log?.Report($"  batch hint → {device.AssetHints.Count} totali");
         }
 
-        log?.Report("  " + restore.FormatObservedSummary());
+        if (IkeLogOptions.ObserveForegroundMmcs)
+            log?.Report("  " + restore.FormatObservedSummary());
     }
 
     private void SyncSnapshotCatalogPayload(BackupSnapshot snapshot, IProgress<string>? log)
