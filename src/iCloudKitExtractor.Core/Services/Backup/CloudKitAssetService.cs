@@ -58,6 +58,12 @@ public sealed class CloudKitAssetService
     public IReadOnlyList<(byte[] Master, string Source, string KeyIdHex, string ZoneName)> CachedZoneMasters =>
         _cachedZoneMasters;
 
+    /// <summary>
+    /// ProtectionZone complete dall’unwrap zone (DecryptKey + nested) — riuso classic EA.
+    /// </summary>
+    public IReadOnlyList<ProtectionZoneKeys> CachedZoneProtectionZones =>
+        _cachedZoneProtectionZones;
+
     private UbChunkCatalog _preAuthCatalog = UbChunkCatalog.Empty;
     private byte[]? _bootstrapDevicePayload;
     private byte[]? _bootstrapSnapshotPayload;
@@ -66,6 +72,7 @@ public sealed class CloudKitAssetService
     private byte[]? _lockSaveBody;
     private EnFetchResult? _lastEnFetch;
     private readonly List<(byte[] Master, string Source, string KeyIdHex, string ZoneName)> _cachedZoneMasters = [];
+    private readonly List<ProtectionZoneKeys> _cachedZoneProtectionZones = [];
     private readonly object _zoneMastersGate = new();
     private bool _zoneMastersHarvestDone;
     private bool _zoneMastersPersisted;
@@ -256,6 +263,7 @@ public sealed class CloudKitAssetService
         _bootstrapMbsPayload = null;
         _bootstrapZonesPayload = null;
         _cachedZoneMasters.Clear();
+        _cachedZoneProtectionZones.Clear();
         _zoneMastersHarvestDone = false;
         _zoneMastersPersisted = false;
         _lockSaveBody = null;
@@ -587,8 +595,16 @@ public sealed class CloudKitAssetService
                         var labeled = UnwrapZonesLabeled(
                             _bootstrapZonesPayload, seeds, includeLight: useLight);
                         foreach (var (zone, zoneName) in labeled)
+                        {
                             ConsiderCachedMaster(
                                 zone.MasterKey, $"zones:{zoneName}", zone.MasterKeyIdHex, zoneName);
+                            // Dedup per MasterKey — riuso EA classic senza secondo unwrap.
+                            var mid = Convert.ToHexString(zone.MasterKey);
+                            if (_cachedZoneProtectionZones.All(z =>
+                                    !Convert.ToHexString(z.MasterKey).Equals(mid, StringComparison.Ordinal)))
+                                _cachedZoneProtectionZones.Add(zone);
+                        }
+
                         if (labeled.Count > 0 && manateeFast)
                             PcsSessionSeedKeys.RememberFromZones(
                                 session, labeled.Select(static t => t.Zone), seeds);

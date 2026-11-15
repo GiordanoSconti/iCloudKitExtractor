@@ -27,6 +27,36 @@ public static class BackupAssetMetadataDecryptor
         public List<PcsCompactPrivateKey> Pool { get; private set; } = new();
         public bool Bootstrapped { get; private set; }
 
+        /// <summary>
+        /// Preferisci zone già unwrapped da <c>EnsureZoneMastersCached</c> (stesso harvest keybag/MMCS).
+        /// </summary>
+        public void SeedFromCachedZones(
+            IReadOnlyList<ProtectionZoneKeys>? cachedZones,
+            List<PcsCompactPrivateKey> seedKeys,
+            IProgress<string>? log)
+        {
+            if (cachedZones is not { Count: > 0 })
+                return;
+
+            lock (_gate)
+            {
+                if (Bootstrapped && Zones.Count > 0)
+                    return;
+
+                Pool = PcsProtectionZone.MergeKeys(seedKeys, cachedZones.ToList());
+                foreach (var z in cachedZones)
+                {
+                    var mid = Convert.ToHexString(z.MasterKey);
+                    if (Zones.All(x => !Convert.ToHexString(x.MasterKey).Equals(mid, StringComparison.Ordinal)))
+                        Zones.Add(z);
+                }
+
+                Bootstrapped = true;
+                log?.Report(
+                    $"  classic EA: reuse cached zone ProtectionZone ×{Zones.Count}, pool={Pool.Count}");
+            }
+        }
+
         public void EnsureBootstrapped(
             byte[]? zonesPayload,
             List<PcsCompactPrivateKey> seedKeys,
@@ -73,14 +103,15 @@ public static class BackupAssetMetadataDecryptor
     /// Tenta di arricchire <paramref name="asset"/> con identity filesystem + EncryptionKey.
     /// <paramref name="classicZoneCache"/> non-null attiva la catena Donkey zone→record (solo classic-M).
     /// </summary>
-    public static Result TryDecrypt(
+        public static Result TryDecrypt(
         BackupAsset asset,
         byte[]? recordPayload,
         ICloudSession session,
         IosKeybag? unlockedKeybag,
         IProgress<string>? log = null,
         byte[]? classicMbksyncZonesPayload = null,
-        ClassicMetaZoneCache? classicZoneCache = null)
+        ClassicMetaZoneCache? classicZoneCache = null,
+        IReadOnlyList<ProtectionZoneKeys>? classicCachedZones = null)
     {
         _ = unlockedKeybag;
 
@@ -161,6 +192,11 @@ public static class BackupAssetMetadataDecryptor
         // Classic-M: Donkey PZFactory — zone PI → MergeKeys → record PI → GCM.
         // Modern leave classicZoneCache null → BuildDecryptZones legacy (identity già da flist).
         var classic = classicZoneCache is not null;
+        if (classic)
+        {
+            classicZoneCache!.SeedFromCachedZones(classicCachedZones, seedKeys, log);
+        }
+
         var zones = classic
             ? BuildDecryptZonesClassic(
                 payload, asset, seedKeys, session, classicMbksyncZonesPayload, classicZoneCache!, log)

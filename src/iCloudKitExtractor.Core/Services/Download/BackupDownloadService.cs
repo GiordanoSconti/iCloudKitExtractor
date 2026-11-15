@@ -4415,7 +4415,10 @@ public sealed class BackupDownloadService
                 classicMbksyncZonesPayload: classicMetaZones is null
                     ? null
                     : _assets.BootstrapZonesPayload,
-                classicZoneCache: classicMetaZones);
+                classicZoneCache: classicMetaZones,
+                classicCachedZones: classicMetaZones is null
+                    ? null
+                    : _assets.CachedZoneProtectionZones);
             BackupAssetMetadataDecryptor.Apply(asset, meta);
             if (!meta.Success)
             {
