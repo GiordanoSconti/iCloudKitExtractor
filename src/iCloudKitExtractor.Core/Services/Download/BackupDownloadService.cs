@@ -321,6 +321,8 @@ public sealed class BackupDownloadService
         // accreditano solo i byte fatti. Catalog Snapshot.SizeBytes = diagnostica.
         // Rete (WireBytes): HTTP req+resp body — distinto dal payload Backup.
         IkeHttpTrafficMeter.ResetAndEnable();
+        // Evita OID/body Ford di uno snapshot precedente (cancel / job precedente).
+        OidHostBodyCache.Clear();
         var catalogSnapBytes = job.Snapshot.SizeBytes is > 0 ? job.Snapshot.SizeBytes.Value : 0L;
         _uiBytesSnapshotDeclared = 0;
         _uiBytesTotal = 0;
@@ -3118,6 +3120,8 @@ public sealed class BackupDownloadService
             try { _mmcsChunkSession?.ClearCacheIfIdle(log, force: true); }
             catch { /* ignore */ }
             _mmcsChunkSession = null;
+            try { OidHostBodyCache.Clear(); }
+            catch { /* ignore */ }
             try
             {
                 log?.Report(

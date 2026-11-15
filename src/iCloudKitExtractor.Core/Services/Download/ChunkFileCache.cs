@@ -8,19 +8,23 @@ namespace iCloudKitExtractor.Services.Download;
 /// Cache file <c>CChunkCache</c> / <c>Downloads\.chunks\&lt;hex(sig)&gt;</c>.
 /// Nome = hex minuscolo della signature (21 → 42, 45 → 90).
 /// DecryptFord: open + <c>Read(ctLen)</c> — non slice RAM del pack.
+/// Root: <see cref="AsyncLocal{T}"/> per flusso async (deviceDirectory del job) +
+/// fallback processo (ultimo <see cref="Bind"/>) per test / sync.
 /// </summary>
 public static class ChunkFileCache
 {
-    private static string? _root;
+    private static readonly AsyncLocal<string?> AsyncRoot = new();
+    private static string? _processRoot;
 
-    public static string? RootDirectory => _root;
+    public static string? RootDirectory => AsyncRoot.Value ?? _processRoot;
 
     public static void Bind(string directory)
     {
         if (string.IsNullOrWhiteSpace(directory))
             return;
-        _root = directory;
         Directory.CreateDirectory(directory);
+        AsyncRoot.Value = directory;
+        Volatile.Write(ref _processRoot, directory);
     }
 
     /// <summary>Probe/test: punta a una cartella temp (o svuota i file signature se già bound).</summary>
@@ -28,15 +32,17 @@ public static class ChunkFileCache
     {
         if (!string.IsNullOrWhiteSpace(tempDirectory))
         {
-            _root = tempDirectory;
             Directory.CreateDirectory(tempDirectory);
+            AsyncRoot.Value = tempDirectory;
+            Volatile.Write(ref _processRoot, tempDirectory);
         }
 
-        if (_root is null || !Directory.Exists(_root))
+        var root = RootDirectory;
+        if (root is null || !Directory.Exists(root))
             return;
         try
         {
-            foreach (var f in Directory.EnumerateFiles(_root))
+            foreach (var f in Directory.EnumerateFiles(root))
             {
                 var name = Path.GetFileName(f);
                 if (IsSignatureFileName(name))
@@ -75,7 +81,8 @@ public static class ChunkFileCache
 
     private static void PutCore(ReadOnlySpan<byte> signature, ReadOnlySpan<byte> body, bool overwrite)
     {
-        if (_root is null
+        var root = RootDirectory;
+        if (root is null
             || signature.Length is not (21 or 45)
             || !BodyLenOk(signature.Length, body.Length))
             return;
@@ -87,7 +94,7 @@ public static class ChunkFileCache
             return;
 
         var name = FileName(signature);
-        var path = Path.Combine(_root, name);
+        var path = Path.Combine(root, name);
         try
         {
             //  un file = body di QUEL gate/sig. Non sovrascrivere con pack più lungo.
@@ -137,11 +144,12 @@ public static class ChunkFileCache
     public static bool TryRead(ReadOnlySpan<byte> signature, int ctLen, out byte[] body)
     {
         body = [];
-        if (_root is null
+        var root = RootDirectory;
+        if (root is null
             || signature.Length is not (21 or 45)
             || !BodyLenOk(signature.Length, ctLen))
             return false;
-        var path = Path.Combine(_root, FileName(signature));
+        var path = Path.Combine(root, FileName(signature));
         if (!File.Exists(path))
             return false;
 
@@ -179,9 +187,10 @@ public static class ChunkFileCache
 
     public static bool HasExact(ReadOnlySpan<byte> signature, int ctLen)
     {
-        if (_root is null || signature.Length is not (21 or 45) || ctLen <= 0)
+        var root = RootDirectory;
+        if (root is null || signature.Length is not (21 or 45) || ctLen <= 0)
             return false;
-        var path = Path.Combine(_root, FileName(signature));
+        var path = Path.Combine(root, FileName(signature));
         try
         {
             return File.Exists(path) && new FileInfo(path).Length == ctLen;
@@ -195,9 +204,10 @@ public static class ChunkFileCache
     /// <summary>Rimuove entry poison (CT che non apre con IKM) prima di un re-GET.</summary>
     public static bool TryDelete(ReadOnlySpan<byte> signature)
     {
-        if (_root is null || signature.Length is not (21 or 45))
+        var root = RootDirectory;
+        if (root is null || signature.Length is not (21 or 45))
             return false;
-        var path = Path.Combine(_root, FileName(signature));
+        var path = Path.Combine(root, FileName(signature));
         try
         {
             if (!File.Exists(path))

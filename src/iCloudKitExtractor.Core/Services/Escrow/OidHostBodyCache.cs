@@ -11,6 +11,7 @@ namespace iCloudKitExtractor.Services.Escrow;
 /// Cache di processo: body MMCS per <c>oid@start</c> (tutti i FileGroup).
 /// Pending Ford è keyed per <c>gateHex</c> (pack multi-asset sullo stesso OID).
 /// Seed tardivo → <see cref="Put"/> → packScan IKM → .chunks + retry assemble.
+/// Chiamare <see cref="Clear"/> a inizio/fine snapshot per evitare cross-talk tra job.
 /// </summary>
 public static class OidHostBodyCache
 {
@@ -26,6 +27,17 @@ public static class OidHostBodyCache
 
     private readonly record struct PendingFord(
         byte[] Gate45, int CtLen, byte[] Ikm, string Path, string Oid);
+
+    /// <summary>Svuota bodies / pending / recovered (fine o inizio download snapshot).</summary>
+    public static void Clear()
+    {
+        Bodies.Clear();
+        Pending.Clear();
+        while (RecoveredPaths.TryDequeue(out _))
+        {
+            /* drain */
+        }
+    }
 
     public static void Put(string oid, long start, byte[] body)
     {
