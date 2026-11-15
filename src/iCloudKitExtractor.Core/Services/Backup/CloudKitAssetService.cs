@@ -189,6 +189,49 @@ public sealed class CloudKitAssetService
         Volatile.Write(ref _anisetteBlockedUntilMs, 0);
     }
 
+    /// <summary>
+    /// Attende la fine del cooldown Anisette (max ~2 min). Su rate-limit lungo
+    /// non blocca oltre il cap: il caller decide skip/retry.
+    /// </summary>
+    public async Task WaitAnisetteCooldownAsync(
+        IProgress<string>? log,
+        CancellationToken ct,
+        int maxWaitMs = 120_000)
+    {
+        const int sliceMs = 2_000;
+        var waited = 0;
+        var remain0 = AnisetteBlockedRemainingMs;
+        if (remain0 <= 0)
+        {
+            ResetAnisetteRefreshCircuit();
+            return;
+        }
+
+        if (remain0 > maxWaitMs)
+        {
+            log?.Report(
+                $"  Anisette rate-limited (~{remain0 / 60_000.0:0.#} min) — " +
+                "attesa lunga saltata (usa Anisette locale o riprova dopo).");
+            return;
+        }
+
+        while (AnisetteRefreshBlocked && waited < maxWaitMs)
+        {
+            var remain = AnisetteBlockedRemainingMs;
+            if (waited == 0 || waited % 10_000 < sliceMs)
+            {
+                log?.Report(
+                    $"  waiting for Anisette… ({waited / 1000}s, ~{remain / 1000}s remaining)");
+            }
+
+            await Task.Delay(sliceMs, ct).ConfigureAwait(false);
+            waited += sliceMs;
+        }
+
+        if (!AnisetteRefreshBlocked)
+            ResetAnisetteRefreshCircuit();
+    }
+
     public void SetSessionRefresh(SessionRefreshDelegate? refresh)
     {
         _sessionRefresh = refresh;
@@ -890,9 +933,16 @@ public sealed class CloudKitAssetService
         if (AnisetteRefreshBlocked)
         {
             log?.Report(
-                $"  PrivilegedBatch skip: Anisette in cooldown " +
-                $"(~{AnisetteBlockedRemainingMs / 1000}s) — niente query/retrieve");
-            return ([], null);
+                $"  PrivilegedBatch: Anisette in cooldown " +
+                $"(~{AnisetteBlockedRemainingMs / 1000}s) — attendo prima di query/retrieve…");
+            await WaitAnisetteCooldownAsync(log, ct).ConfigureAwait(false);
+            if (AnisetteRefreshBlocked)
+            {
+                log?.Report(
+                    $"  PrivilegedBatch skip: Anisette ancora in cooldown " +
+                    $"(~{AnisetteBlockedRemainingMs / 1000}s) — niente query/retrieve");
+                return ([], null);
+            }
         }
 
         if (IsGatewayThrottled)
@@ -1004,14 +1054,19 @@ public sealed class CloudKitAssetService
 
         async Task<bool> RefreshAnisetteAsync(string reason)
         {
-            if (Volatile.Read(ref _anisetteRefreshFailed) != 0)
-                return false;
-
             await refreshGate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                if (Volatile.Read(ref _anisetteRefreshFailed) != 0)
-                    return false;
+                // Cooldown: aspetta qui (serializzato) invece di skippare i chunk paralleli.
+                if (AnisetteRefreshBlocked)
+                {
+                    log?.Report(
+                        $"  PrivilegedBatch: Anisette cooldown before refresh ({reason}) " +
+                        $"(~{AnisetteBlockedRemainingMs / 1000}s)…");
+                    await WaitAnisetteCooldownAsync(log, ct).ConfigureAwait(false);
+                    if (AnisetteRefreshBlocked)
+                        return false;
+                }
 
                 log?.Report($"  PrivilegedBatch: refresh Anisette ({reason})…");
                 if (await TryRefreshSessionAfterUnauthorizedAsync(session, log, ct)
@@ -1020,6 +1075,26 @@ public sealed class CloudKitAssetService
                     Interlocked.Exchange(ref chunksSinceRefresh, 0);
                     await Task.Delay(PrivilegedBatchPostRefreshDelayMs, ct).ConfigureAwait(false);
                     return true;
+                }
+
+                // Fallimento → cooldown appena impostato: un altro tentativo dopo l'attesa
+                // evita che i chunk paralleli 401 vadano tutti in skip.
+                if (AnisetteRefreshBlocked)
+                {
+                    log?.Report(
+                        $"  PrivilegedBatch: refresh failed — attendo cooldown " +
+                        $"(~{AnisetteBlockedRemainingMs / 1000}s) e ritento una volta…");
+                    await WaitAnisetteCooldownAsync(log, ct).ConfigureAwait(false);
+                    if (AnisetteRefreshBlocked)
+                        return false;
+                    if (await TryRefreshSessionAfterUnauthorizedAsync(session, log, ct)
+                            .ConfigureAwait(false))
+                    {
+                        Interlocked.Exchange(ref chunksSinceRefresh, 0);
+                        await Task.Delay(PrivilegedBatchPostRefreshDelayMs, ct)
+                            .ConfigureAwait(false);
+                        return true;
+                    }
                 }
 
                 return false;

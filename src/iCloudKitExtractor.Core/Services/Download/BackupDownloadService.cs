@@ -9425,31 +9425,8 @@ public sealed class BackupDownloadService
     /// Attende la fine del cooldown Anisette. Su rate-limit remoto (fino a ~1h)
     /// non aspetta oltre 2 minuti: stop PB e messaggio chiaro.
     /// </summary>
-    private async Task PauseForAnisetteCooldownAsync(IProgress<string>? log, CancellationToken ct)
-    {
-        const int sliceMs = 2_000;
-        const int maxWaitMs = 120_000;
-        var waited = 0;
-        var remain0 = _assets.AnisetteBlockedRemainingMs;
-        if (remain0 > maxWaitMs)
-        {
-            log?.Report(
-                $"  Anisette rate-limited (~{remain0 / 60_000.0:0.#} min rimanenti) — " +
-                "salto attesa lunga; riprendi lo snapshot dopo lo sblocco o usa Anisette locale.");
-            return;
-        }
-
-        while (_assets.AnisetteRefreshBlocked && waited < maxWaitMs)
-        {
-            var remain = _assets.AnisetteBlockedRemainingMs;
-            log?.Report($"  waiting for Anisette… ({waited / 1000}s, ~{remain / 1000}s remaining)");
-            await Task.Delay(sliceMs, ct).ConfigureAwait(false);
-            waited += sliceMs;
-        }
-
-        if (!_assets.AnisetteRefreshBlocked)
-            _assets.ResetAnisetteRefreshCircuit();
-    }
+    private Task PauseForAnisetteCooldownAsync(IProgress<string>? log, CancellationToken ct) =>
+        _assets.WaitAnisetteCooldownAsync(log, ct);
 
     /// <summary>
     /// Memorizza MmcsAuth flist (post-PB / attach) per riuso cross-Domain senza
@@ -9780,7 +9757,37 @@ public sealed class BackupDownloadService
                 break;
             }
 
-            // gained==0: non riaccodare (evita flood). Retry finale sotto.
+            // gained==0 + Anisette cooldown: i chunk 401 erano skippati — aspetta,
+            // remint e RIACCODA la wave (prima: "non riaccodo" → auth gap permanente).
+            if (gained == 0 && _assets.AnisetteRefreshBlocked)
+            {
+                log?.Report(
+                    $"  wave {wave}: 0 auth (Anisette cooldown) — riaccodo " +
+                    $"{waveSeeds.Count} seed, attendo sblocco…");
+                pendingSeeds = waveSeeds
+                    .Concat(pendingSeeds)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                await PauseForAnisetteCooldownAsync(log, ct).ConfigureAwait(false);
+                if (_refreshSession is not null)
+                {
+                    try
+                    {
+                        await _refreshSession(session, log, ct, forceRemint: true)
+                            .ConfigureAwait(false);
+                        _assets.ClearGatewayUnauthorized();
+                        _assets.ResetAnisetteRefreshCircuit();
+                    }
+                    catch (Exception ex)
+                    {
+                        log?.Report($"  refresh after cooldown: {ex.Message}");
+                    }
+                }
+
+                continue;
+            }
+
+            // gained==0 senza cooldown: non riaccodare (evita flood). Retry finale sotto.
             if (gained == 0)
             {
                 log?.Report(
@@ -9816,27 +9823,6 @@ public sealed class BackupDownloadService
                     .Concat(pendingSeeds)
                     .Distinct(StringComparer.Ordinal)
                     .ToList();
-            }
-
-            if (gained == 0 && _assets.AnisetteRefreshBlocked)
-            {
-                log?.Report(
-                    $"  PrivilegedBatch: Anisette in cooldown — waiting, then continuing " +
-                    $"({stillNeed} without auth, {pendingSeeds.Count} seeds queued)…");
-                await PauseForAnisetteCooldownAsync(log, ct).ConfigureAwait(false);
-                if (_refreshSession is not null)
-                {
-                    try
-                    {
-                        await _refreshSession(session, log, ct, forceRemint: true).ConfigureAwait(false);
-                        _assets.ClearGatewayUnauthorized();
-                        _assets.ResetAnisetteRefreshCircuit();
-                    }
-                    catch (Exception ex)
-                    {
-                        log?.Report($"  refresh after cooldown: {ex.Message}");
-                    }
-                }
             }
         }
 
