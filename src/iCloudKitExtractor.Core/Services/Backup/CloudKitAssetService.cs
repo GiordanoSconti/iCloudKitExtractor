@@ -993,13 +993,15 @@ public sealed class CloudKitAssetService
         if (seeds.Count == 0)
             return ([], null);
 
-        //  tutti i seed di un Domain condividono l'UUID; batch ~6–12.
+        //  tutti i seed di un Domain condividono l'UUID; batch adaptive 12/24.
         var groups = GroupSeedsByDomainUuid(seeds);
-        var chunkCount = groups.Sum(static g => (g.Count + PrivilegedBatchChunkSize - 1) / PrivilegedBatchChunkSize);
+        var chunkSz = PrivilegedBatchChunkSize;
+        var chunkCount = groups.Sum(g => (g.Count + chunkSz - 1) / chunkSz);
         log?.Report(
             $"CloudKit: query/retrieve PrivilegedBatch ×{seeds.Count} seed " +
-            $"in {groups.Count} gruppi Domain (~{chunkCount} chunk×{PrivilegedBatchChunkSize}, " +
-            $"parallel={PrivilegedBatchParallelism}, _defaultZone)…");
+            $"in {groups.Count} gruppi Domain (~{chunkCount} chunk×{chunkSz}, " +
+            $"parallel={PrivilegedBatchParallelism}, _defaultZone; " +
+            $"adaptive={(chunkSz >= PrivilegedBatchChunkSizeMax ? "aggro24" : "def12")})…");
 
         // #region agent log
         try
@@ -1361,8 +1363,23 @@ public sealed class CloudKitAssetService
             lastPayload);
     }
 
-    /// <summary>capture ~6–12 seed/query; 12 bilancia RTT vs 401.</summary>
-    private const int PrivilegedBatchChunkSize = 12;
+    /// <summary>Chunk difensivo (post-401).</summary>
+    private const int PrivilegedBatchChunkSizeMin = 12;
+    /// <summary>Chunk aggressivo (pipeline experiment, no 401 recenti).</summary>
+    private const int PrivilegedBatchChunkSizeMax = 24;
+    /// <summary>Avvio aggressivo; NoteGatewayUnauthorized lo riduce a Min.</summary>
+    private int _privilegedBatchChunkSize = PrivilegedBatchChunkSizeMax;
+    private int _privilegedBatchOkStreak;
+
+    /// <summary>Chunk size corrente per wave seed cap / log.</summary>
+    public int PrivilegedBatchChunkSizeCurrent =>
+        Math.Clamp(
+            Volatile.Read(ref _privilegedBatchChunkSize),
+            PrivilegedBatchChunkSizeMin,
+            PrivilegedBatchChunkSizeMax);
+
+    private int PrivilegedBatchChunkSize => PrivilegedBatchChunkSizeCurrent;
+
     /// <summary>Chunk PrivilegedBatch in parallelo per Domain (solo se pace=0 / no cooldown).</summary>
     private const int PrivilegedBatchParallelism = 2;
     /// <summary>
@@ -3060,6 +3077,10 @@ public sealed class CloudKitAssetService
 
     private void NoteGatewayUnauthorized()
     {
+        // 401 → chunk difensivo (24→12) finché non torna una streak ok.
+        Volatile.Write(ref _privilegedBatchChunkSize, PrivilegedBatchChunkSizeMin);
+        Interlocked.Exchange(ref _privilegedBatchOkStreak, 0);
+
         var holdUntil = Environment.TickCount64 + GatewayThrottleHoldMs;
         while (true)
         {
@@ -3099,6 +3120,15 @@ public sealed class CloudKitAssetService
         }
 
         Volatile.Write(ref _gatewayPaceMs, 0);
+
+        // Dopo N harvest ok senza 401, riporta il chunk a 24 (pipeline experiment).
+        var streak = Interlocked.Increment(ref _privilegedBatchOkStreak);
+        if (streak >= 8
+            && Volatile.Read(ref _privilegedBatchChunkSize) < PrivilegedBatchChunkSizeMax)
+        {
+            Volatile.Write(ref _privilegedBatchChunkSize, PrivilegedBatchChunkSizeMax);
+            Interlocked.Exchange(ref _privilegedBatchOkStreak, 0);
+        }
     }
 
     /// <summary>

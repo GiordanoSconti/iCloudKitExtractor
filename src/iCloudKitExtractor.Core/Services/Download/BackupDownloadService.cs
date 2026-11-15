@@ -29,10 +29,36 @@ public sealed class BackupDownloadService
         new(BackupEdgeDownloadParallelism, BackupEdgeDownloadParallelism);
 
     /// <summary>
-    /// Cap Domain in PrivilegedBatch auth (allineato a domainParallel default).
-    /// Il blocco a 1 era per un falso positivo X-Apple-Error-Info.
+    /// Cap Domain in PrivilegedBatch auth (pipeline experiment).
+    /// 1–2 Domain in auth; gli altri possono già scaricare (edge 8).
+    /// Override: <c>IKE_FLIST_AUTH_PARALLELISM</c> (1–4). Default 2.
     /// </summary>
-    private static readonly SemaphoreSlim GlobalFlistAuthGate = new(8, 8);
+    private static readonly SemaphoreSlim GlobalFlistAuthGate =
+        new(ResolveFlistAuthParallelism(), ResolveFlistAuthParallelism());
+
+    internal const int DefaultFlistAuthParallelism = 2;
+
+    internal static int ResolveFlistAuthParallelism()
+    {
+        var env = Environment.GetEnvironmentVariable("IKE_FLIST_AUTH_PARALLELISM");
+        if (int.TryParse(env, out var n) && n is >= 1 and <= 4)
+            return n;
+        return DefaultFlistAuthParallelism;
+    }
+
+    /// <summary>
+    /// Soft remint Anisette solo ogni N wave (401 fa già remint forzato).
+    /// Override: <c>IKE_ANISETTE_SOFT_REFRESH_EVERY_WAVES</c> (0=off, default 5).
+    /// </summary>
+    internal const int DefaultAnisetteSoftRefreshEveryWaves = 5;
+
+    internal static int ResolveAnisetteSoftRefreshEveryWaves()
+    {
+        var env = Environment.GetEnvironmentVariable("IKE_ANISETTE_SOFT_REFRESH_EVERY_WAVES");
+        if (int.TryParse(env, out var n) && n is >= 0 and <= 64)
+            return n;
+        return DefaultAnisetteSoftRefreshEveryWaves;
+    }
 
     /// <summary>
     /// Cache sessione: MmcsAuth già harvestati (PB) per digest signature 40-char.
@@ -574,7 +600,9 @@ public sealed class BackupDownloadService
             $"fillAwait={(ResolveFillAwait() ? "on" : "off")} " +
             $"edgeParallel={BackupEdgeDownloadParallelism} " +
             $"domainParallel={ResolveDomainParallelism()} " +
+            $"flistAuthParallel={ResolveFlistAuthParallelism()} " +
             $"authPipeline={ResolveEdgeAuthPipelineSlots()} " +
+            $"anisetteSoftEvery={ResolveAnisetteSoftRefreshEveryWaves()} " +
             $"cloneParallel={ResolveCloneParallelism()} " +
             $"fordShapeFallback={((string.Equals(Environment.GetEnvironmentVariable("IKE_FORD_SHAPE_FALLBACK"), "1", StringComparison.Ordinal) || string.Equals(Environment.GetEnvironmentVariable("IKE_FORD_SHAPE_FALLBACK"), "true", StringComparison.OrdinalIgnoreCase) || string.Equals(Environment.GetEnvironmentVariable("IKE_FORD_SHAPE_FALLBACK"), "on", StringComparison.OrdinalIgnoreCase)) ? "on" : "off")} " +
             $"agentDiag={(string.Equals(Environment.GetEnvironmentVariable("IKE_AGENT_DIAG"), "1", StringComparison.Ordinal) ? "on" : "off")}");
@@ -792,6 +820,7 @@ public sealed class BackupDownloadService
                 $"{declared.EmptyFiles:N0} empty, {declared.Symlinks:N0} symlink; " +
                 $"MMCS assets snapshot={catalogAssets:N0}" +
                 $" (cap={maxFiles}, domainParallel={domainParallelism}, " +
+                $"flistAuthParallel={ResolveFlistAuthParallelism()}, " +
                 $"edgeParallel={BackupEdgeDownloadParallelism})");
             // #region agent log
             AgentCountAlways("backup_total_init", new
@@ -9648,18 +9677,21 @@ public sealed class BackupDownloadService
         if (seeds.Count == 0)
             return;
 
-        // Domini grandi: wave di seed (PB chunk=12). Cap più alto → meno refresh Anisette.
-        const int waveSeedCap = 144; // 12 chunk × 12 (ex 96 con PB×24)
+        // Wave = ~12 chunk × adaptive PB chunk size (12 difensivo / 24 aggressivo).
         const int maxWaves = 64;
+        const int waveChunkBudget = 12;
         var pendingSeeds = seeds;
         var fetched = new List<BackupAsset>();
         byte[]? payload = null;
         var wave = 0;
         var attachedBefore = 0;
+        var softEvery = ResolveAnisetteSoftRefreshEveryWaves();
 
         while (pendingSeeds.Count > 0 && wave < maxWaves)
         {
             wave++;
+            var chunkSz = Math.Max(6, _assets.PrivilegedBatchChunkSizeCurrent);
+            var waveSeedCap = chunkSz * waveChunkBudget;
             var waveSeeds = pendingSeeds.Count <= waveSeedCap
                 ? pendingSeeds
                 : pendingSeeds.Take(waveSeedCap).ToList();
@@ -9675,22 +9707,32 @@ public sealed class BackupDownloadService
 
             log?.Report(
                 $"  query/retrieve seeds wave {wave}: ×{waveSeeds.Count} " +
-                $"(restano {pendingSeeds.Count}; EN={fromEn}, size-class={synthesized}), " +
+                $"(restano {pendingSeeds.Count}; EN={fromEn}, size-class={synthesized}; " +
+                $"pbChunk={chunkSz}), " +
                 string.Join(", ", seedTypes.Values.GroupBy(static x => x)
                     .OrderBy(static g => g.Key)
                     .Select(static g => $"{g.Key}×{g.Count()}")));
 
-            // Refresh sessione all'inizio di ogni wave grande (oltre la 1ª).
-            // ClearGatewayUnauthorized NON azzera più pace/throttle Error-Info.
-            if (wave > 1 && waveSeeds.Count >= 48 && _refreshSession is not null
-                && !_assets.IsGatewayThrottled)
+            // Soft Anisette solo ogni N wave (401 → remint forzato altrove).
+            // softEvery=0 disabilita il refresh proattivo.
+            var softDue = softEvery > 0
+                && wave > 1
+                && wave % softEvery == 0
+                && waveSeeds.Count >= 48
+                && _refreshSession is not null
+                && !_assets.IsGatewayThrottled;
+            if (softDue)
             {
+                var refresh = _refreshSession;
                 try
                 {
-                    log?.Report($"  refresh Anisette before wave {wave}…");
-                    await _refreshSession(session, log, ct, forceRemint: false).ConfigureAwait(false);
+                    log?.Report(
+                        $"  refresh Anisette before wave {wave} " +
+                        $"(soft every {softEvery})…");
+                    await refresh!(session, log, ct, forceRemint: false)
+                        .ConfigureAwait(false);
                     _assets.ClearGatewayUnauthorized();
-                    await Task.Delay(800, ct).ConfigureAwait(false);
+                    await Task.Delay(400, ct).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
