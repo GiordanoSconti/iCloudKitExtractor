@@ -26,16 +26,15 @@
   <img src="https://img.shields.io/badge/.NET-10-512BD4" alt=".NET 10" />
   <img src="https://img.shields.io/badge/platform-Windows-0078D4" alt="Windows" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" />
-  <a href="https://www.icloudkitextractor.eu"><img src="https://img.shields.io/badge/Anisette%20preview-ONLINE-brightgreen" alt="Anisette preview ONLINE" /></a>
-  <img src="https://img.shields.io/badge/institutional%20VPN-manual%20consent-0A66C2" alt="Institutional VPN manual consent" />
+  <a href="https://www.icloudkitextractor.eu"><img src="https://img.shields.io/badge/Anisette%20preview-ONLINE%20%7C%20open%20access-brightgreen" alt="Anisette preview ONLINE open access" /></a>
 </p>
 
 > [!IMPORTANT]
-> **Anisette preview — ONLINE** · [https://www.icloudkitextractor.eu](https://www.icloudkitextractor.eu)  
+> **Anisette preview — ONLINE (open access)** · [https://www.icloudkitextractor.eu](https://www.icloudkitextractor.eu)  
+> Access is **open to everyone** with **no VPN / institutional / allowlist restrictions** at this time.  
 > Leave the IKE **License** field empty on first connect to receive a Package-C license once.  
-> **Multi-server:** the preview now runs on **multiple Tunnel replicas** (license rows sync through a Cloudflare Worker hub so any origin can validate your Package-C Bearer).  
-> **11 Nov 2026:** brief connection / license errors were possible while that multi-replica sync was being rolled out — **service is fully restored**.  
-> **VPN:** networks recognized as **institutions / universities** go through **manual operator consent** — access for later requests can be **allowed** or **denied**. Commercial / anonymous VPNs remain restricted under the acceptable-use rules in [Preview access](#preview-access-to-anisette-server).
+> **Multi-server:** the preview runs on **multiple Tunnel replicas** (license rows sync through a Cloudflare Worker hub so any origin can validate your Package-C Bearer).  
+> If the preview is **abused**, the previous controls (VPN / institutional consent, allowlists, and related gates) will be **re-enabled**. Details: [Preview access](#preview-access-to-anisette-server).
 
 <p align="center">
   <img src="docs/press/assets/linkedin-app-ike.png" alt="iCloudKit Extractor — login and session overview" width="920" />
@@ -291,11 +290,10 @@ Temporary public preview endpoint (leave the IKE **License** field empty on firs
 
 **https://www.icloudkitextractor.eu**
 
-> **Status — currently active and running (fully restored).** Published via **Cloudflare Tunnel** with **multiple origin replicas** (see below). Prefer self-host or contact for access if the preview is temporarily down.
+> **Status — ONLINE, open access (15 Nov 2026).** Access is **free for everyone** with **no active restrictions** (no VPN / institutional consent gate, no commercial-VPN block, no allowlist requirement). Published via **Cloudflare Tunnel** with **multiple origin replicas** (see below). Prefer self-host or contact for access if the preview is temporarily down.  
+> If the endpoint is **misused or abused**, the previous restrictions will be **brought back** without further notice.
 
 > **Multi-server (Nov 2026).** The same public hostname can be served by more than one lab machine behind Cloudflare. Package-C licenses are synchronized through a small **Cloudflare Worker + KV** hub so a Bearer issued on one replica validates on the others. On **11 November 2026**, short-lived connection or `license_id not registered` errors may have occurred while that work was deploying — **the service is fully operational again**.
-
-> **Note — VPN / institutional access.** A **manual authorization** flow was added for VPNs recognized as institutions / universities: when such a network is detected, the operator can **allow** controlled access for subsequent requests or **deny** it. Commercial / anonymous VPNs remain subject to the acceptable-use rules below.
 
 #### How the preview is published (Cloudflare Tunnel)
 
@@ -316,7 +314,7 @@ Self-host tip (same pattern as the preview): keep Anisette on local HTTP, point 
 
 > **Disclaimer — licensing telemetry & acceptable use**  
 > To issue and bind temporary licenses on **my** preview server, the remote client **IP address** and other request-linked identifiers (machine fingerprint headers used by Package-C) are collected so the license stays tied to that connection profile. I may **revoke** a license if the preview service is abused for unauthorized or non-consensual attacks. This software is made available for **ethical and forensic** use only.  
-> If VPNs (or similar) are used to exploit my server for attacks of any kind, I will **stop offering preview access** through my Anisette endpoint.  
+> Access is currently **unrestricted**. If the preview is exploited or used in bad faith, I will **re-enable** the previous controls (VPN / institutional consent, allowlists, and related gates) and, if needed, **stop offering** preview access through my Anisette endpoint.  
 > I hope there are still people in the world with a sound intellect.
 
 Want longer-term or private access? Contact: [giordano.sconti@gruppoinformaticiforensi.it](mailto:giordano.sconti@gruppoinformaticiforensi.it) · [giordano.sconti@gmail.com](mailto:giordano.sconti@gmail.com). Prefer hosting your own stack: [docs/ANISETTE_LICENSED.md](docs/ANISETTE_LICENSED.md) (Desktop middleware / Licensed default is plain **HTTP** `:6971`; optional HTTPS via `https://…` listen URLs or `ANISETTE_TLS_ENABLE=1`).
