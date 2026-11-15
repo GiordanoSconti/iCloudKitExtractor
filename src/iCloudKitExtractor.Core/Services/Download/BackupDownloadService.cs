@@ -61,6 +61,20 @@ public sealed class BackupDownloadService
     }
 
     /// <summary>
+    /// Lotti PB→AG→edge in parallelo nello stesso Domain (decrypt path invariato).
+    /// Override: <c>IKE_LOT_PIPELINE_PARALLELISM</c> (1–4). Default 2.
+    /// </summary>
+    internal const int DefaultLotPipelineParallelism = 2;
+
+    internal static int ResolveLotPipelineParallelism()
+    {
+        var env = Environment.GetEnvironmentVariable("IKE_LOT_PIPELINE_PARALLELISM");
+        if (int.TryParse(env, out var n) && n is >= 1 and <= 4)
+            return n;
+        return DefaultLotPipelineParallelism;
+    }
+
+    /// <summary>
     /// Cache sessione: MmcsAuth già harvestati (PB) per digest signature 40-char.
     /// EN non ha auth dei file dentro il flist — solo dei blob FL:; questa cache
     /// evita di ripeti query/retrieve per lo stesso file tra Domain/wave.
@@ -1817,214 +1831,9 @@ public sealed class BackupDownloadService
 
                     await AttachFlistAuthFromCachesAsync(needDownload, readyAssets, log)
                         .ConfigureAwait(false);
-                    await GlobalFlistAuthGate.WaitAsync(ct).ConfigureAwait(false);
-                    try
-                    {
-                        await ResolveFlistBatchAuthAsync(
-                            session, needDownload, pref4, workDir, enFetch, log, ct)
-                            .ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        GlobalFlistAuthGate.Release();
-                    }
 
-                    var readyBatch = new List<BackupAsset>();
-                    var skipAuthAssets = new List<BackupAsset>();
-                    foreach (var a in needDownload)
-                    {
-                        if (a.AssetSignature is { Length: 21 }
-                            && MmcsAuthBuilder.TryBuildFlistAuthorizeEntry(a.AssetSignature, a.MmcsAuth)
-                                is not null)
-                        {
-                            readyBatch.Add(a);
-                        }
-                        else
-                        {
-                            Interlocked.Increment(ref fileIndex);
-                            skipAuthAssets.Add(a);
-                        }
-                    }
-
-                    // #region agent log
-                    // Always-on: recovery summary after PB/cache attach (H-FL1).
-                    try
-                    {
-                        File.AppendAllText(
-                            @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
-                            JsonSerializer.Serialize(new Dictionary<string, object?>
-                            {
-                                ["sessionId"] = "7dabb5",
-                                ["runId"] = "fl-authget-v1",
-                                ["hypothesisId"] = "H-FL1",
-                                ["location"] = "BackupDownloadService.ProcessOneDomainAsync",
-                                ["message"] = "flist_auth_recovery_summary",
-                                ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                                ["data"] = new
-                                {
-                                    flIndex,
-                                    flRecord = flAsset.RecordName,
-                                    slice = slice.Count,
-                                    ready = readyBatch.Count,
-                                    clones = cloneBatch.Count,
-                                    skipAuth = skipAuthAssets.Count,
-                                    priorHits,
-                                    authOnly = needDownload.Count,
-                                    domain = slice[0].Domain,
-                                    anisetteBlocked = _assets.AnisetteRefreshBlocked,
-                                },
-                            }) + Environment.NewLine);
-                    }
-                    catch { /* ignore */ }
-                    // #endregion
-                    // #region agent log
-                    domainSkipAuthN = skipAuthAssets.Count;
-                    // #endregion
-
-                    if (skipAuthAssets.Count > 0)
-                    {
-                        // Dopo PB completo: se Anisette era il blocco, non contare Falliti —
-                        // è lavoro incompleto. Solo gap auth reale → ERROR+Falliti.
-                        var anisetteBlocked = _assets.AnisetteRefreshBlocked;
-                        var skipAuthPaths = skipAuthAssets
-                            .Select(static a => a.RelativePath ?? a.RecordName)
-                            .ToList();
-                        var preAuthN = _assets.GetPreAuthMmcsAuthHeaders().Count;
-                        var enAuthN = enFetch?.MmcsAuthHeaders.Count ?? 0;
-
-                        // #region agent log
-                        // Always-on: Quiet salta AppendAgentNdjson — serve causa per-file.
-                        try
-                        {
-                            var reasons = skipAuthAssets.Take(24).Select(static a =>
-                            {
-                                var hasAuth = HasUsableMmcsAuth(a.MmcsAuth);
-                                var hasSig = a.AssetSignature is { Length: 21 };
-                                var buildOk = hasSig
-                                    && MmcsAuthBuilder.TryBuildFlistAuthorizeEntry(
-                                        a.AssetSignature!, a.MmcsAuth) is not null;
-                                string why;
-                                if (!hasSig)
-                                    why = "no_asset_signature";
-                                else if (!hasAuth)
-                                    why = "no_mmcs_auth_after_pb";
-                                else if (!buildOk)
-                                    why = "auth_present_but_build_entry_fail";
-                                else
-                                    why = "unexpected_skip";
-                                return new
-                                {
-                                    path = a.RelativePath ?? a.RecordName,
-                                    why,
-                                    hasAuth,
-                                    hasSig,
-                                    authParts = string.IsNullOrWhiteSpace(a.MmcsAuth)
-                                        ? 0
-                                        : a.MmcsAuth!.Split(
-                                            ' ', StringSplitOptions.RemoveEmptyEntries).Length,
-                                    rid = a.RecordIdSuffix,
-                                    size = a.SizeBytes,
-                                    pc = a.ProtectionClass,
-                                };
-                            }).ToArray();
-                            File.AppendAllText(
-                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-7dabb5.log",
-                                JsonSerializer.Serialize(new Dictionary<string, object?>
-                                {
-                                    ["sessionId"] = "7dabb5",
-                                    ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                                    ["location"] = "BackupDownloadService.ProcessOneDomainAsync",
-                                    ["message"] = "mmcs_auth_skip_detail",
-                                    ["hypothesisId"] = "H-AUTH-GAP",
-                                    ["runId"] = "auth-gap-v2",
-                                    ["data"] = new
-                                    {
-                                        skipCount = skipAuthPaths.Count,
-                                        readyCount = readyBatch.Count,
-                                        cloneCount = cloneBatch.Count,
-                                        preAuthInRam = preAuthN,
-                                        enAuthInRam = enAuthN,
-                                        anisetteBlocked,
-                                        terminalFail = !anisetteBlocked,
-                                        reasons,
-                                    },
-                                }) + Environment.NewLine);
-                        }
-                        catch { /* ignore */ }
-                        // #endregion
-
-                        if (anisetteBlocked)
-                        {
-                            log?.Report(
-                                $"  ERROR MmcsAuth: PrivilegedBatch incomplete (Anisette) for " +
-                                $"{skipAuthPaths.Count} file — not marked Failed; " +
-                                "repair Anisette and resume the snapshot.");
-                            // Ripresa successiva: tieni i gap in coda MissingFiles.
-                            foreach (var skipped in skipAuthAssets)
-                            {
-                                DecryptFailureJournal.Record(
-                                    workDir,
-                                    skipped,
-                                    "repair Anisette and resume the snapshot.",
-                                    "  ERROR MmcsAuth: PrivilegedBatch incomplete (Anisette) for ");
-                                AppendAuthGapSnapshotLog(workDir, skipped, anisetteBlocked: true);
-                                _missingRetryBag.Add(skipped);
-                            }
-                        }
-                        else
-                        {
-                            foreach (var skipped in skipAuthAssets)
-                            {
-                                NoteFileDownloaded(
-                                    "repair Anisette and resume the snapshot.", skipped.RelativePath ?? skipped.RecordName);
-                                NoteDecryptFailed(
-                                    "repair Anisette and resume the snapshot.",
-                                    skipped.RelativePath ?? skipped.RecordName,
-                                    emitUiError: true,
-                                    detail: "MmcsAuth/authorizeGet skip");
-                                DecryptFailureJournal.Record(
-                                    workDir,
-                                    skipped,
-                                    "repair Anisette and resume the snapshot.",
-                                    "MmcsAuth assente dopo PrivilegedBatch — authorizeGet non tentato");
-                                AppendAuthGapSnapshotLog(workDir, skipped, anisetteBlocked: false);
-                                _missingRetryBag.Add(skipped);
-                            }
-
-                            ReportMmcsAuthSkipSummary(skipAuthPaths, readyBatch.Count, log);
-                        }
-
-                        // #region agent log
-                        AgentCountAlways("mmcs_auth_skip_summary", new
-                        {
-                            skipCount = skipAuthPaths.Count,
-                            readyCount = readyBatch.Count,
-                            cloneCount = cloneBatch.Count,
-                            preAuthInRam = preAuthN,
-                            enAuthInRam = enAuthN,
-                            anisetteBlocked,
-                            terminalFail = !anisetteBlocked,
-                            sample = skipAuthPaths.Take(3).ToArray(),
-                            hypothesis = "H-AUTH-JOIN",
-                        });
-                        // #endregion
-
-                        if (readyBatch.Count == 0
-                            && cloneBatch.Count == 0
-                            && anisetteBlocked)
-                        {
-                            throw new InvalidOperationException(
-                                $"MmcsAuth missing for {skipAuthPaths.Count} file: Anisette unavailable " +
-                                "after 401 (GET http://127.0.0.1:6971/). Start/repair AnisetteServer and resume — " +
-                                "niente mass-skip silenzioso.");
-                        }
-                    }
-
-                    // Cloni già in coda copia (prima dell'auth); qui resta solo MMCS.
-                    if (readyBatch.Count == 0)
-                        return;
-
-                    //  cache MMCS isolata per FL — wipe a domain_end.
+                    // Lot pipeline (experiment): per lotto PB(12)→AG(12)→edge.
+                    // Decript/ricostruzione invariati — stesso TryProcessFlistAuthorizeBatchAsync.
                     var flCacheSafe = SanitizeFlCacheFolderName(
                         flAsset.RecordName, flIndex);
                     var flCacheDir = Path.Combine(workDir, "mmcs_cache", flCacheSafe);
@@ -2037,184 +1846,159 @@ public sealed class BackupDownloadService
                             $"  mmcs_cache FL{flIndex}: {mode} dir={flCacheSafe} " +
                             $"(IKE_MMCS_CACHE_DISK=1 for disk spill)");
                         flMmcsSession.Store.AgentRamCachePerfLog("session_start_fl");
-                        // #region agent log
-                        try
-                        {
-                            File.AppendAllText(
-                                @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-9a5651.log",
-                                JsonSerializer.Serialize(new Dictionary<string, object?>
-                                {
-                                    ["sessionId"] = "9a5651",
-                                    ["runId"] = "fl-cache-v1",
-                                    ["hypothesisId"] = "H-FL-ISO",
-                                    ["location"] = "BackupDownloadService.ProcessOneDomainAsync",
-                                    ["message"] = "fl_mmcs_session_start",
-                                    ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                                    ["data"] = new
-                                    {
-                                        flIndex,
-                                        record = flAsset.RecordName,
-                                        flCacheDir,
-                                        ready = readyBatch.Count,
-                                        clones = cloneBatch.Count,
-                                    },
-                                }) + Environment.NewLine);
-                        }
-                        catch { /* ignore */ }
-                        // #endregion
                     }
 
-                    // PrepareFiles: ck::Record BackupAsset già owned prima di AG/FillFord.
-                    // Prefetch solo se PrepareFiles-bind non ha già parent+wrap dal PB.
-                    await PrefetchOwnedBackupAssetPayloadsAsync(
-                        session, readyBatch, workDir, log, ct)
-                        .ConfigureAwait(false);
+                    var lotSize = AuthorizeGetBatchSize;
+                    var lotParallel = ResolveLotPipelineParallelism();
+                    log?.Report(
+                        $"  lot pipeline FL{flIndex}: size={lotSize} parallel={lotParallel} " +
+                        $"need={needDownload.Count} (PB→AG→edge; decrypt invariato)");
 
-                    //  authorizeGet ×12, poi edge×8 — non un mega-AG sull'intero FL-slice.
                     var fileTotalUi = Math.Max(
-                        estimatedTotal > 0 ? estimatedTotal : fileIndex + readyBatch.Count, 1);
-                    for (var agOff = 0; agOff < readyBatch.Count; agOff += AuthorizeGetBatchSize)
+                        estimatedTotal > 0 ? estimatedTotal : fileIndex + needDownload.Count, 1);
+                    var skipAuthAssets = new List<BackupAsset>();
+                    var skipAuthLock = new object();
+                    var lotsReady = 0;
+                    using var lotGate = new SemaphoreSlim(lotParallel, lotParallel);
+
+                    async Task RunFlistLotAsync(List<BackupAsset> lot)
                     {
-                        ct.ThrowIfCancellationRequested();
-                        var agChunk = readyBatch.GetRange(
-                            agOff,
-                            Math.Min(AuthorizeGetBatchSize, readyBatch.Count - agOff));
-                        // #region agent log
-                        AgentCountAlways("ag_chunk_start", new
-                        {
-                            flIndex,
-                            readyTotal = readyBatch.Count,
-                            agOff,
-                            agChunk = agChunk.Count,
-                            agCap = AuthorizeGetBatchSize,
-                            edgeParallel = BackupEdgeDownloadParallelism,
-                        });
-                        // #endregion
-                        var agSw = Environment.TickCount64;
-                        FlistBatchRunResult? batchResult;
+                        await lotGate.WaitAsync(ct).ConfigureAwait(false);
                         try
                         {
-                            batchResult = await TryProcessFlistAuthorizeBatchAsync(
-                                session,
-                                contentHost,
-                                agChunk,
-                                workDir,
-                                workDir,
-                                fsWriter,
-                                fileKeyCtx,
-                                fileIndex,
-                                fileTotalUi,
-                                progress,
-                                log,
-                                ct).ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
-                        catch (Exception batchEx)
-                        {
-                            // Edge 500 / AG batch: non abortire lo snapshot — Falliti per i file del batch.
-                            var isEdge = batchEx.Message.Contains("edge GET", StringComparison.Ordinal)
-                                || batchEx is EdgeUrlExpiredException
-                                || batchEx is AggregateException;
-                            log?.Report(
-                                $"  ERROR batch AG ({agChunk.Count} file): {batchEx.Message}" +
-                                (isEdge ? " — continuing lo snapshot" : ""));
-                            // #region agent log
+                            _mmcsSessionLocal.Value = flMmcsSession;
+                            await GlobalFlistAuthGate.WaitAsync(ct).ConfigureAwait(false);
                             try
                             {
-                                File.AppendAllText(
-                                    @"c:\Users\Giordano\Desktop\PROGRAMMAZIONE\Projects\iCloudDownloader\debug-b3df71.log",
-                                    JsonSerializer.Serialize(new Dictionary<string, object?>
-                                    {
-                                        ["sessionId"] = "b3df71",
-                                        ["runId"] = "edge-500-continue-v1",
-                                        ["hypothesisId"] = "H-EDGE-500",
-                                        ["location"] = "BackupDownloadService.ProcessOneDomainAsync",
-                                        ["message"] = "ag_batch_exception_continue",
-                                        ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                                        ["data"] = new
-                                        {
-                                            flIndex,
-                                            agChunk = agChunk.Count,
-                                            errType = batchEx.GetType().Name,
-                                            msg = batchEx.Message,
-                                            isEdge,
-                                        },
-                                    }) + Environment.NewLine);
+                                await ResolveFlistBatchAuthAsync(
+                                        session, lot, pref4, workDir, enFetch, log, ct)
+                                    .ConfigureAwait(false);
                             }
-                            catch { /* ignore */ }
-                            // #endregion
-                            foreach (var planned in agChunk)
+                            finally
                             {
-                                Interlocked.Increment(ref fileIndex);
-                                downloaded.TryAdd(AssetDownloadKey(planned), 0);
-                                var failPath = planned.RelativePath ?? planned.RecordName;
-                                NoteFileDownloaded("ag_batch_ex", failPath);
-                                NoteDecryptFailed(
-                                    "edge_server",
-                                    failPath,
-                                    emitUiError: true,
-                                    detail: batchEx.Message);
-                                DecryptFailureJournal.Record(
+                                GlobalFlistAuthGate.Release();
+                            }
+
+                            var readyLot = new List<BackupAsset>(lot.Count);
+                            var skipLot = new List<BackupAsset>();
+                            foreach (var a in lot)
+                            {
+                                if (a.AssetSignature is { Length: 21 }
+                                    && MmcsAuthBuilder.TryBuildFlistAuthorizeEntry(
+                                        a.AssetSignature, a.MmcsAuth) is not null)
+                                    readyLot.Add(a);
+                                else
+                                {
+                                    Interlocked.Increment(ref fileIndex);
+                                    skipLot.Add(a);
+                                }
+                            }
+
+                            if (skipLot.Count > 0)
+                            {
+                                lock (skipAuthLock)
+                                    skipAuthAssets.AddRange(skipLot);
+                            }
+
+                            if (readyLot.Count == 0)
+                                return;
+
+                            Interlocked.Add(ref lotsReady, readyLot.Count);
+                            await PrefetchOwnedBackupAssetPayloadsAsync(
+                                    session, readyLot, workDir, log, ct)
+                                .ConfigureAwait(false);
+
+                            FlistBatchRunResult? batchResult;
+                            try
+                            {
+                                batchResult = await TryProcessFlistAuthorizeBatchAsync(
+                                    session,
+                                    contentHost,
+                                    readyLot,
                                     workDir,
-                                    planned,
-                                    "edge_server_error",
-                                    batchEx.Message);
+                                    workDir,
+                                    fsWriter,
+                                    fileKeyCtx,
+                                    fileIndex,
+                                    fileTotalUi,
+                                    progress,
+                                    log,
+                                    ct).ConfigureAwait(false);
                             }
-                            ReportFilesDoneProgress(
-                                progress, Volatile.Read(ref writtenSharded),
-                                Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
-                                Volatile.Read(ref totalBytes));
-                            continue;
-                        }
-                        var agMs = Environment.TickCount64 - agSw;
-
-                        if (batchResult is not null)
-                        {
-                            // #region agent log
-                            var ph = batchResult.Phases;
-                            var pendingN = batchResult.Outcomes.Count(static o => o.PendingChunks);
-                            AgentCountAlways("ag_chunk_ok", new
+                            catch (OperationCanceledException)
                             {
-                                flIndex,
-                                agChunk = agChunk.Count,
-                                outcomes = batchResult.Outcomes.Count,
-                                agMs,
-                                authMs = ph?.AuthMs,
-                                emptyHostMs = ph?.EmptyHostMs,
-                                partsMs = ph?.PartsMs,
-                                assembleMs = ph?.AssembleMs,
-                                fillMs = ph?.FillMs,
-                                decryptN = ph?.DecryptN,
-                                domainParallel = ResolveDomainParallelism(),
-                                edgeParallel = BackupEdgeDownloadParallelism,
-                                decryptWorkers = ResolveDecryptWorkerParallelism(),
-                                queued = batchResult.Outcomes.Count(static o => o.QueuedDecrypt),
-                                pending = pendingN,
-                                syncDone = batchResult.Outcomes.Count(static o =>
-                                    !o.QueuedDecrypt && !o.PendingChunks),
-                                hypothesis = "H-PHASE",
-                            });
-                            // #endregion
-                            for (var i = 0; i < agChunk.Count; i++)
+                                throw;
+                            }
+                            catch (Exception batchEx)
+                            {
+                                var isEdge = batchEx.Message.Contains("edge GET", StringComparison.Ordinal)
+                                    || batchEx is EdgeUrlExpiredException
+                                    || batchEx is AggregateException;
+                                log?.Report(
+                                    $"  ERROR lot AG ({readyLot.Count} file): {batchEx.Message}" +
+                                    (isEdge ? " — continuing lo snapshot" : ""));
+                                foreach (var planned in readyLot)
+                                {
+                                    Interlocked.Increment(ref fileIndex);
+                                    downloaded.TryAdd(AssetDownloadKey(planned), 0);
+                                    var failPath = planned.RelativePath ?? planned.RecordName;
+                                    NoteFileDownloaded("ag_batch_ex", failPath);
+                                    NoteDecryptFailed(
+                                        "edge_server", failPath, emitUiError: true, detail: batchEx.Message);
+                                    DecryptFailureJournal.Record(
+                                        workDir, planned, "edge_server_error", batchEx.Message);
+                                }
+                                ReportFilesDoneProgress(
+                                    progress, Volatile.Read(ref writtenSharded),
+                                    Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
+                                    Volatile.Read(ref totalBytes));
+                                return;
+                            }
+
+                            if (batchResult is null)
+                            {
+                                foreach (var planned in readyLot)
+                                {
+                                    ct.ThrowIfCancellationRequested();
+                                    Interlocked.Increment(ref fileIndex);
+                                    if (!downloaded.TryAdd(AssetDownloadKey(planned), 0))
+                                        continue;
+                                    var one = await DownloadAndDecryptAssetAsync(
+                                        session, contentHost, planned, workDir, workDir,
+                                        fsWriter, fileKeyCtx, fileIndex,
+                                        Math.Max(estimatedTotal, 1), progress, log, ct)
+                                        .ConfigureAwait(false);
+                                    if (one.Ok && !one.QueuedDecrypt && !one.PendingChunks)
+                                    {
+                                        NoteSyncOrQueuedOutcome(one, "single");
+                                        Interlocked.Increment(ref filesDone);
+                                        Interlocked.Add(ref totalBytes, one.DownloadedBytes);
+                                        if (one.WrittenSharded)
+                                        {
+                                            Interlocked.Increment(ref writtenSharded);
+                                            RememberShardPath(planned, flShardBySig, cleanDir);
+                                        }
+                                        if (one.StagedChunks) Interlocked.Increment(ref stagedChunks);
+                                        if (one.FileDecrypted) Interlocked.Increment(ref fileDecryptOk);
+                                        if (one.MmcsDecrypted) Interlocked.Increment(ref mmcsOk);
+                                    }
+                                    else
+                                    {
+                                        NoteSyncOrQueuedOutcome(one, "single");
+                                    }
+                                }
+                                return;
+                            }
+
+                            var pendingN = batchResult.Outcomes.Count(static o => o.PendingChunks);
+                            for (var i = 0; i < readyLot.Count; i++)
                             {
                                 Interlocked.Increment(ref fileIndex);
-                                downloaded.TryAdd(AssetDownloadKey(agChunk[i]), 0);
+                                downloaded.TryAdd(AssetDownloadKey(readyLot[i]), 0);
                                 var one = batchResult.Outcomes[i];
-                                if (one.QueuedDecrypt)
+                                if (one.QueuedDecrypt || one.PendingChunks)
                                 {
-                                    // Scaricati già a schedule; Decifrati/Falliti a fine job.
-                                    ReportFilesDoneProgress(
-                                        progress, Volatile.Read(ref writtenSharded),
-                                        Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
-                                        Volatile.Read(ref totalBytes));
-                                    continue;
-                                }
-                                if (one.PendingChunks)
-                                {
-                                    Interlocked.Increment(ref stagedChunks);
+                                    if (one.PendingChunks) Interlocked.Increment(ref stagedChunks);
                                     ReportFilesDoneProgress(
                                         progress, Volatile.Read(ref writtenSharded),
                                         Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
@@ -2222,7 +2006,6 @@ public sealed class BackupDownloadService
                                     continue;
                                 }
 
-                                // FillChunks: contatori già applicati in RunDecryptJobAsync.
                                 if (one.CountersApplied)
                                 {
                                     if (one.Ok)
@@ -2232,7 +2015,7 @@ public sealed class BackupDownloadService
                                         if (one.WrittenSharded)
                                         {
                                             Interlocked.Increment(ref writtenSharded);
-                                            RememberShardPath(agChunk[i], flShardBySig, cleanDir);
+                                            RememberShardPath(readyLot[i], flShardBySig, cleanDir);
                                         }
                                         if (one.StagedChunks) Interlocked.Increment(ref stagedChunks);
                                         if (one.MmcsDecrypted) Interlocked.Increment(ref mmcsOk);
@@ -2247,13 +2030,10 @@ public sealed class BackupDownloadService
 
                                 if (!one.Ok)
                                 {
-                                    var failPath = agChunk[i].RelativePath ?? agChunk[i].RecordName;
+                                    var failPath = readyLot[i].RelativePath ?? readyLot[i].RecordName;
                                     NoteFileDownloaded("batch_fail", failPath);
-                                    // Dettaglio già in ERROR size≠ / no-resolve — niente "batch_fail: ?".
                                     NoteDecryptFailed(
-                                        "batch_fail",
-                                        failPath,
-                                        emitUiError: true,
+                                        "batch_fail", failPath, emitUiError: true,
                                         detail: "AG batch decrypt failed");
                                     ReportFilesDoneProgress(
                                         progress, Volatile.Read(ref writtenSharded),
@@ -2262,13 +2042,13 @@ public sealed class BackupDownloadService
                                     continue;
                                 }
 
-                                NoteSyncOrQueuedOutcome(one, "batch");
+                                NoteSyncOrQueuedOutcome(one, "lot");
                                 Interlocked.Increment(ref filesDone);
                                 Interlocked.Add(ref totalBytes, one.DownloadedBytes);
                                 if (one.WrittenSharded)
                                 {
                                     Interlocked.Increment(ref writtenSharded);
-                                    RememberShardPath(agChunk[i], flShardBySig, cleanDir);
+                                    RememberShardPath(readyLot[i], flShardBySig, cleanDir);
                                 }
                                 if (one.StagedChunks) Interlocked.Increment(ref stagedChunks);
                                 if (one.MmcsDecrypted) Interlocked.Increment(ref mmcsOk);
@@ -2279,93 +2059,101 @@ public sealed class BackupDownloadService
                                     Volatile.Read(ref totalBytes));
                             }
 
-                            // PendingChunks: drain subito (niente solo Schedule) così non
-                            // saturiamo MaxPendingFiles → evict di lavoro ancora aperto.
                             if (pendingN > 0)
                             {
                                 await DrainMmcsPendingUntilIdleAsync(
-                                    $"pending_batch_fl{flIndex}", maxRounds: 4,
-                                    flShardBySig).ConfigureAwait(false);
+                                        $"pending_lot_fl{flIndex}", maxRounds: 4, flShardBySig)
+                                    .ConfigureAwait(false);
                             }
+                        }
+                        finally
+                        {
+                            lotGate.Release();
+                        }
+                    }
+
+                    // Non spawnare N_lotti Task tutti insieme (66k/12 ≈ migliaia):
+                    // saturava thread-pool + dispatcher UI. Solo `lotParallel` worker.
+                    var lots = new List<List<BackupAsset>>(
+                        (needDownload.Count + lotSize - 1) / Math.Max(lotSize, 1));
+                    for (var lotOff = 0; lotOff < needDownload.Count; lotOff += lotSize)
+                    {
+                        lots.Add(needDownload.GetRange(
+                            lotOff, Math.Min(lotSize, needDownload.Count - lotOff)));
+                    }
+
+                    var lotCursor = 0;
+                    var lotWorkers = new Task[lotParallel];
+                    for (var w = 0; w < lotParallel; w++)
+                    {
+                        lotWorkers[w] = Task.Run(
+                            async () =>
+                            {
+                                while (true)
+                                {
+                                    int i;
+                                    lock (lots)
+                                    {
+                                        if (lotCursor >= lots.Count)
+                                            return;
+                                        i = lotCursor++;
+                                    }
+
+                                    await RunFlistLotAsync(lots[i]).ConfigureAwait(false);
+                                }
+                            },
+                            ct);
+                    }
+
+                    await Task.WhenAll(lotWorkers).ConfigureAwait(false);
+
+                    domainSkipAuthN = skipAuthAssets.Count;
+                    log?.Report(
+                        $"  lot pipeline FL{flIndex} done: ready~{Volatile.Read(ref lotsReady)} " +
+                        $"skipAuth={skipAuthAssets.Count}");
+
+                    if (skipAuthAssets.Count > 0)
+                    {
+                        var anisetteBlocked = _assets.AnisetteRefreshBlocked;
+                        var skipAuthPaths = skipAuthAssets
+                            .Select(static a => a.RelativePath ?? a.RecordName)
+                            .ToList();
+                        if (anisetteBlocked)
+                        {
+                            log?.Report(
+                                $"  WARN FL{flIndex}: {skipAuthPaths.Count} file senza MmcsAuth " +
+                                "(Anisette cooldown/unavailable) — non contati Falliti");
                         }
                         else
                         {
-                            // #region agent log
-                            AgentCountAlways("ag_chunk_fallback", new
+                            log?.Report(
+                                $"  ERROR PrivilegedBatch: skip {skipAuthPaths.Count} file senza MmcsAuth " +
+                                $"dopo lot pipeline (sample: {string.Join(", ", skipAuthPaths.Take(3))})");
+                            foreach (var planned in skipAuthAssets)
                             {
-                                flIndex,
-                                agChunk = agChunk.Count,
-                                agMs,
-                            });
-                            // #endregion
-                            foreach (var planned in agChunk)
-                            {
-                                ct.ThrowIfCancellationRequested();
-                                Interlocked.Increment(ref fileIndex);
-                                if (!downloaded.TryAdd(AssetDownloadKey(planned), 0))
-                                    continue;
-
-                                log?.Report(
-                                    $"File {fileIndex}/{Math.Max(estimatedTotal, 1)}: {planned.RelativePath ?? planned.RecordName}");
-                                ReportFilesDoneProgress(
-                                    progress, writtenSharded,
-                                    Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
-                                    totalBytes);
-
-                                var one = await DownloadAndDecryptAssetAsync(
-                                    session,
-                                    contentHost,
-                                    planned,
-                                    workDir,
-                                    workDir,
-                                    fsWriter,
-                                    fileKeyCtx,
-                                    fileIndex,
-                                    Math.Max(estimatedTotal, 1),
-                                    progress,
-                                    log,
-                                    ct).ConfigureAwait(false);
-
-                                if (!one.Ok && !one.QueuedDecrypt)
-                                {
-                                    if (!one.PendingChunks)
-                                    {
-                                        NoteSyncOrQueuedOutcome(one, "single");
-                                        ReportFilesDoneProgress(
-                                            progress, writtenSharded,
-                                            Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
-                                            totalBytes);
-                                    }
-                                    continue;
-                                }
-                                if (one.QueuedDecrypt)
-                                {
-                                    NoteSyncOrQueuedOutcome(one, "single");
-                                    ReportFilesDoneProgress(
-                                        progress, writtenSharded,
-                                        Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
-                                        totalBytes);
-                                    continue;
-                                }
-
-                                NoteSyncOrQueuedOutcome(one, "single");
-                                Interlocked.Increment(ref filesDone);
-                                Interlocked.Add(ref totalBytes, one.DownloadedBytes);
-                                if (one.WrittenSharded)
-                                {
-                                    Interlocked.Increment(ref writtenSharded);
-                                    RememberShardPath(planned, flShardBySig, cleanDir);
-                                }
-                                if (one.StagedChunks) Interlocked.Increment(ref stagedChunks);
-                                if (one.FileDecrypted) Interlocked.Increment(ref fileDecryptOk);
-                                if (one.MmcsDecrypted) Interlocked.Increment(ref mmcsOk);
-                                ReportFilesDoneProgress(
-                                    progress, Volatile.Read(ref writtenSharded),
-                                    Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
-                                    Volatile.Read(ref totalBytes));
+                                var failPath = planned.RelativePath ?? planned.RecordName;
+                                NoteFileDownloaded("no_mmcs_auth", failPath);
+                                NoteDecryptFailed(
+                                    "no_mmcs_auth", failPath, emitUiError: true,
+                                    detail: "MmcsAuth missing after lot PB");
+                                DecryptFailureJournal.Record(
+                                    workDir, planned, "no_mmcs_auth", "lot pipeline");
                             }
                         }
+
+                        if (Volatile.Read(ref lotsReady) == 0
+                            && cloneBatch.Count == 0
+                            && anisetteBlocked)
+                        {
+                            throw new InvalidOperationException(
+                                $"MmcsAuth missing for {skipAuthPaths.Count} file: Anisette unavailable " +
+                                "after 401 (GET http://127.0.0.1:6971/). Start/repair AnisetteServer and resume — " +
+                                "niente mass-skip silenzioso.");
+                        }
                     }
+
+                    if (Volatile.Read(ref lotsReady) == 0 && skipAuthAssets.Count == needDownload.Count)
+                        return;
 
                     // Chiudi i pending di questo domain prima di domain_end.
                     await DrainMmcsPendingUntilIdleAsync(

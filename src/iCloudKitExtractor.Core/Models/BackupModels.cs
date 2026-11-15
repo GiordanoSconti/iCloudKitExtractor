@@ -1,19 +1,69 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
 namespace iCloudKitExtractor.Models;
 
-public sealed class BackupDevice
+public sealed class BackupDevice : INotifyPropertyChanged
 {
+    private string? _hardwareUdid;
+    private string? _productType;
+    private string? _hardwareModel;
+    private string? _marketingName;
+    private string? _serialNumber;
+    private string? _displayName;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
     /// <summary>
     /// Id record CloudKit <c>D:&lt;sha40&gt;</c> (hash opaco Apple), non l'UDID hardware iOS.
     /// Serve alle API CloudKit (retrieve Device, KA: prefix, keybag).
     /// </summary>
     public string DeviceUuid { get; set; } = string.Empty;
     /// <summary>UDID hardware iOS (es. <c>00008150…</c>) se noto — cartella preferita.</summary>
-    public string? HardwareUdid { get; set; }
-    public string? ProductType { get; set; }
-    public string? HardwareModel { get; set; }
-    public string? MarketingName { get; set; }
-    public string? SerialNumber { get; set; }
-    public string? DisplayName { get; set; }
+    public string? HardwareUdid
+    {
+        get => _hardwareUdid;
+        set
+        {
+            // Rifiuta placeholder UI (Avalonia/WPF TargetNullValue=— in TwoWay).
+            var normalized = value is null or "" or "-" or "–" or "—"
+                ? null
+                : value;
+            if (_hardwareUdid == normalized)
+                return;
+            _hardwareUdid = normalized;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DisplayDeviceId));
+        }
+    }
+    public string? ProductType
+    {
+        get => _productType;
+        set { if (_productType != value) { _productType = value; OnPropertyChanged(); OnPropertyChanged(nameof(ModelLabel)); } }
+    }
+    public string? HardwareModel
+    {
+        get => _hardwareModel;
+        set { if (_hardwareModel != value) { _hardwareModel = value; OnPropertyChanged(); } }
+    }
+    public string? MarketingName
+    {
+        get => _marketingName;
+        set { if (_marketingName != value) { _marketingName = value; OnPropertyChanged(); OnPropertyChanged(nameof(ModelLabel)); } }
+    }
+    public string? SerialNumber
+    {
+        get => _serialNumber;
+        set { if (_serialNumber != value) { _serialNumber = value; OnPropertyChanged(); } }
+    }
+    public string? DisplayName
+    {
+        get => _displayName;
+        set { if (_displayName != value) { _displayName = value; OnPropertyChanged(); OnPropertyChanged(nameof(ModelLabel)); } }
+    }
     public List<BackupSnapshot> Snapshots { get; set; } = new();
     public List<string> Keybags { get; set; } = new();
     /// <summary>Id record <c>K:&lt;uuid16&gt;</c> trovati sul Device (prima del download blob).</summary>

@@ -284,11 +284,16 @@ public static class SnapshotBackupPropertiesDecryptor
             snapshot.BackupPropertiesPlaintext = plain;
             snapshot.BackupPropertiesStatus = "ok";
             decrypted++;
+
+            // Se il dict parser non ha preso Lockdown, recupera UniqueDeviceID dallo stream bplist.
+            if (string.IsNullOrWhiteSpace(snapshot.HardwareUdid))
+                TryExtractUniqueDeviceIdFromPlain(snapshot, plain);
         }
 
         swTotal.Stop();
+        var withHw = list.Count(static s => !string.IsNullOrWhiteSpace(s.HardwareUdid));
         var msg = decrypted > 0
-            ? $"ok {decrypted}/{withCipher} (regular={viaRegular}, fallback={viaFallback}, {swTotal.ElapsedMilliseconds} ms)"
+            ? $"ok {decrypted}/{withCipher} (regular={viaRegular}, fallback={viaFallback}, hwUdid={withHw}, {swTotal.ElapsedMilliseconds} ms)"
             : $"no decrypt succeeded ({withCipher} ciphertext, {swTotal.ElapsedMilliseconds} ms)";
         log?.Report($"  backupProperties: {msg}");
         // #region agent log
@@ -299,6 +304,8 @@ public static class SnapshotBackupPropertiesDecryptor
             {
                 withCipher,
                 decrypted,
+                withHw,
+                sampleHw = list.Select(static s => s.HardwareUdid).FirstOrDefault(static u => !string.IsNullOrWhiteSpace(u)),
                 viaRegular,
                 viaFallback,
                 shareKeys = shareKeys.Count,
@@ -307,6 +314,36 @@ public static class SnapshotBackupPropertiesDecryptor
             });
         // #endregion
         return new DecryptSummary(withCipher, decrypted, msg);
+    }
+
+    /// <summary>
+    /// Fallback: in bplist la stringa UniqueDeviceID e il valore restano in chiaro nel blob.
+    /// </summary>
+    private static void TryExtractUniqueDeviceIdFromPlain(BackupSnapshot snapshot, byte[] plain)
+    {
+        try
+        {
+            var latin1 = Encoding.Latin1.GetString(plain);
+            var keyIdx = latin1.IndexOf("UniqueDeviceID", StringComparison.Ordinal);
+            if (keyIdx < 0)
+                return;
+            var window = latin1.AsSpan(keyIdx, Math.Min(96, latin1.Length - keyIdx));
+            var windowStr = window.ToString();
+            var dashed = Regex.Match(windowStr, @"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}");
+            if (dashed.Success)
+            {
+                snapshot.HardwareUdid = NormalizeHardwareUdid(dashed.Value);
+                return;
+            }
+
+            var hex40 = Regex.Match(windowStr, @"[0-9A-Fa-f]{40}");
+            if (hex40.Success)
+                snapshot.HardwareUdid = NormalizeHardwareUdid(hex40.Value);
+        }
+        catch
+        {
+            // ignore
+        }
     }
 
     private static string CatalogFingerprint(byte[]? c)
@@ -595,10 +632,15 @@ public static class SnapshotBackupPropertiesDecryptor
     {
         foreach (var device in devices)
         {
+            // Avalonia DataGrid TwoWay+TargetNullValue=— può aver scritto "—" sul device:
+            // trattalo come assente, altrimenti non copiamo Lockdown.UniqueDeviceID.
+            if (IsPlaceholderUdid(device.HardwareUdid))
+                device.HardwareUdid = null;
+
             foreach (var snapshot in device.Snapshots)
             {
-                if (string.IsNullOrWhiteSpace(device.HardwareUdid)
-                    && !string.IsNullOrWhiteSpace(snapshot.HardwareUdid))
+                if (IsMissingUdid(device.HardwareUdid)
+                    && !IsMissingUdid(snapshot.HardwareUdid))
                     device.HardwareUdid = snapshot.HardwareUdid;
 
                 if (string.IsNullOrWhiteSpace(device.SerialNumber)
@@ -615,6 +657,13 @@ public static class SnapshotBackupPropertiesDecryptor
             }
         }
     }
+
+    /// <summary>Null/blank oppure placeholder UI "—" / "-" (TargetNullValue riscritto sul model).</summary>
+    public static bool IsMissingUdid(string? value) =>
+        string.IsNullOrWhiteSpace(value) || IsPlaceholderUdid(value);
+
+    private static bool IsPlaceholderUdid(string? value) =>
+        value is "-" or "–" or "—"; // hyphen / en-dash / em-dash (TargetNullValue UI)
 
     /// <summary>
     /// Normalizza UniqueDeviceID: mantiene forma Apple <c>00008150-…</c> oppure hex continuo.

@@ -193,10 +193,46 @@ public sealed class CloudKitBackupService
                 ct.ThrowIfCancellationRequested();
                 var summary = SnapshotBackupPropertiesDecryptor.TryDecryptAll(
                     session, snapshots, zones, log);
-                SnapshotBackupPropertiesDecryptor.ApplyHardwareIdentityToDevices(devices);
-                var withUdid = devices.Count(d => !string.IsNullOrWhiteSpace(d.HardwareUdid));
-                if (withUdid > 0)
-                    log?.Report($"  HardwareUdid da Lockdown.UniqueDeviceID → {withUdid} device");
+                var deviceList = devices as IList<BackupDevice> ?? devices.ToList();
+                // Copia esplicita snapshot→device (non affidarsi solo al foreach IEnumerable).
+                foreach (var device in deviceList)
+                {
+                    if (SnapshotBackupPropertiesDecryptor.IsMissingUdid(device.HardwareUdid))
+                        device.HardwareUdid = null;
+
+                    foreach (var snap in device.Snapshots)
+                    {
+                        if (SnapshotBackupPropertiesDecryptor.IsMissingUdid(snap.HardwareUdid)
+                            && snap.BackupPropertiesPlaintext is { Length: > 32 } plain)
+                        {
+                            SnapshotBackupPropertiesDecryptor.TryApplyPlist(snap, plain, out _);
+                        }
+
+                        if (SnapshotBackupPropertiesDecryptor.IsMissingUdid(device.HardwareUdid)
+                            && !SnapshotBackupPropertiesDecryptor.IsMissingUdid(snap.HardwareUdid))
+                            device.HardwareUdid = snap.HardwareUdid;
+
+                        if (string.IsNullOrWhiteSpace(device.SerialNumber)
+                            && !string.IsNullOrWhiteSpace(snap.LockdownSerialNumber))
+                            device.SerialNumber = snap.LockdownSerialNumber;
+
+                        if (string.IsNullOrWhiteSpace(device.ProductType)
+                            && !string.IsNullOrWhiteSpace(snap.LockdownProductType))
+                            device.ProductType = snap.LockdownProductType;
+
+                        if (string.IsNullOrWhiteSpace(device.DisplayName)
+                            && !string.IsNullOrWhiteSpace(snap.LockdownDeviceName))
+                            device.DisplayName = snap.LockdownDeviceName;
+                    }
+                }
+
+                SnapshotBackupPropertiesDecryptor.ApplyHardwareIdentityToDevices(deviceList);
+                var withUdid = deviceList.Count(d => !string.IsNullOrWhiteSpace(d.HardwareUdid));
+                var snapHw = snapshots.Count(s => !string.IsNullOrWhiteSpace(s.HardwareUdid));
+                // WARNING: non deve essere droppato dal throttle Info UI.
+                log?.Report(
+                    $"WARN HardwareUdid Lockdown: devices={withUdid}/{deviceList.Count} " +
+                    $"snapshots={snapHw}/{snapshots.Count}");
                 if (summary.CipherCount > 0)
                     log?.Report($"CloudKit: backupProperties {summary.Message}");
                 return summary;

@@ -500,11 +500,11 @@
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Device" Binding="{Binding ModelLabel}" Width="180"/>
                                     <DataGridTextColumn Header="Product code" Binding="{Binding ProductType}" Width="110"/>
-                                    <DataGridTextColumn Header="Hardware" Binding="{Binding HardwareModel, TargetNullValue=—}" Width="90"/>
-                                    <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber, TargetNullValue=—}" Width="120"/>
-                                    <DataGridTextColumn Header="UDID" Binding="{Binding HardwareUdid, TargetNullValue=—}" Width="200"/>
-                                    <DataGridTextColumn Header="CloudKit ID" Binding="{Binding DeviceUuid}" Width="220"/>
-                                    <DataGridTextColumn Header="Snapshot" Binding="{Binding SnapshotCount}" Width="72"/>
+                                    <DataGridTextColumn Header="Hardware" Binding="{Binding HardwareModel, Mode=OneWay, TargetNullValue=—}" Width="90"/>
+                                    <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber, Mode=OneWay, TargetNullValue=—}" Width="120"/>
+                                    <DataGridTextColumn Header="UDID" Binding="{Binding HardwareUdid, Mode=OneWay, TargetNullValue=—}" Width="200"/>
+                                    <DataGridTextColumn Header="CloudKit ID" Binding="{Binding DeviceUuid, Mode=OneWay}" Width="220"/>
+                                    <DataGridTextColumn Header="Snapshot" Binding="{Binding SnapshotCount, Mode=OneWay}" Width="72"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Border>
@@ -517,8 +517,9 @@
                                       SelectionMode="Single" CanUserAddRows="False"
                                       SelectionChanged="SnapshotsGrid_SelectionChanged">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="UDID" Binding="{Binding ShortUuid}" Width="90"/>
-                                    <DataGridTextColumn Header="Full UDID" Binding="{Binding BackupUuid, TargetNullValue=—}" Width="240"/>
+                                    <DataGridTextColumn Header="UDID" Binding="{Binding ShortUuid, Mode=OneWay}" Width="90"/>
+                                    <DataGridTextColumn Header="Full UDID" Binding="{Binding BackupUuid, Mode=OneWay, TargetNullValue=—}" Width="240"/>
+                                    <DataGridTextColumn Header="Hardware UDID" Binding="{Binding HardwareUdid, Mode=OneWay, TargetNullValue=—}" Width="200"/>
                                     <DataGridTextColumn Header="Date" Binding="{Binding DateLabel}" Width="140"/>
                                     <DataGridTextColumn Header="iOS" Binding="{Binding IosLabel}" Width="120"/>
                                     <DataGridTextColumn Header="Size" Binding="{Binding SizeLabel}" Width="90"/>

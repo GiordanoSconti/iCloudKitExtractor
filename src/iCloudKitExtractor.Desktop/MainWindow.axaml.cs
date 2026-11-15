@@ -6329,14 +6329,64 @@ public partial class MainWindow : Window
         {
             var summary = await Orchestrator.DecryptListedBackupPropertiesAsync(
                 _session, _devices, listLog).ConfigureAwait(true);
-            // HardwareUdid arriva dal decrypt: ri-bind della griglia dispositivi.
+            // Ri-applica su UI thread (il decrypt gira su thread-pool) e nuova lista:
+            // Avalonia DataGrid spesso non ridisegna HardwareUdid se ItemsSource è la stessa istanza.
+            SnapshotBackupPropertiesDecryptor.ApplyHardwareIdentityToDevices(_devices);
+            foreach (var d in _devices)
+            {
+                if (!SnapshotBackupPropertiesDecryptor.IsMissingUdid(d.HardwareUdid))
+                    continue;
+                var fromSnap = d.Snapshots
+                    .Select(static s => s.HardwareUdid)
+                    .FirstOrDefault(static u => !SnapshotBackupPropertiesDecryptor.IsMissingUdid(u));
+                if (fromSnap is not null)
+                    d.HardwareUdid = fromSnap;
+            }
+
+            var selectedUuid = (DevicesGrid.SelectedItem as BackupDevice)?.DeviceUuid;
+            _devices = _devices.ToList();
             DevicesGrid.ItemsSource = null;
             DevicesGrid.ItemsSource = _devices;
+            if (!string.IsNullOrWhiteSpace(selectedUuid))
+            {
+                var idx = _devices.FindIndex(d =>
+                    string.Equals(d.DeviceUuid, selectedUuid, StringComparison.OrdinalIgnoreCase));
+                DevicesGrid.SelectedIndex = idx >= 0 ? idx : 0;
+            }
+            else if (_devices.Count > 0)
+            {
+                DevicesGrid.SelectedIndex = 0;
+            }
+
             BindSnapshotsForSelectedDevice();
             AppendDownloadLog($"backupProperties: {summary.Message}");
-            var udid = _devices.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d.HardwareUdid))?.HardwareUdid;
-            if (udid is not null)
-                AppendDownloadLog($"HardwareUdid (Lockdown.UniqueDeviceID): {udid}");
+            var withHw = _devices.Count(static d => !string.IsNullOrWhiteSpace(d.HardwareUdid));
+            AppendDownloadLog(
+                $"WARN HardwareUdid in griglia: {withHw}/{_devices.Count} device");
+            foreach (var d in _devices)
+            {
+                AppendDownloadLog(
+                    $"WARN device UDID: {d.ModelLabel} hw={d.HardwareUdid ?? "—"} " +
+                    $"snapHw={d.Snapshots.Count(static s => !string.IsNullOrWhiteSpace(s.HardwareUdid))}/{d.Snapshots.Count}");
+            }
+
+            try
+            {
+                var diag = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "iCloudKitExtractor",
+                    "udid-grid-status.txt");
+                Directory.CreateDirectory(Path.GetDirectoryName(diag)!);
+                File.WriteAllLines(
+                    diag,
+                    _devices.Select(d =>
+                        $"{d.DeviceUuid}\thw={d.HardwareUdid ?? "-"}\tsnaps=" +
+                        string.Join(",", d.Snapshots.Select(s => s.HardwareUdid ?? "-"))));
+            }
+            catch
+            {
+                // ignore
+            }
         }
         catch (Exception ex)
         {
@@ -6935,17 +6985,27 @@ public partial class MainWindow : Window
 
 
 
-        if (DevicesGrid.SelectedItem is not BackupDevice device || device.Snapshots.Count == 0)
+        if (DevicesGrid.SelectedItem is not BackupDevice selectedDevice || selectedDevice.Snapshots.Count == 0)
         {
             ShowMessage("Download", "Select a device with at least one snapshot.");
             return;
         }
+
+        // Istanza post-decrypt in _devices (SelectedItem Avalonia può restare stale dopo re-bind).
+        var device = _devices.FirstOrDefault(d =>
+                         string.Equals(d.DeviceUuid, selectedDevice.DeviceUuid, StringComparison.OrdinalIgnoreCase))
+                     ?? selectedDevice;
+        SnapshotBackupPropertiesDecryptor.ApplyHardwareIdentityToDevices([device]);
 
         if (SnapshotsGrid.SelectedItem is not BackupSnapshot selectedSnapshot)
         {
             ShowMessage("Download", "Select a snapshot to download.");
             return;
         }
+
+        selectedSnapshot = device.Snapshots.FirstOrDefault(s =>
+                               string.Equals(s.RecordName, selectedSnapshot.RecordName, StringComparison.OrdinalIgnoreCase))
+                           ?? selectedSnapshot;
 
         var chainAll = ChainSnapshotsCheckBox.IsChecked == true;
         var snapshotsToDownload = chainAll
@@ -6966,6 +7026,8 @@ public partial class MainWindow : Window
             chainAll
                 ? $"Snapshot chain: {snapshotsToDownload.Count} (oldest to newest)"
                 : $"Single snapshot: {selectedSnapshot.DateLabel} ({selectedSnapshot.ShortUuid})");
+        if (!string.IsNullOrWhiteSpace(device.HardwareUdid))
+            AppendDownloadLog($"HardwareUdid → folder {IkeBackupOutputPaths.ResolveDeviceFolderName(device)}");
 
         try
         {
