@@ -159,9 +159,21 @@ public sealed class BackupDownloadService
     private IProgress<string>? _downloadLog;
 
     /// <summary>
-    /// Asset saltati (auth gap / no shard) candidati al pass finale MissingFiles.
+    /// Asset saltati (auth gap / no shard / H-ORDER defer) candidati al pass finale MissingFiles.
     /// </summary>
     private readonly ConcurrentBag<BackupAsset> _missingRetryBag = [];
+
+    /// <summary>
+    /// Accoda un asset al pass finale MissingFiles (idempotente).
+    /// Serve: H-ORDER defer senza <c>oid_pack_recover</c> non lasciava traccia e il retry
+    /// finale restava a 0 anche con Completeness missing=1.
+    /// </summary>
+    private void RememberMissingRetry(BackupAsset? asset)
+    {
+        if (asset is null)
+            return;
+        _missingRetryBag.Add(asset);
+    }
 
     /// <summary>
     /// Ford host bodies scaricati da fresh authorizeGet (anche se IKM iniziale non apre).
@@ -2972,6 +2984,23 @@ public sealed class BackupDownloadService
         if (_decryptQueue is not null)
             await _decryptQueue.DisposeAsync().ConfigureAwait(false);
         _decryptQueue = null;
+
+        // H-ORDER residui: senza Put/recover non partono da soli — devono entrare
+        // nel MissingFiles retry mentre tmp/mmcs_cache è ancora vivo (prima di HASH/tmp wipe).
+        if (!_oidOrderRetries.IsEmpty)
+        {
+            var left = 0;
+            foreach (var kv in _oidOrderRetries)
+            {
+                RememberMissingRetry(kv.Value.Asset);
+                left++;
+            }
+
+            log?.Report(
+                $"H-ORDER leftover → MissingFiles retry bag: {left:N0} " +
+                $"(oid_pack_recover non ha sbloccato il Ford CT)");
+            _oidOrderRetries.Clear();
+        }
 
         var missingRecovered = await RetryMissingPayloadPassAsync(
             session,
@@ -6878,6 +6907,7 @@ public sealed class BackupDownloadService
                 var deferPath = asset.RelativePath ?? asset.RecordName ?? outputFile;
                 OidHostBodyCache.RegisterOwnedPendings(
                     authBody, plan, chunks, fordIkm, deferPath);
+                RememberMissingRetry(asset);
                 _oidOrderRetries[deferPath] = new OidOrderRetry(
                     session, asset, outputFile, authBody, chunks, workDirectory,
                     assetIndex, assetTotal, progress, Attempts: 0);
@@ -7133,6 +7163,7 @@ public sealed class BackupDownloadService
                     || (pipe.Mode?.Contains("no-ford", StringComparison.OrdinalIgnoreCase) ?? false))
                 {
                     var retryPath = asset.RelativePath ?? asset.RecordName ?? outputFile;
+                    RememberMissingRetry(asset);
                     _oidOrderRetries[retryPath] = new OidOrderRetry(
                         session, asset, outputFile, authBody, chunks, workDirectory,
                         assetIndex, assetTotal, progress, Attempts: 0);
