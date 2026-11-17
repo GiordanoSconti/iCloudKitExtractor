@@ -596,6 +596,7 @@ Lab diary entries under [Notes](https://giordanosconti.github.io/iCloudKitExtrac
 | `src/AnisetteLicense` / `AnisetteLicenseGen` | Package-C crypto + CLI |
 | `scripts/` | Emulated akd / bridge / Frida helpers |
 | `docs/` | Protocol notes + [GitHub Pages](https://giordanosconti.github.io/iCloudKitExtractor/) site |
+| `docs/whitepaper/` | Academic whitepaper (EN): [PDF](docs/whitepaper/whitepaper-protocolli-backup-octagon-pcs.pdf) · [Markdown](docs/whitepaper-protocolli-backup-octagon-pcs.md) — GrandSlam → Escrow/Octagon → `mbksync` / fileList → MMCS |
 | `video/` | Demo GIF + MP4 highlights |
 | `img/` | Backup / comparison screenshots |
 

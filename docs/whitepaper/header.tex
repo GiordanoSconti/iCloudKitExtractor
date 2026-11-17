@@ -1,0 +1,56 @@
+% Preamble extras — DFRWS / FSI:DI–inspired article look (pandoc -H)
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{xurl}
+\usepackage{seqsplit}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\Urlmuskip=0mu plus 1mu
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\definecolor{JournalBlue}{HTML}{003366}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black!70!blue,
+  citecolor=black!70!blue,
+  urlcolor=black!60!teal,
+  pdftitle={From GrandSlam to MMCS: Modern Apple Private Protocols for Authentication, Escrow/PCS, Octagon/CKKS, and iCloud Device Backup Acquisition},
+  pdfauthor={Giordano Sconti},
+  pdfsubject={Technical whitepaper — GrandSlam, Escrow, Octagon, CKKS, MMCS},
+  pdfkeywords={GrandSlam, EscrowProxy, Octagon, CKKS, Manatee, MMCS, PCSMMCS2, ADP, Mobile forensics}
+}
+\usepackage{geometry}
+\geometry{a4paper,left=2.0cm,right=2.0cm,top=2.4cm,bottom=2.2cm}
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.12}
+\floatplacement{figure}{H}
+
+% Running header / footer (skip first page via fancy)
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\color{gray} G. Sconti / From GrandSlam to MMCS}
+\fancyhead[R]{\footnotesize\color{gray} Whitepaper 1.11}
+\fancyfoot[L]{\footnotesize\color{gray} Digital forensics · Apple iCloud protocols}
+\fancyfoot[R]{\footnotesize\color{gray}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[L]{\footnotesize\color{gray} Digital forensics · Apple iCloud protocols}%
+  \fancyfoot[R]{\footnotesize\color{gray}\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\footrulewidth}{0.4pt}%
+}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}{\normalsize\itshape\bfseries}{\thesubsubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.2em}{0.45em}
+\titlespacing*{\subsection}{0pt}{0.9em}{0.3em}
