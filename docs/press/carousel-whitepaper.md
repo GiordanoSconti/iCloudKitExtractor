@@ -26,4 +26,4 @@ Use as LinkedIn document carousel or short deck. One idea per card; keep text la
 **Title:** Read / cite  
 **Body:** Landing + PDF + GitHub release `whitepaper-v1.11`  
 https://giordanosconti.github.io/iCloudKitExtractor/whitepaper/  
-DOI Zenodo *(when live)*
+https://doi.org/10.5281/zenodo.24323720

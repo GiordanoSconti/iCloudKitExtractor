@@ -23,6 +23,6 @@ English technical note (digital forensics) on the modern iCloud device-backup pr
 
 ## Cite
 
-Prefer the Zenodo DOI once published; until then use the landing URL above.
+Cite: Sconti, G. (2026). From GrandSlam to MMCS… (Version 1.11). Zenodo. https://doi.org/10.5281/zenodo.24323720
 
 Contact: giordano.sconti@gruppoinformaticiforensi.it

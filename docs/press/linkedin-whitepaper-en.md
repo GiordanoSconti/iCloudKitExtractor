@@ -11,7 +11,7 @@ Canonical links after publish:
 - Landing: https://giordanosconti.github.io/iCloudKitExtractor/whitepaper/  
 - PDF: https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/docs/whitepaper/whitepaper-protocolli-backup-octagon-pcs.pdf  
 - Release: https://github.com/GiordanoSconti/iCloudKitExtractor/releases/tag/whitepaper-v1.11  
-- Zenodo DOI: *(paste when available)*  
+- Zenodo DOI: https://doi.org/10.5281/zenodo.24323720  
 
 ---
 
@@ -33,7 +33,7 @@ Built alongside the open-source **iCloudKit Extractor** lab work (authorized acc
 Read / cite:  
 Landing → https://giordanosconti.github.io/iCloudKitExtractor/whitepaper/  
 PDF + Markdown on GitHub → release `whitepaper-v1.11`  
-DOI (Zenodo) → *(add when live)*
+DOI (Zenodo) → https://doi.org/10.5281/zenodo.24323720
 
 Feedback from digital forensics practitioners welcome.
 

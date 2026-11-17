@@ -6,6 +6,8 @@ Gruppo Informatici Forensi\
 
 16 November 2026 · Version 1.11 · Based on authorized experimental observation (owned accounts / forensic mandate)
 
+**DOI:** [10.5281/zenodo.24323720](https://doi.org/10.5281/zenodo.24323720)
+
 ## Abstract
 
 Commercial iCloud acquisition tools often prove insufficient when **iCloud.com is disabled**, **Advanced Data Protection (ADP)** is enabled, or **Lockdown Mode** restricts available client surfaces. Under such conditions, acquisition cannot rely on web APIs but requires combining Apple private protocols: authentication via **GrandSlam / GsService2**, cryptographic material retrieval through **EscrowProxy** and/or **Octagon / Cuttlefish**, opening of **CKKS** (*CloudKit Keychain Syncing*) views, with particular attention to **Manatee** and **TLKShare**, inventory of backups within the CloudKit zone **`mbksync`**, and finally transfer of **MMCS** chunks using the **PCSMMCS2** derivation.
