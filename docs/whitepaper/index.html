@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Whitepaper — From GrandSlam to MMCS · Experimental Lab</title>
+  <meta
+    name="description"
+    content="Technical note: modern Apple private protocols for iCloud device backup acquisition — GrandSlam, Escrow/PCS, Octagon/CKKS, mbksync fileList, MMCS/PCSMMCS2 — with and without ADP."
+  />
+  <meta name="theme-color" content="#071c22" />
+  <meta property="og:title" content="From GrandSlam to MMCS — iCloud backup protocol whitepaper" />
+  <meta
+    property="og:description"
+    content="Academic technical note on GrandSlam → Escrow/Octagon → mbksync / fileList → MMCS. Version 1.11."
+  />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://giordanosconti.github.io/iCloudKitExtractor/whitepaper/figures/fig01-catena-end-to-end.png" />
+  <link rel="icon" type="image/png" href="../assets/app-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../site.css" />
+  <style>
+    .wp-hero {
+      position: relative;
+      color: var(--hero-ink);
+      background: #041418;
+      padding: clamp(3.5rem, 8vw, 5.5rem) clamp(1.25rem, 4vw, 2rem) clamp(2.5rem, 6vw, 4rem);
+      overflow: hidden;
+    }
+    .wp-hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(60% 70% at 80% 20%, rgba(224, 138, 60, 0.18), transparent 55%),
+        radial-gradient(50% 60% at 10% 80%, rgba(78, 182, 212, 0.2), transparent 50%),
+        linear-gradient(165deg, #041418 0%, #0a3038 55%, #071c22 100%);
+      pointer-events: none;
+    }
+    .wp-hero__inner {
+      position: relative;
+      width: min(100%, 52rem);
+      margin: 0 auto;
+    }
+    .wp-kicker {
+      font-family: var(--font-display);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--sky);
+      margin: 0 0 0.85rem;
+    }
+    .wp-hero h1 {
+      font-family: var(--font-display);
+      font-size: clamp(1.55rem, 3.6vw, 2.15rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      margin: 0 0 1rem;
+      max-width: 22ch;
+    }
+    .wp-hero .lede {
+      margin: 0 0 1.5rem;
+      color: rgba(242, 248, 251, 0.88);
+      font-size: 1.1rem;
+      max-width: 40rem;
+    }
+    .wp-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.25rem;
+      margin: 0 0 1.75rem;
+      font-size: 0.95rem;
+      color: rgba(242, 248, 251, 0.7);
+    }
+    .wp-meta strong { color: #f2f8fb; font-weight: 600; }
+    .wp-cta { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+    .wp-section {
+      width: min(100%, 52rem);
+      margin: 0 auto;
+      padding: clamp(2.5rem, 6vw, 4rem) clamp(1.25rem, 4vw, 2rem);
+    }
+    .wp-section h2 {
+      font-family: var(--font-display);
+      font-size: 1.45rem;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.85rem;
+    }
+    .wp-section p, .wp-section li {
+      color: var(--ink-soft);
+    }
+    .wp-figure {
+      margin: 1.5rem 0 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 12px 40px rgba(14, 36, 48, 0.08);
+    }
+    .wp-figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .wp-figure figcaption {
+      padding: 0.85rem 1rem;
+      font-size: 0.92rem;
+      color: var(--ink-soft);
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.7);
+    }
+    .wp-cite {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      background: #0e2430;
+      color: #d7e8ef;
+      padding: 1rem 1.15rem;
+      border-radius: var(--radius);
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .wp-grid {
+      display: grid;
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+    @media (min-width: 640px) {
+      .wp-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .wp-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.2rem;
+      background: rgba(255, 255, 255, 0.55);
+    }
+    .wp-card h3 {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      margin: 0 0 0.4rem;
+    }
+    .wp-card p { margin: 0; font-size: 0.98rem; }
+    .wp-doi {
+      display: inline-block;
+      margin-top: 0.35rem;
+      font-size: 0.9rem;
+      opacity: 0.85;
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <a class="topbar__brand" href="../">
+        <img src="../assets/app-icon.png" width="26" height="26" alt="" />
+        Experimental Lab
+      </a>
+      <nav class="topbar__nav" aria-label="Site">
+        <a href="../">Home</a>
+        <a href="../blog/">Notes</a>
+        <a aria-current="page" href="./">Whitepaper</a>
+        <a href="https://github.com/GiordanoSconti/iCloudKitExtractor">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <header class="wp-hero" aria-label="Whitepaper">
+    <div class="wp-hero__inner">
+      <p class="wp-kicker">Technical note · Digital forensics · v1.11</p>
+      <h1>From GrandSlam to MMCS</h1>
+      <p class="lede">
+        A description of modern Apple private protocols for authentication, Escrow/PCS,
+        Octagon/CKKS, and iCloud device backup acquisition—with and without Advanced Data Protection.
+      </p>
+      <p class="wp-meta">
+        <span><strong>Author</strong> Giordano Sconti</span>
+        <span><strong>Org</strong> Gruppo Informatici Forensi</span>
+        <span><strong>Date</strong> 16 Nov 2026</span>
+      </p>
+      <div class="wp-cta">
+        <a class="btn btn--primary" href="./whitepaper-protocolli-backup-octagon-pcs.pdf">Download PDF</a>
+        <a class="btn btn--ghost" href="https://github.com/GiordanoSconti/iCloudKitExtractor/blob/main/docs/whitepaper-protocolli-backup-octagon-pcs.md">Read Markdown</a>
+        <a class="btn btn--ghost" href="https://github.com/GiordanoSconti/iCloudKitExtractor/releases/tag/whitepaper-v1.11">GitHub Release</a>
+      </div>
+      <p class="wp-doi" id="doi-line">
+        Cite via Zenodo DOI when published — update this line with your DOI URL.
+      </p>
+    </div>
+  </header>
+
+  <main id="content">
+    <section class="wp-section" aria-labelledby="abs-title">
+      <h2 id="abs-title">Abstract</h2>
+      <p>
+        Commercial iCloud acquisition tools often fail when iCloud.com is disabled, ADP is enabled,
+        or Lockdown Mode restricts client surfaces. Acquisition then requires composing Apple’s private
+        protocols: <strong>GrandSlam / GsService2</strong>, <strong>EscrowProxy</strong> and/or
+        <strong>Octagon / Cuttlefish</strong>, <strong>CKKS</strong> views (Manatee / TLKShare),
+        CloudKit <strong>mbksync</strong> inventory including Domain <strong>N:</strong> /
+        <strong>fileList</strong> SQLite, and <strong>MMCS / PCSMMCS2</strong> chunk transfer.
+      </p>
+      <p>
+        This technical note maps those protocols as reconstructed in <em>iCloudKit Extractor</em> (IKE)
+        under authorized laboratory observation (March–November 2026).
+      </p>
+    </section>
+
+    <section class="wp-section" aria-labelledby="chain-title">
+      <h2 id="chain-title">Protocol chain</h2>
+      <p>
+        End-to-end path documented in the paper: Anisette/MidService → GrandSlam → recovery paths A/B/C
+        → session PCS → Lock → Domain fileList → authorizeGet → Ford/ChunkInfo → iTunes-format tree.
+      </p>
+      <figure class="wp-figure">
+        <img
+          src="./figures/fig01-catena-end-to-end.png"
+          width="1400"
+          height="900"
+          alt="End-to-end protocol chain from Anisette and GrandSlam through Escrow/Octagon to mbksync and MMCS"
+          loading="lazy"
+          decoding="async"
+        />
+        <figcaption>Figure 1 — End-to-end panorama (from the whitepaper).</figcaption>
+      </figure>
+    </section>
+
+    <section class="wp-section" aria-labelledby="filelist-title">
+      <h2 id="filelist-title">File lists after Lock</h2>
+      <p>
+        Paths are not inline on CloudKit. Modern restore resolves <code>:CN:</code> → Domain
+        <code>N:…=:0</code>, downloads each Domain <code>fileList</code> via MMCS, expands SQLite
+        (<code>Assets</code> ⋈ <code>FileMetadata</code>), then batches per-file <code>authorizeGet</code>.
+      </p>
+      <figure class="wp-figure">
+        <img
+          src="./figures/fig11-seq-filelist.png"
+          width="1400"
+          height="1100"
+          alt="UML sequence diagram for Domain N: fileList download, SQLite parse, and per-file authorizeGet"
+          loading="lazy"
+          decoding="async"
+        />
+        <figcaption>Figure 11 — Domain fileList sequence (UML-style).</figcaption>
+      </figure>
+    </section>
+
+    <section class="wp-section" aria-labelledby="get-title">
+      <h2 id="get-title">Get the paper</h2>
+      <div class="wp-grid">
+        <div class="wp-card">
+          <h3>PDF</h3>
+          <p>Camera-ready Typst build, DFRWS/FSI-inspired layout.</p>
+          <p><a href="./whitepaper-protocolli-backup-octagon-pcs.pdf">whitepaper-protocolli-backup-octagon-pcs.pdf</a></p>
+        </div>
+        <div class="wp-card">
+          <h3>Source</h3>
+          <p>English Markdown + figure generators in the public repo.</p>
+          <p><a href="https://github.com/GiordanoSconti/iCloudKitExtractor/tree/main/docs/whitepaper">docs/whitepaper/</a></p>
+        </div>
+        <div class="wp-card">
+          <h3>Implementation</h3>
+          <p>Open-source IKE client that implements the mapped chain.</p>
+          <p><a href="https://github.com/GiordanoSconti/iCloudKitExtractor">iCloudKitExtractor</a></p>
+        </div>
+        <div class="wp-card">
+          <h3>Lab notes</h3>
+          <p>Day 1–11 experimental diary behind the invariants.</p>
+          <p><a href="../blog/">Experimental Lab Notes</a></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="wp-section" aria-labelledby="cite-title">
+      <h2 id="cite-title">Suggested citation</h2>
+      <pre class="wp-cite">Sconti, G. (2026). From GrandSlam to MMCS: A Description of Modern Apple Private Protocols for Authentication, Escrow/PCS, Octagon/CKKS, and iCloud Device Backup Acquisition (Technical note, v1.11). Gruppo Informatici Forensi / iCloudKit Extractor. https://giordanosconti.github.io/iCloudKitExtractor/whitepaper/ [Replace with Zenodo DOI]</pre>
+      <p style="margin-top:1rem;font-size:0.95rem;">
+        Contact: <a href="mailto:giordano.sconti@gruppoinformaticiforensi.it">giordano.sconti@gruppoinformaticiforensi.it</a>
+      </p>
+    </section>
+  </main>
+
+  <footer class="footer" style="padding:2rem 1.25rem 3rem;text-align:center;color:var(--ink-soft);font-size:0.95rem;">
+    <p>Experimental Lab · Giordano Sconti · MIT-licensed research software</p>
+  </footer>
+</body>
+</html>
