@@ -43,11 +43,24 @@ public sealed class CkksVaultService
 {
     /// <summary>
     /// Manatee + Engram → PCS (Messages/iMessage Manatee zones); PCS → Drive/ADP;
-    /// <c>Passwords</c> → login web; <c>WiFi</c> → reti AirPort; LimitedPeersAllowed → altri vault.
+    /// <c>Passwords</c> → login web; <c>WiFi</c> → reti AirPort; LimitedPeersAllowed → altri vault;
+    /// <c>Applications</c> / <c>Contacts</c> / <c>MFi</c> → app tokens, contatti sync, Made-for-iPhone;
+    /// <c>AutoUnlock</c> → Watch→Mac / Continuity unlock.
     /// Engram è obbligatorio per <c>com.apple.messages.cloud</c> (HITB 2018 / CKKS PCS).
     /// </summary>
     public static readonly string[] DefaultViews =
-        ["Manatee", "Engram", "ProtectedCloudStorage", "LimitedPeersAllowed", "Passwords", "WiFi"];
+    [
+        "Manatee",
+        "Engram",
+        "ProtectedCloudStorage",
+        "LimitedPeersAllowed",
+        "Passwords",
+        "WiFi",
+        "Applications",
+        "Contacts",
+        "MFi",
+        "AutoUnlock",
+    ];
 
     private const int MaxSyncPages = 100;
 
