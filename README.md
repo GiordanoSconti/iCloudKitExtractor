@@ -26,6 +26,7 @@
   <img src="https://img.shields.io/badge/.NET-10-512BD4" alt=".NET 10" />
   <img src="https://img.shields.io/badge/platform-Windows-0078D4" alt="Windows" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" />
+  <a href="https://doi.org/10.5281/zenodo.24323720"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.24323720.svg" alt="DOI 10.5281/zenodo.24323720" /></a>
   <a href="https://www.icloudkitextractor.eu"><img src="https://img.shields.io/badge/Anisette%20preview-ONLINE%20%7C%20open%20access-brightgreen" alt="Anisette preview ONLINE open access" /></a>
 </p>
 
@@ -601,6 +602,14 @@ Lab diary entries under [Notes](https://giordanosconti.github.io/iCloudKitExtrac
 | `img/` | Backup / comparison screenshots |
 
 Lab probes, capture corpora, and private tooling stay out of this public tree.
+
+---
+
+## Cite this work
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24323720.svg)](https://doi.org/10.5281/zenodo.24323720)
+
+Sconti, G. (2026). *From GrandSlam to MMCS: A Description of Modern Apple Private Protocols for Authentication, Escrow/PCS, Octagon/CKKS, and iCloud Device Backup Acquisition* (Version 1.11). Zenodo. https://doi.org/10.5281/zenodo.24323720
 
 ---
 
