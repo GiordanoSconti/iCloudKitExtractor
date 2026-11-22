@@ -233,7 +233,7 @@ iCloud Keychain sync is **not** a single REST dump. Items live as encrypted CKKS
 
 ### Protocol steps (independent of IKE UI)
 
-1. **Open each CKKS view** you care about with record sync (IKE default includes `Manatee`, `Engram`, `ProtectedCloudStorage`, `LimitedPeersAllowed`, `Passwords`, `WiFi`).
+1. **Open each CKKS view** you care about with record sync (IKE default includes `Manatee`, `Engram`, `ProtectedCloudStorage`, `LimitedPeersAllowed`, `Passwords`, `WiFi`, `Applications`, `Contacts`, `MFi`, `AutoUnlock`).
 2. Locate **`tlkshare`** records; ECIES-unwrap with the **peer encryption** private key (receiver must match your `peerId`, or use recoverable shares for that peer). Persist TLK per view.
 3. Unwrap **class keys** (synckey) with the TLK; for each **`item`** record unwrap the per-item key and decrypt `data` (AES-SIV / CKKS item path — see `CkksKeys` / `CkksVaultService` in Core).
 4. The plaintext item is a **plist** of SecItem attributes. Important short names:
