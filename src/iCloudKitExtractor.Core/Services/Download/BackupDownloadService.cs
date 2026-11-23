@@ -2990,15 +2990,49 @@ public sealed class BackupDownloadService
         if (!_oidOrderRetries.IsEmpty)
         {
             var left = 0;
+            var creditedOnDisk = 0;
             foreach (var kv in _oidOrderRetries)
             {
-                RememberMissingRetry(kv.Value.Asset);
+                var asset = kv.Value.Asset;
+                var label = asset.RelativePath ?? asset.RecordName;
+                var fid = asset.EnsureFileId();
+                // Arrivo tardivo (pack OID dopo defer): shard già su disco → credit UI ora.
+                if (!string.IsNullOrWhiteSpace(fid) && fid.Length >= 2)
+                {
+                    var shard = IkeBackupOutputPaths.ToShardedFilePath(cleanDir, fid);
+                    if (File.Exists(shard))
+                    {
+                        NoteFileDownloaded("horder_leftover_on_disk", label);
+                        NoteFileDecrypted("horder_leftover_on_disk", label);
+                        writtenSharded++;
+                        creditedOnDisk++;
+                        continue;
+                    }
+                }
+
+                RememberMissingRetry(asset);
                 left++;
             }
 
-            log?.Report(
-                $"H-ORDER leftover → MissingFiles retry bag: {left:N0} " +
-                $"(oid_pack_recover non ha sbloccato il Ford CT)");
+            if (left > 0)
+            {
+                log?.Report(
+                    $"H-ORDER leftover → MissingFiles retry bag: {left:N0} " +
+                    "(oid_pack_recover non ha sbloccato il Ford CT)");
+            }
+
+            if (creditedOnDisk > 0)
+            {
+                log?.Report(
+                    $"H-ORDER leftover already on disk → UI +{creditedOnDisk:N0} " +
+                    "(late recover senza credit precedente)");
+                ReportFilesDoneProgress(
+                    progress,
+                    Volatile.Read(ref _uiFilesDecrypted),
+                    Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
+                    Volatile.Read(ref totalBytes));
+            }
+
             _oidOrderRetries.Clear();
         }
 
@@ -3018,6 +3052,11 @@ public sealed class BackupDownloadService
         {
             writtenSharded += missingRecovered;
             log?.Report($"MissingFiles retry: recuperati {missingRecovered:N0} payload");
+            ReportFilesDoneProgress(
+                progress,
+                Volatile.Read(ref _uiFilesDecrypted),
+                Math.Max(estimatedTotal > 0 ? estimatedTotal : 1, 1),
+                Volatile.Read(ref totalBytes));
         }
 
         await WriteItunesSidecarsAtEndOfSnapshotAsync(
@@ -4334,11 +4373,15 @@ public sealed class BackupDownloadService
                 if (one.WrittenSharded)
                 {
                     recovered++;
-                    NoteFileDecrypted("missing_retry_ok", label);
-                    if (CountsAsCiphertextOnDisk(one))
-                        NoteCiphertextSaved("missing_retry_cipher", label);
+                    // Scaricati + Decifrati (il solo Decifrati lasciava gap UI su late recover).
+                    NoteSyncOrQueuedOutcome(one, "missing_retry");
+                    ReportFilesDoneProgress(
+                        progress,
+                        Volatile.Read(ref _uiFilesDecrypted),
+                        Math.Max(_uiFilesTotal, 1),
+                        one.DownloadedBytes);
                 }
-                else if (!one.Ok && !one.QueuedDecrypt)
+                else if (!one.Ok && !one.QueuedDecrypt && !one.PendingChunks)
                 {
                     DecryptFailureJournal.Record(
                         workDir,
@@ -12864,8 +12907,14 @@ public sealed class BackupDownloadService
         _ = fileKeyCtx;
         while (OidHostBodyCache.TryDequeueRecovered(out var path))
         {
-            if (!_oidOrderRetries.TryRemove(path, out var r) || r.Attempts >= 3)
+            if (!_oidOrderRetries.TryRemove(path, out var r))
                 continue;
+            if (r.Attempts >= 3)
+            {
+                // Esauriti i tentativi: resta nel bag MissingFiles (non drop silenzioso).
+                RememberMissingRetry(r.Asset);
+                continue;
+            }
             log?.Report($"  retry oid_pack_recover: {path}");
             // #region agent log
             try
